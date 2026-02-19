@@ -1,3 +1,6 @@
+# How to run
+install requirements
+run `uvicorn app.main:app --reload` to start server
 # ✨ Welcome to your team’s GitHub repository! ✨
 
 This repository will be the home of your project.

@@ -1,0 +1,5 @@
+fastapi[standard]
+sqlalchemy
+python-dotenv
+bcrypt
+aiofiles
