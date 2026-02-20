@@ -1,0 +1,38 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+
+  # Security
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.2
+    hooks:
+      - id: gitleaks
+
+  # Python (FastAPI/Backend)
+  - repo: https://github.com/psf/black
+    rev: 24.4.2
+    hooks:
+      - id: black
+        files: ^app/
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.1.0
+    hooks:
+      - id: flake8
+        files: ^app/
+
+  # JavaScript/TypeScript (React/Frontend)
+  - repo: https://github.com/pre-commit/mirrors-eslint
+    rev: v9.6.0
+    hooks:
+      - id: eslint
+        files: ^frontend/
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        files: ^frontend/

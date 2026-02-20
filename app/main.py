@@ -10,9 +10,9 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI()
 # app.include_router(x.router) add page
 
-app.mount("/static", StaticFiles(directory="app/frontend"), name="static")
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 
 @app.get("/")
 async def read_index():
-    return FileResponse("app/frontend/index.html")
+    return FileResponse("app/static/index.html")

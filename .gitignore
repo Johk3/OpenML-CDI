@@ -11,3 +11,7 @@ wheels/
 
 # Database
 app_dev.db
+
+# NixOS
+flake.nix
+flake.lock
