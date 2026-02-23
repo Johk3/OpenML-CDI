@@ -4,3 +4,4 @@ python-dotenv
 bcrypt
 aiofiles
 pre-commit
+pytest

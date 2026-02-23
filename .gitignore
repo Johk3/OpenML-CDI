@@ -11,6 +11,7 @@ wheels/
 
 # Database
 app_dev.db
+.local_uploads/
 
 # NixOS
 flake.nix

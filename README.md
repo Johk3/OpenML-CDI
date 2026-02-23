@@ -1,6 +1,31 @@
 # How to run
 install requirements
 run `uvicorn app.main:app --reload` to start server
+
+## Backend storage configuration (Issue #16)
+
+This repository now includes storage foundation infrastructure only.
+No new upload API route is added yet in this scope.
+
+Environment variables:
+
+- `STORAGE_BACKEND` (default: `local`)
+- `LOCAL_UPLOAD_DIR` (default: `.local_uploads`)
+
+Example:
+
+```bash
+export STORAGE_BACKEND=local
+export LOCAL_UPLOAD_DIR=.local_uploads
+```
+
+## Run tests
+
+```bash
+pytest -q
+pre-commit run --all-files
+```
+
 # ✨ Welcome to your team’s GitHub repository! ✨
 
 This repository will be the home of your project.
