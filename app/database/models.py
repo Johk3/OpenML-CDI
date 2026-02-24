@@ -22,7 +22,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, default=uuid.uuid4, primary_key=True
+        Uuid, default=uuid.uuid4, primary_key=True, index=True
     )  # optionally change to serverside default in production
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -31,11 +31,14 @@ class User(Base):
     last_name: Mapped[str] = mapped_column(String, nullable=False)
     role: Mapped[Roles] = mapped_column(SQLEnum(Roles), default=Roles.UPLOADER)
     datasets = relationship("Dataset", back_populates="owner")
+    refresh_tokens = relationship("RefreshToken", back_populates="owner")
 
 
 class Dataset(Base):
     __tablename__ = "datasets"
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, default=uuid.uuid4, primary_key=True)
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, default=uuid.uuid4, primary_key=True, index=True
+    )
     title: Mapped[str] = mapped_column(String, nullable=False)
     owner_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("users.id"), nullable=False
@@ -47,3 +50,14 @@ class Dataset(Base):
         SQLEnum(Statuses), default=Statuses.PENDING, nullable=False
     )
     issue_url: Mapped[str] = mapped_column(Text, default="")
+
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, index=True)
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id"), nullable=False
+    )
+    owner = relationship("User", back_populates="refresh_tokens")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)

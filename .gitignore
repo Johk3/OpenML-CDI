@@ -8,6 +8,8 @@ wheels/
 
 # Virtual environments
 .venv
+.pipx
+frontend/node_modules
 
 # Database
 app_dev.db

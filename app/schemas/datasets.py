@@ -12,7 +12,7 @@ class DatasetBase(BaseModel):
 
 
 class DatasetCreate(DatasetBase):
-    status: Statuses
+    status: Statuses = Statuses.PENDING
 
 
 class Dataset(DatasetBase):
@@ -21,3 +21,4 @@ class Dataset(DatasetBase):
 
     class Config:
         from_attributes = True
+        frozen = True  # no changes
