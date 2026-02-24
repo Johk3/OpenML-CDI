@@ -3,5 +3,6 @@ sqlalchemy
 python-dotenv
 bcrypt
 aiofiles
-pre-commit
+black
+flake8
 pytest

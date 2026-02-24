@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 import os
 
-
 STORAGE_BACKEND_ENV = "STORAGE_BACKEND"
 LOCAL_UPLOAD_DIR_ENV = "LOCAL_UPLOAD_DIR"
 DEFAULT_STORAGE_BACKEND = "local"

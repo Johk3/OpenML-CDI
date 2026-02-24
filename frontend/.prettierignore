@@ -1,0 +1,12 @@
+# Ignore artifacts:
+build
+coverage
+
+# Ignore html
+**/*.html
+
+# Ignore json
+**/*.json
+
+# Ignore config
+pnpm-lock.yaml

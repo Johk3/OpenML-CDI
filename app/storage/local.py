@@ -4,7 +4,6 @@ from uuid import uuid4
 
 from .types import UploadTarget
 
-
 SAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
 
 
