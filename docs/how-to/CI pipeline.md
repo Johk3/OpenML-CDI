@@ -30,6 +30,7 @@ lefthook install
 In order to run all tests the following tools have to be installed on your computer:
 - [python](https://www.python.org/)
 - [node](https://nodejs.org/en)
+- [pipx](https://github.com/pypa/pipx)
 - npm(comes with node) or [pnpm](https://pnpm.io/)
 
 You'll also need to install all requirements from the requirements.txt file at the root of the project.
