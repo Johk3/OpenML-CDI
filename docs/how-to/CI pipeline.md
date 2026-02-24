@@ -33,16 +33,6 @@ In order to run all tests the following tools have to be installed on your compu
 - [pipx](https://github.com/pypa/pipx)
 - npm(comes with node) or [pnpm](https://pnpm.io/)
 
-You'll also need to install all requirements from the requirements.txt file at the root of the project.
-```sh
-pip install -r requirements.txt
-```
-Additionally you'll need to also install the npm packages inside the frontend directory.
-```sh
-cd frontend
-npm install
-```
-
 
 ## Usage
 After installing the script should run automatically after you run the commit command. Before the commit has been made the tool tests the checks mentioned an fixes most errors.
