@@ -1,8 +1,14 @@
 fastapi[standard]
 sqlalchemy
 python-dotenv
-bcrypt
 aiofiles
+<<<<<<< database
+argon2-cffi
+email-validator
+alembic
+pre-commit
+=======
 black
 flake8
+>>>>>>> main
 pytest

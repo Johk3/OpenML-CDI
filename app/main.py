@@ -1,13 +1,10 @@
 from fastapi import FastAPI
-from .database import engine, Base
 from .config import Settings
 from .storage import get_storage_backend
 
 # from .routers import x
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-
-Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 # app.include_router(x.router) add page

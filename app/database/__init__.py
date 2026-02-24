@@ -1,10 +1,18 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+import os
+from dotenv import load_dotenv
 
-engine = create_engine(
-    "sqlite:///./app_dev.db", connect_args={"check_same_thread": False}
-)
+load_dotenv()
+
+DATABASE_URI = os.environ.get("DATABASE_URI")
+if not DATABASE_URI:
+    print("Fallback database URI used")
+    DATABASE_URI = "sqlite:///./app_dev.db"
+
+
+engine = create_engine(DATABASE_URI, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 
