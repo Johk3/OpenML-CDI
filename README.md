@@ -1,3 +1,7 @@
+# Contributing
+Please follow the projects guidelines on contributing.
+For more information, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 # How to run
 install requirements
 run `uvicorn app.main:app --reload` to start server
