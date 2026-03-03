@@ -1,0 +1,20 @@
+# This will automatically request @gabrielmeleiro1 for a PR
+/ @gabrielmeleiro1
+
+# Frontend
+/frontend/ @c0ffeeadd1c7 @Johk3
+
+# Docs
+/docs/ @c0ffeeadd1c7
+
+# Git workflow
+/.github/ @c0ffeeadd1c7
+
+# Backend
+/backend/ @koevoet1221
+
+# Database
+/alembic/ @koevoet1221
+/app/database/ @koevoet1221
+/app/schemas/ @koevoet1221
+
