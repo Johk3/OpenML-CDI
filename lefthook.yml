@@ -26,3 +26,12 @@ pre-commit:
       root: frontend
       glob: "**/*.{js,mjs,cjs,jsx,ts,tsx,css,json,md,yml,yaml}"
       run: npm_config_yes=true npx prettier --write {staged_files}
+
+    # Documentation
+    markdownlint:
+      glob: "docs/**/*.md"
+      run: npm_config_yes=true npx markdownlint-cli2 {staged_files} --fix
+
+    prettier-docs:
+      glob: "docs/**/*.md"
+      run: npm_config_yes=true npx prettier --write {staged_files}

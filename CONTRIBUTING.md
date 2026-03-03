@@ -50,7 +50,19 @@ When writing your issue title, replace `[PREFIX]` with one of the following pref
 - Create a new branch off of `main` using the issue number. 
   - *Example:* `git checkout -b feature/15-dataset-upload`
 
-## 3. Submitting a Pull Request (PR)
+## 3. 🧪 Testing
+
+Before opening a PR, make sure your changes are covered by the appropriate tests. We use three levels of testing in this repo — if you're not sure which one to write, start with the general testing guide below.
+### 📚 Guides
+
+| Guide | When to read it |
+| --- | --- |
+| [General testing guide](docs/how-to/testing.md) | Not sure which test type to write? Start here. |
+| [Unit testing guide](docs/how-to/unit-test.md) | You changed business logic, fixed a bug, or refactored code. |
+| [Integration testing guide](docs/how-to/integration-test.md) | Your change touches how components connect (service + DB, API + queue, etc.). |
+| [End-to-end testing guide](docs/how-to/e2e-test.md) | You changed a critical user-facing flow. |
+
+## 4. Submitting a Pull Request (PR)
 When your work is complete and tested locally, push your branch and open a Pull Request.
 - The PR description will automatically populate with our standard **Pull Request Template**.
 - **Link the Issue:** Under the "Related Issue" section, write `Closes #XYZ` (where XYZ is your issue number). This ensures GitHub automatically closes the issue when your PR is merged.
@@ -61,12 +73,3 @@ When your work is complete and tested locally, push your branch and open a Pull 
 
 On a guide on how big a PR should be, see [docs/how-to/pull-request-size.md](docs/how-to/pull-request-size.md).
 On a guide on to do a code review, see [docs/how-to/code-reviews.md](docs/how-to/code-reviews.md).
-
-1. Ensure any install or build dependencies are removed before the end of the layer when doing a 
-   build.
-2. Update the README.md with details of changes to the interface, this includes new environment 
-   variables, exposed ports, useful file locations and container parameters.
-3. Increase the version numbers in any examples files and the README.md to the new version that this
-   Pull Request would represent. The versioning scheme we use is [SemVer](http://semver.org/).
-4. You may merge the Pull Request in once you have the sign-off of two other developers, or if you 
-   do not have permission to do that, you may request the second reviewer to merge it for you.
