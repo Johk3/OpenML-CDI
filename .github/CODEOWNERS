@@ -5,13 +5,13 @@
 /frontend/ @c0ffeeadd1c7 @Johk3
 
 # Docs
-/docs/ @c0ffeeadd1c7
+/docs/ @c0ffeeadd1c7 @AlexKoops
 
 # Git workflow
 /.github/ @c0ffeeadd1c7
 
 # Backend
-/backend/ @koevoet1221
+/app/ @koevoet1221 @gabrielmeleiro1
 
 # Database
 /alembic/ @koevoet1221
