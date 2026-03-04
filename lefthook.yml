@@ -1,5 +1,6 @@
 pre-commit:
   parallel: true
+  fail_on_changes: "always"
   commands:
     # Security
     gitleaks:

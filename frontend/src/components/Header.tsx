@@ -20,11 +20,7 @@ export const Header: React.FC = () => {
   return (
     <header className="header">
       <div className="container header-content">
-        <div
-          className="logo-section"
-          style={{ cursor: 'pointer' }}
-          onClick={() => navigate('/')}
-        >
+        <div className="logo-section" style={{ cursor: 'pointer' }} onClick={() => navigate('/')}>
           <div className="logo-icon">
             <Database size={24} color="var(--bg-secondary)" />
           </div>

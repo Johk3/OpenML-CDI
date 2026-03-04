@@ -1,8 +1,8 @@
 # Code Review and Ownership Philosophy
+
 ## Introduction
 
 This document aims to highlight our principals when it comes to making decisions on who should be choosen and why when selecting people for code reviews.
-
 
 ## Our Core Review Philosophy
 
@@ -14,6 +14,6 @@ Second and more important to our philosophy is that a code review serves as a wa
 There will be times when the codeowner is not available for a code review for any reason. In this case a majority vote should overwrite the need for the code owners approval.
 
 ## Related Resources
+
 - Our codeowner configuration can be found at [.github/CODEOWNERS](../../.github/CODEOWNERS).
 - For a guide on how to do code reviews see [how-to/code-reviews.md](../how-to/code-reviews.md)!
-
