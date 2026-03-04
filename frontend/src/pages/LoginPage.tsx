@@ -1,18 +1,15 @@
 import React from 'react';
-import { User, ShieldCheck, LogIn } from 'lucide-react';
+import { LogIn, User, ShieldCheck } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Page } from '../App';
 
-interface LoginPageProps {
-  onNavigate: (page: Page) => void;
-}
-
-export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
+export const LoginPage: React.FC = () => {
   const { login } = useAuth();
+  const navigate = useNavigate();
 
   const handleLogin = (role: 'customer' | 'expert') => {
     login(role);
-    onNavigate('datasets'); // Go straight to datasets to see the new dashboard
+    navigate('/datasets'); // Go straight to datasets to see the new dashboard
   };
 
   return (
@@ -23,6 +20,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
       }}
     >
       <div style={{ textAlign: 'center', marginBottom: '3rem', maxWidth: '500px' }}>

@@ -1,19 +1,15 @@
-import React, { ReactNode } from 'react';
+import React from 'react';
 import { Header } from './Header';
 import { Footer } from './Footer';
-import { Page } from '../App';
+import { Outlet } from 'react-router-dom';
 
-interface MainLayoutProps {
-  children: ReactNode;
-  currentPage: Page;
-  onNavigate: (page: Page) => void;
-}
-
-export const MainLayout: React.FC<MainLayoutProps> = ({ children, currentPage, onNavigate }) => {
+export const MainLayout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
   return (
     <div className="layout-wrapper">
-      <Header currentPage={currentPage} onNavigate={onNavigate} />
-      <main className="main-content">{children}</main>
+      <Header />
+      <main className="main-content">
+        {children || <Outlet />}
+      </main>
       <Footer />
     </div>
   );

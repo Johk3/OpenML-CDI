@@ -1,23 +1,19 @@
 import React from 'react';
 import { Database, LogIn, LogOut, User as UserIcon } from 'lucide-react';
-import { Page } from '../App';
+import { useNavigate, NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-interface HeaderProps {
-  currentPage: Page;
-  onNavigate: (page: Page) => void;
-}
-
-export const Header: React.FC<HeaderProps> = ({ currentPage, onNavigate }) => {
+export const Header: React.FC = () => {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
   const handleAuthAction = (e: React.MouseEvent) => {
     e.preventDefault();
     if (user) {
       logout();
-      if (currentPage === 'datasets') onNavigate('upload');
+      navigate('/');
     } else {
-      onNavigate('login');
+      navigate('/login');
     }
   };
 
@@ -27,7 +23,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPage, onNavigate }) => {
         <div
           className="logo-section"
           style={{ cursor: 'pointer' }}
-          onClick={() => onNavigate('upload')}
+          onClick={() => navigate('/')}
         >
           <div className="logo-icon">
             <Database size={24} color="var(--bg-secondary)" />
@@ -36,31 +32,27 @@ export const Header: React.FC<HeaderProps> = ({ currentPage, onNavigate }) => {
         </div>
         <nav className="nav-links" style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
           <div style={{ display: 'flex', gap: '2rem' }}>
-            <a
-              href="#"
-              className={`nav-link ${currentPage === 'upload' ? 'active' : ''}`}
-              onClick={(e) => {
-                e.preventDefault();
-                onNavigate('upload');
-              }}
+            <NavLink
+              to="/"
+              className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+              end
             >
               Upload
-            </a>
+            </NavLink>
             {user && (
-              <a
-                href="#"
-                className={`nav-link ${currentPage === 'datasets' ? 'active' : ''}`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  onNavigate('datasets');
-                }}
+              <NavLink
+                to="/datasets"
+                className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
               >
                 My Datasets
-              </a>
+              </NavLink>
             )}
-            <a href="#" className="nav-link">
+            <NavLink
+              to="/about"
+              className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+            >
               About
-            </a>
+            </NavLink>
           </div>
 
           <div
