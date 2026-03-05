@@ -27,11 +27,6 @@ jobs:
         working-directory: ./frontend
         run: npm ci # Or 'npm install' if we do not use package-lock.json
 
-      - name: Install Backend Dependencies
-        # Required because black and flake8
-        working-directory: ./frontend
-        run: pipx install black flake8
-
       - name: Install Lefthook
         run: npm install -g @evilmartians/lefthook
 

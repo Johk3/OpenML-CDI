@@ -4,7 +4,8 @@ pre-commit:
   commands:
     # Security
     gitleaks:
-      run: npx --yes gitleaks-secret-scanner@latest protect --staged --verbose --redact
+      root: frontend 
+      run: npx gitleaks-secret-scanner@latest protect --staged --verbose --redact
 
     # Python (FastAPI/Backend)
     black:
