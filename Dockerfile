@@ -26,7 +26,11 @@ RUN if [ -f pnpm-lock.yaml ]; then \
     fi
 
 COPY frontend/ ./
-RUN pnpm run build
+RUN if [ -f pnpm-lock.yaml ]; then \
+      pnpm run build; \
+    elif [ -f package-lock.json ]; then \
+      npm run build; \
+    fi
 
 
 # ─────────────────────────────────────────────
