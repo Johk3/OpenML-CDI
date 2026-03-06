@@ -7,7 +7,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: "ludev/openml-upload"
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   lint:
