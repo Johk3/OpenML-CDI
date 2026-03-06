@@ -2,9 +2,8 @@ name: lefthook
 
 on:
   pull_request:
-  push:
     branches: [main]
-
+  workflow_call: 
 jobs:
   lint-and-format:
     runs-on: ubuntu-latest

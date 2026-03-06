@@ -9,7 +9,7 @@ load_dotenv()
 DATABASE_URI = os.environ.get("DATABASE_URI")
 if not DATABASE_URI:
     print("Fallback database URI used")
-    DATABASE_URI = "sqlite:///./app_dev.db"
+    DATABASE_URI = "sqlite:///app/data/app_dev.db"
 
 
 engine = create_engine(DATABASE_URI, connect_args={"check_same_thread": False})

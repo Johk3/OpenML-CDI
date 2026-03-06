@@ -4,12 +4,14 @@ from .storage import get_storage_backend
 
 # from .routers import x
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 
 app = FastAPI()
 # app.include_router(x.router) add page
 
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
+app.mount(
+    "/assets", StaticFiles(directory="app/static/assets", html=True), name="static"
+)
+app.mount("/", StaticFiles(directory="app/static", html=True), name="static")
 
 
 @app.on_event("startup")
@@ -18,8 +20,3 @@ def initialize_storage() -> None:
     settings = Settings.from_env()
     app.state.settings = settings
     app.state.storage = get_storage_backend(settings)
-
-
-@app.get("/")
-async def read_index():
-    return FileResponse("app/static/index.html")
