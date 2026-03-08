@@ -22,12 +22,17 @@ pre-commit:
     eslint:
       root: frontend
       glob: "**/*.{js,mjs,cjs,jsx,ts,tsx}"
-      run: npm_config_yes=true npx eslint@9 {staged_files} 
+      run: npm_config_yes=true npx eslint@10 {staged_files} 
       
     prettier:
       root: frontend
       glob: "**/*.{js,mjs,cjs,jsx,ts,tsx,css,json,md,yml,yaml}"
       run: npm_config_yes=true npx prettier --write {staged_files}
+
+    vitest-related:
+      root: frontend
+      glob: "**/*.{js,jsx,ts,tsx}"
+      run: npx vitest related --run {staged_files}
 
     # Documentation
     markdownlint:

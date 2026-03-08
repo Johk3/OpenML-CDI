@@ -8,29 +8,39 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "format": "prettier . --write",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage",
+    "test:ci": "vitest run --reporter=junit --outputFile=./reports/junit.xml"
   },
   "dependencies": {
     "clsx": "^2.1.1",
-    "lucide-react": "^0.575.0",
+    "lucide-react": "^0.577.0",
     "prettier": "^3.8.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-router-dom": "^6.30.3",
+    "react-router-dom": "^7.13.1",
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.3",
+    "@eslint/js": "^9",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.4",
-    "eslint": "^9.39.3",
+    "@vitest/coverage-v8": "^4.0.18",
+    "@vitest/ui": "^4.0.18",
+    "eslint": "^9",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "gitleaks-secret-scanner": "^2.1.1",
-    "globals": "^17.3.0",
+    "globals": "^17.4.0",
+    "jsdom": "^28.1.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.1",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "vitest": "^4.0.18"
   }
 }

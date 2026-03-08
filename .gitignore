@@ -31,6 +31,8 @@ node_modules
 dist
 dist-ssr
 *.local
+reports
+coverage
 
 # Build artifacts
 build/

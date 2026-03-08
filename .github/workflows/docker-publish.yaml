@@ -12,6 +12,8 @@ env:
 jobs:
   lint:
     uses: ./.github/workflows/pre-commit.yaml
+  test-frontend:
+    uses: ./.github/workflows/frontend-test.yaml
 
   build-and-push:
     runs-on: ubuntu-latest

@@ -13,7 +13,7 @@ Our router is initialized using `createBrowserRouter` to enable APIs and history
 ```tsx
 export const router = createBrowserRouter([
   {
-    path: '/',
+    path: "/",
     element: <App />,
     errorElement: (
       <MainLayout>
@@ -44,7 +44,7 @@ export const router = createBrowserRouter([
 }
 ```
 
-4. **Add Navigation (Optional)**: If this page needs to be accessible from the header nav, open `src/components/Header.tsx` and add a `<NavLink to="/new-route">New Route</NavLink>` inside the `.nav-links` container.
+1. **Add Navigation (Optional)**: If this page needs to be accessible from the header nav, open `src/components/Header.tsx` and add a `<NavLink to="/new-route">New Route</NavLink>` inside the `.nav-links` container.
 
 ## Handling 404 Routes
 
