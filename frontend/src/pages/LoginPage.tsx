@@ -1,7 +1,10 @@
 import React from 'react';
+import { motion } from 'motion/react';
 import { LogIn, User, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/useAuth';
+import { useAuth } from '../context/AuthContext';
+import { Button } from '../components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 
 export const LoginPage: React.FC = () => {
   const { login } = useAuth();
@@ -9,129 +12,98 @@ export const LoginPage: React.FC = () => {
 
   const handleLogin = (role: 'customer' | 'expert') => {
     login(role);
-    navigate('/datasets'); // Go straight to datasets to see the new dashboard
+    navigate('/datasets');
   };
 
   return (
-    <div
-      className="container fade-in"
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6, ease: 'easeOut' }}
+      className="container"
       style={{
-        padding: '4rem 2rem',
+        padding: '5rem 1.5rem',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
       }}
     >
-      <div style={{ textAlign: 'center', marginBottom: '3rem', maxWidth: '500px' }}>
+      {/* Hero */}
+      <div className="text-center mb-12 max-w-lg">
         <div
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '64px',
-            height: '64px',
-            borderRadius: 'var(--radius-full)',
-            backgroundColor: 'var(--bg-tertiary)',
-            color: 'var(--accent-primary)',
-            marginBottom: '1.5rem',
-          }}
+          className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-6"
+          style={{ background: 'var(--accent-gradient)', boxShadow: 'var(--shadow-glow)' }}
         >
-          <LogIn size={32} />
+          <LogIn size={28} color="white" />
         </div>
-        <h1 className="heading-1" style={{ fontSize: '2.5rem' }}>
-          Welcome Back
-        </h1>
-        <p className="subheading">Select your role below to continue.</p>
+        <h1 className="heading-1 mb-3">Welcome to OpenML CDI</h1>
+        <p className="subheading">Select your role to continue to the platform.</p>
       </div>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-          gap: '2rem',
-          width: '100%',
-          maxWidth: '800px',
-        }}
+      {/* Role cards */}
+      <motion.div
+        initial="hidden"
+        animate="visible"
+        variants={{ visible: { transition: { staggerChildren: 0.15, delayChildren: 0.2 } } }}
+        className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full max-w-2xl"
       >
-        {/* Customer Login Card */}
-        <div
-          className="dataset-card"
-          onClick={() => handleLogin('customer')}
-          style={{
-            cursor: 'pointer',
-            textAlign: 'center',
-            padding: '2.5rem 2rem',
-            border: '2px solid transparent',
-          }}
-          onMouseOver={(e) => (e.currentTarget.style.borderColor = 'var(--border-focus)')}
-          onMouseOut={(e) => (e.currentTarget.style.borderColor = 'transparent')}
+        {/* Customer */}
+        <motion.div
+          variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.98 }}
         >
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'center',
-              marginBottom: '1.5rem',
-              color: 'var(--text-secondary)',
-            }}
+          <Card
+            className="cursor-pointer group h-full transition-all duration-200 hover:shadow-lg border-2 hover:border-primary/40"
+            onClick={() => handleLogin('customer')}
           >
-            <User size={48} />
-          </div>
-          <h2 className="heading-2" style={{ marginBottom: '0.5rem' }}>
-            Customer
-          </h2>
-          <p className="dataset-description" style={{ marginBottom: '2rem' }}>
-            Standard user view. Upload new datasets and check the processing status of your past
-            submissions.
-          </p>
-          <button className="btn btn-primary" style={{ width: '100%' }}>
-            Login as Customer
-          </button>
-        </div>
+            <CardHeader className="items-center text-center pb-3">
+              <div className="w-14 h-14 rounded-xl flex items-center justify-center mb-3 bg-muted text-muted-foreground transition-all duration-200 group-hover:bg-primary/10 group-hover:text-primary">
+                <User size={30} />
+              </div>
+              <CardTitle className="text-xl">Customer</CardTitle>
+              <CardDescription className="text-sm leading-relaxed">
+                Upload new datasets and track the processing status of your past submissions.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-1">
+              <Button className="w-full" size="lg">
+                Continue as Customer
+              </Button>
+            </CardContent>
+          </Card>
+        </motion.div>
 
-        {/* Expert Login Card */}
-        <div
-          className="dataset-card"
-          onClick={() => handleLogin('expert')}
-          style={{
-            cursor: 'pointer',
-            textAlign: 'center',
-            padding: '2.5rem 2rem',
-            border: '2px solid transparent',
-          }}
-          onMouseOver={(e) => (e.currentTarget.style.borderColor = 'var(--border-focus)')}
-          onMouseOut={(e) => (e.currentTarget.style.borderColor = 'transparent')}
+        {/* Expert */}
+        <motion.div
+          variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.98 }}
         >
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'center',
-              marginBottom: '1.5rem',
-              color: 'var(--accent-primary)',
-            }}
+          <Card
+            className="cursor-pointer group h-full transition-all duration-200 hover:shadow-lg border-2 hover:border-violet-400/60"
+            onClick={() => handleLogin('expert')}
           >
-            <ShieldCheck size={48} />
-          </div>
-          <h2 className="heading-2" style={{ marginBottom: '0.5rem' }}>
-            Expert
-          </h2>
-          <p className="dataset-description" style={{ marginBottom: '2rem' }}>
-            Admin view. Review datasets submitted by all users, change their processing status, and
-            download files.
-          </p>
-          <button
-            className="btn btn-primary"
-            style={{
-              width: '100%',
-              background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
-              color: 'white',
-            }}
-          >
-            Login as Expert
-          </button>
-        </div>
-      </div>
-    </div>
+            <CardHeader className="items-center text-center pb-3">
+              <div className="w-14 h-14 rounded-xl flex items-center justify-center mb-3 text-violet-500 bg-violet-50 dark:bg-violet-950/30 transition-all duration-200 group-hover:bg-violet-100 dark:group-hover:bg-violet-900/40">
+                <ShieldCheck size={30} />
+              </div>
+              <CardTitle className="text-xl">Expert</CardTitle>
+              <CardDescription className="text-sm leading-relaxed">
+                Expert view. Review all submissions, change processing states, and download files.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-1">
+              <Button
+                size="lg"
+                className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white shadow-md"
+              >
+                Continue as Expert
+              </Button>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </motion.div>
+    </motion.div>
   );
 };

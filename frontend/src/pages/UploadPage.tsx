@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { FileUploadZone } from '../components/FileUploadZone';
 import { Input } from '../components/Input';
-import { Button } from '../components/Button';
-import { CheckCircle, FileText, ArrowRight } from 'lucide-react';
+import { CheckCircle, FileText, ArrowRight, Upload } from 'lucide-react';
+import { Button } from '../components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
+import { Badge } from '../components/ui/badge';
 
 type UploadState = 'idle' | 'contact' | 'uploading' | 'success';
 
@@ -24,11 +27,7 @@ export const UploadPage: React.FC = () => {
   const handleContactSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setUploadState('uploading');
-
-    // Simulate upload delay
-    setTimeout(() => {
-      setUploadState('success');
-    }, 2000);
+    setTimeout(() => setUploadState('success'), 2000);
   };
 
   const resetFlow = () => {
@@ -39,116 +38,175 @@ export const UploadPage: React.FC = () => {
 
   return (
     <div className="container">
-      {uploadState === 'idle' && (
-        <div className="animate-fade-in text-center max-w-3xl mx-auto mt-10">
-          <h1 className="heading-1">Share Your Dataset</h1>
-          <p className="subheading mb-10">
-            Contribute to the global machine learning community by uploading your dataset.
-          </p>
-          <FileUploadZone onFileSelect={handleFileSelect} />
-        </div>
-      )}
-
-      {uploadState === 'contact' && (
-        <div className="animate-fade-in max-w-xl mx-auto mt-10">
-          <div className="glass-panel p-8 rounded-2xl relative overflow-hidden">
-            <h2 className="heading-2">You're almost there!</h2>
-            <p className="subheading mb-6">
-              Please provide your contact details to complete the upload.
-            </p>
-
-            <div className="flex items-center gap-3 mb-6 p-4 bg-[var(--bg-tertiary)] rounded-lg">
-              <FileText className="text-[var(--accent-primary)]" />
-              <div className="flex-1 overflow-hidden">
-                <p className="font-medium text-sm text-[var(--text-primary)] truncate">
-                  {selectedFile?.name}
-                </p>
-                <p className="text-xs text-[var(--text-tertiary)]">
-                  {(selectedFile?.size ? selectedFile.size / 1024 / 1024 : 0).toFixed(2)} MB
-                </p>
-              </div>
-              <button
-                onClick={() => setUploadState('idle')}
-                className="text-xs text-[var(--accent-primary)] hover:underline"
+      <AnimatePresence mode="wait">
+        {uploadState === 'idle' && (
+          <motion.div
+            key="idle"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.3 }}
+            className="max-w-3xl mx-auto mt-10"
+          >
+            {/* Hero */}
+            <div className="text-center mb-10">
+              <Badge
+                variant="secondary"
+                className="mb-4 px-3 py-1 text-xs font-semibold tracking-wide uppercase"
               >
-                Change
-              </button>
+                <Upload size={12} className="mr-1" /> Dataset Contributions
+              </Badge>
+              <h1 className="heading-1 mb-3">Share Your Dataset</h1>
+              <p className="subheading max-w-xl mx-auto">
+                Contribute to the OpenML community. Every dataset you share helps researchers build
+                better models.
+              </p>
             </div>
+            <FileUploadZone onFileSelect={handleFileSelect} />
 
-            <form onSubmit={handleContactSubmit} className="flex flex-col gap-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Input
-                  label="First Name"
-                  required
-                  value={contactDetails.firstName}
-                  onChange={(e) =>
-                    setContactDetails({
-                      ...contactDetails,
-                      firstName: e.target.value,
-                    })
-                  }
-                />
-                <Input
-                  label="Last Name"
-                  required
-                  value={contactDetails.lastName}
-                  onChange={(e) =>
-                    setContactDetails({
-                      ...contactDetails,
-                      lastName: e.target.value,
-                    })
-                  }
-                />
-              </div>
-              <Input
-                label="Email Address"
-                type="email"
-                required
-                value={contactDetails.email}
-                onChange={(e) =>
-                  setContactDetails({
-                    ...contactDetails,
-                    email: e.target.value,
-                  })
-                }
-              />
-              <Button type="submit" className="mt-4 w-full">
-                Continue <ArrowRight size={18} />
-              </Button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {(uploadState === 'uploading' || uploadState === 'success') && (
-        <div className="animate-fade-in text-center max-w-xl mx-auto mt-20">
-          <div className="flex flex-col items-center justify-center p-12 bg-white dark:bg-[var(--bg-secondary)] rounded-2xl shadow-lg border border-[var(--border-color)]">
-            {uploadState === 'uploading' ? (
-              <>
-                <div className="w-16 h-16 border-4 border-t-[var(--accent-primary)] border-[var(--bg-tertiary)] rounded-full animate-spin mb-6"></div>
-                <h2 className="heading-2">Uploading Dataset...</h2>
-                <p className="text-[var(--text-secondary)] mt-2">
-                  Please wait while we process {selectedFile?.name}
-                </p>
-              </>
-            ) : (
-              <div className="animate-fade-in-delayed flex flex-col items-center">
-                <div className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mb-6">
-                  <CheckCircle size={40} className="text-[var(--success)]" />
+            {/* Feature strip */}
+            <div className="grid grid-cols-3 gap-4 mt-8 text-center">
+              {[
+                { label: 'Secure Upload', desc: 'End-to-end encrypted' },
+                { label: 'Open Access', desc: 'Free for researchers' },
+                { label: 'Expert Review', desc: 'Quality guaranteed' },
+              ].map((f) => (
+                <div key={f.label} className="p-4 rounded-xl bg-card border border-border/60">
+                  <p className="font-semibold text-sm text-foreground">{f.label}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{f.desc}</p>
                 </div>
-                <h2 className="heading-2">Upload Complete!</h2>
-                <p className="text-[var(--text-secondary)] mt-2 mb-8">
-                  Thank you for contributing, {contactDetails.firstName}. Your dataset has been
-                  successfully uploaded and is pending review.
-                </p>
-                <Button variant="outline" onClick={resetFlow}>
-                  Upload Another Dataset
-                </Button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {uploadState === 'contact' && (
+          <motion.div
+            key="contact"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.3 }}
+            className="max-w-lg mx-auto mt-10"
+          >
+            <Card className="shadow-lg border-border/70">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-xl">Almost there!</CardTitle>
+                <CardDescription>
+                  Provide your contact details to complete the upload.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {/* File preview pill */}
+                <div className="flex items-center gap-3 p-3 rounded-xl bg-muted/60 border border-border/50">
+                  <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                    <FileText size={16} className="text-primary" />
+                  </div>
+                  <div className="flex-1 overflow-hidden">
+                    <p className="font-semibold text-sm truncate">{selectedFile?.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {(selectedFile?.size ? selectedFile.size / 1024 / 1024 : 0).toFixed(2)} MB
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setUploadState('idle')}
+                    className="text-xs shrink-0"
+                  >
+                    Change
+                  </Button>
+                </div>
+
+                <form onSubmit={handleContactSubmit} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <Input
+                      label="First Name"
+                      required
+                      value={contactDetails.firstName}
+                      onChange={(e) =>
+                        setContactDetails({ ...contactDetails, firstName: e.target.value })
+                      }
+                    />
+                    <Input
+                      label="Last Name"
+                      required
+                      value={contactDetails.lastName}
+                      onChange={(e) =>
+                        setContactDetails({ ...contactDetails, lastName: e.target.value })
+                      }
+                    />
+                  </div>
+                  <Input
+                    label="Email Address"
+                    type="email"
+                    required
+                    value={contactDetails.email}
+                    onChange={(e) =>
+                      setContactDetails({ ...contactDetails, email: e.target.value })
+                    }
+                  />
+                  <Button type="submit" className="w-full" size="lg">
+                    Upload Dataset <ArrowRight size={16} />
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {(uploadState === 'uploading' || uploadState === 'success') && (
+          <motion.div
+            key={uploadState}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.3 }}
+            className="text-center max-w-md mx-auto mt-20"
+          >
+            <Card className="shadow-lg">
+              <CardContent className="pt-12 pb-12 flex flex-col items-center">
+                {uploadState === 'uploading' ? (
+                  <>
+                    <div className="w-16 h-16 rounded-full border-4 border-muted border-t-primary animate-spin mb-6" />
+                    <h2 className="heading-2 mb-2">Uploading…</h2>
+                    <p className="text-muted-foreground text-sm">
+                      Processing{' '}
+                      <span className="font-medium text-foreground">{selectedFile?.name}</span>
+                    </p>
+                  </>
+                ) : (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex flex-col items-center"
+                  >
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: 'spring', stiffness: 200, damping: 15 }}
+                      className="w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mb-6"
+                    >
+                      <CheckCircle size={40} className="text-green-600 dark:text-green-400" />
+                    </motion.div>
+                    <h2 className="heading-2 mb-2">Upload Complete!</h2>
+                    <p className="text-muted-foreground text-sm mb-8 max-w-xs">
+                      Thank you,{' '}
+                      <span className="font-semibold text-foreground">
+                        {contactDetails.firstName}
+                      </span>
+                      . Your dataset has been submitted and is pending expert review.
+                    </p>
+                    <Button variant="outline" onClick={resetFlow}>
+                      Upload Another Dataset
+                    </Button>
+                  </motion.div>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

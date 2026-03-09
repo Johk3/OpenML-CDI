@@ -1,7 +1,8 @@
 import React, { useState, useCallback } from 'react';
+import { motion } from 'motion/react';
 import { UploadCloud } from 'lucide-react';
-import { clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { Badge } from './ui/badge';
+import { cn } from '@/lib/utils';
 
 interface FileUploadZoneProps {
   onFileSelect: (file: File) => void;
@@ -33,7 +34,6 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
       e.preventDefault();
       e.stopPropagation();
       setIsDragActive(false);
-
       if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
         onFileSelect(e.dataTransfer.files[0]);
       }
@@ -51,8 +51,13 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
   );
 
   return (
-    <div
-      className={twMerge(clsx('upload-zone', isDragActive && 'active', className))}
+    <motion.div
+      animate={{
+        scale: isDragActive ? 1.02 : 1,
+        borderColor: isDragActive ? 'var(--primary)' : 'inherit',
+      }}
+      transition={{ duration: 0.2 }}
+      className={cn('upload-zone', isDragActive && 'active', className)}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragEnter}
       onDragLeave={handleDragLeave}
@@ -65,16 +70,20 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
         onChange={handleChange}
         title=""
       />
-      <div className="upload-icon-container">
+      <motion.div
+        className="upload-icon-container"
+        animate={{ y: isDragActive ? -5 : 0 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+      >
         <UploadCloud size={40} />
-      </div>
-      <h3 className="upload-title">Drag & Drop your dataset here</h3>
+      </motion.div>
+      <h3 className="upload-title">Drag &amp; Drop your dataset here</h3>
       <p className="upload-subtitle">or click to browse from your computer</p>
       <div className="upload-file-types">
-        <span className="file-badge">CSV</span>
-        <span className="file-badge">JSON</span>
-        <span className="file-badge">ZIP</span>
+        <Badge variant="secondary">CSV</Badge>
+        <Badge variant="secondary">JSON</Badge>
+        <Badge variant="secondary">ZIP</Badge>
       </div>
-    </div>
+    </motion.div>
   );
 };
