@@ -9,6 +9,9 @@ pre-commit
 black
 flake8
 pytest
+pyjwt
+python-multipart
+cryptography
 pytest-cov
 pytest-order
 pytest-xdist

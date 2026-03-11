@@ -11,6 +11,10 @@ test.xml
 .pipx
 frontend/node_modules
 
+#secrets
+app/.env
+
+
 # Database
 app_dev.db
 .local_uploads/
