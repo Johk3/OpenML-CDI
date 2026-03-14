@@ -1,11 +1,12 @@
 name: Tests
 
 on:
-  pull_request:
-    branches: [main]
   workflow_call: 
 
 jobs:
+  lint-and-format:
+    uses: ./.github/workflows/pre-commit.yaml
+
   test-frontend:
     runs-on: ubuntu-latest
 
