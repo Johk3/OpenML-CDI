@@ -4,6 +4,7 @@ import { UploadPage } from '../pages/UploadPage';
 import { MyDatasetsPage } from '../pages/MyDatasetsPage';
 import { LoginPage } from '../pages/LoginPage';
 import { AboutPage } from '../pages/AboutPage';
+import { DatasetDetailPage } from '../pages/DatasetDetailPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { MainLayout } from '../components/MainLayout';
 
@@ -24,6 +25,10 @@ export const routes: RouteObject[] = [
       {
         path: 'datasets',
         element: <MyDatasetsPage />,
+      },
+      {
+        path: 'datasets/:id',
+        element: <DatasetDetailPage />,
       },
       {
         path: 'login',

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import {
   Clock,
@@ -178,73 +179,81 @@ export const MyDatasetsPage: React.FC = () => {
                 key={dataset.id}
                 variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
               >
-                <Card className="flex flex-col h-full group transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 border-border/70">
-                  <CardHeader className="pb-2">
-                    <div className="flex justify-between items-start">
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-primary bg-primary/10 group-hover:bg-primary/15 transition-colors shrink-0">
-                        <Database size={19} />
+                <Link to={`/datasets/${dataset.id}`} className="block h-full">
+                  <Card className="flex flex-col h-full group transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 border-border/70">
+                    <CardHeader className="pb-2">
+                      <div className="flex justify-between items-start">
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center text-primary bg-primary/10 group-hover:bg-primary/15 transition-colors shrink-0">
+                          <Database size={19} />
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <span className="dataset-date flex items-center gap-1">
+                            <Calendar size={11} />
+                            {dataset.date}
+                          </span>
+                          {isExpert && (
+                            <Button
+                              variant="outline"
+                              size="xs"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                alert(`Mock downloading: ${dataset.title}`);
+                              }}
+                            >
+                              <Download size={12} /> Download
+                            </Button>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex flex-col items-end gap-2">
-                        <span className="dataset-date flex items-center gap-1">
-                          <Calendar size={11} />
-                          {dataset.date}
-                        </span>
+                    </CardHeader>
+
+                    <CardContent className="flex flex-col flex-1 gap-2">
+                      <h3 className="dataset-title">{dataset.title}</h3>
+                      <p className="dataset-description">{dataset.description}</p>
+
+                      {dataset.metrics && (
+                        <div className="flex gap-3 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <FileText size={12} />
+                            {dataset.metrics.instances.toLocaleString()} rows
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Database size={12} />
+                            {dataset.metrics.features} cols
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="mt-auto pt-3 border-t border-border/50 flex items-center justify-between gap-3">
+                        <StatusBadge status={dataset.status} />
                         {isExpert && (
-                          <Button
-                            variant="outline"
-                            size="xs"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              alert(`Mock downloading: ${dataset.title}`);
-                            }}
+                          <Select
+                            value={dataset.status}
+                            onValueChange={(val) =>
+                              handleStatusChange(dataset.id, val as DatasetStatus)
+                            }
                           >
-                            <Download size={12} /> Download
-                          </Button>
+                            <SelectTrigger
+                              className="h-7 text-xs w-auto max-w-[160px]"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                              }}
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="ready">Ready for Processing</SelectItem>
+                              <SelectItem value="processing">Processing…</SelectItem>
+                              <SelectItem value="finished">Verified &amp; Published</SelectItem>
+                              <SelectItem value="error">Processing Error</SelectItem>
+                            </SelectContent>
+                          </Select>
                         )}
                       </div>
-                    </div>
-                  </CardHeader>
-
-                  <CardContent className="flex flex-col flex-1 gap-2">
-                    <h3 className="dataset-title">{dataset.title}</h3>
-                    <p className="dataset-description">{dataset.description}</p>
-
-                    {dataset.metrics && (
-                      <div className="flex gap-3 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <FileText size={12} />
-                          {dataset.metrics.instances.toLocaleString()} rows
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Database size={12} />
-                          {dataset.metrics.features} cols
-                        </span>
-                      </div>
-                    )}
-
-                    <div className="mt-auto pt-3 border-t border-border/50 flex items-center justify-between gap-3">
-                      <StatusBadge status={dataset.status} />
-                      {isExpert && (
-                        <Select
-                          value={dataset.status}
-                          onValueChange={(val) =>
-                            handleStatusChange(dataset.id, val as DatasetStatus)
-                          }
-                        >
-                          <SelectTrigger className="h-7 text-xs w-auto max-w-[160px]">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="ready">Ready for Processing</SelectItem>
-                            <SelectItem value="processing">Processing…</SelectItem>
-                            <SelectItem value="finished">Verified &amp; Published</SelectItem>
-                            <SelectItem value="error">Processing Error</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
+                    </CardContent>
+                  </Card>
+                </Link>
               </motion.div>
             ))}
           </motion.div>
