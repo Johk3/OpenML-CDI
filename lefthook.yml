@@ -4,7 +4,7 @@ pre-commit:
   commands:
     # Security
     gitleaks:
-      root: frontend 
+      root: frontend
       run: npx gitleaks-secret-scanner@latest protect --staged --verbose --redact
 
     # Python (FastAPI/Backend)
@@ -12,7 +12,7 @@ pre-commit:
       root: app
       glob: "**/*.py"
       run: pipx run --spec black black {staged_files}
-    
+
     flake8:
       root: app
       glob: "**/*.py"
@@ -22,8 +22,8 @@ pre-commit:
     eslint:
       root: frontend
       glob: "**/*.{js,mjs,cjs,jsx,ts,tsx}"
-      run: npm_config_yes=true npx eslint@10 {staged_files} 
-      
+      run: npm_config_yes=true npx eslint@10 {staged_files}
+
     prettier:
       root: frontend
       glob: "**/*.{js,mjs,cjs,jsx,ts,tsx,css,json,md,yml,yaml}"
@@ -42,3 +42,9 @@ pre-commit:
     prettier-docs:
       glob: "docs/**/*.md"
       run: npm_config_yes=true npx prettier --write {staged_files}
+
+commit-msg:
+  commands:
+    commitlint:
+      root: frontend
+      run: npx --no -- commitlint --edit {1} 

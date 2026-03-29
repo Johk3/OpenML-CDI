@@ -1,0 +1,13 @@
+extends:
+  - '@commitlint/config-conventional'
+
+rules:
+  type-enum: [2, 'always', ['feat', 'fix', 'chore', 'docs', 'test', 'refactor', 'style', 'ci']]
+
+  scope-enum: [2, 'always', ['auth', 'db', 'api', 'frontend', 'github', 'docs', 'tests']]
+
+  scope-empty: [2, 'never']
+
+  # max header length will be 72 + 19 = 91, since longest scope + longest type with makes this: 'refactor(frontend):', which is 19 characters
+  header-max-length: [2, 'always', 91]
+  subject-max-length: [2, 'always', 72]
