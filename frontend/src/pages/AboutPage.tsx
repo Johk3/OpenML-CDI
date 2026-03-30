@@ -33,7 +33,7 @@ export const AboutPage: React.FC = () => {
         </div>
         <div>
           <h1 className="heading-1">About OpenML CDI</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Customer Data Interface · OpenML</p>
+          <p className="text-muted-foreground text-sm mt-0.5">Community Data Interface · OpenML</p>
         </div>
       </div>
 
@@ -41,7 +41,7 @@ export const AboutPage: React.FC = () => {
       <Card className="mb-8 border-border/70">
         <CardContent className="pt-6 text-muted-foreground leading-relaxed space-y-3">
           <p>
-            <strong className="text-foreground">OpenML CDI</strong> (Customer Data Interface) is a
+            <strong className="text-foreground">OpenML CDI</strong> (Community Data Interface) is a
             dedicated portal for contributing machine learning datasets to the OpenML ecosystem.
           </p>
           <p>

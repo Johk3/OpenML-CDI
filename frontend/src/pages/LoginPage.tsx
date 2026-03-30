@@ -10,7 +10,7 @@ export const LoginPage: React.FC = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogin = (role: 'customer' | 'expert') => {
+  const handleLogin = (role: 'user' | 'expert') => {
     login(role);
     navigate('/datasets');
   };
@@ -47,7 +47,7 @@ export const LoginPage: React.FC = () => {
         variants={{ visible: { transition: { staggerChildren: 0.15, delayChildren: 0.2 } } }}
         className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full max-w-2xl"
       >
-        {/* Customer */}
+        {/* User */}
         <motion.div
           variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
           whileHover={{ scale: 1.03 }}
@@ -55,20 +55,20 @@ export const LoginPage: React.FC = () => {
         >
           <Card
             className="cursor-pointer group h-full transition-all duration-200 hover:shadow-lg border-2 hover:border-primary/40"
-            onClick={() => handleLogin('customer')}
+            onClick={() => handleLogin('user')}
           >
             <CardHeader className="items-center text-center pb-3">
               <div className="w-14 h-14 rounded-xl flex items-center justify-center mb-3 bg-muted text-muted-foreground transition-all duration-200 group-hover:bg-primary/10 group-hover:text-primary">
                 <User size={30} />
               </div>
-              <CardTitle className="text-xl">Customer</CardTitle>
+              <CardTitle className="text-xl">User</CardTitle>
               <CardDescription className="text-sm leading-relaxed">
                 Upload new datasets and track the processing status of your past submissions.
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-1">
               <Button className="w-full" size="lg">
-                Continue as Customer
+                Continue as User
               </Button>
             </CardContent>
           </Card>

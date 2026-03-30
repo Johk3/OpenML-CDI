@@ -61,8 +61,8 @@ const fetchDatasetMock = async (id: string): Promise<Dataset> => {
             },
             {
               id: 'c-2',
-              author: 'Customer Aron',
-              role: 'customer',
+              author: 'User Aron',
+              role: 'user',
               text: 'Thanks for the feedback. I will upload a new version with the seats.',
               date: '2026-03-11T09:15:00Z',
             },

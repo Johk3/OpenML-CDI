@@ -16,7 +16,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // Generate a mock user based on the selected role
     const mockUser: User = {
       id: role === 'expert' ? 'exp-1' : 'cus-1',
-      name: role === 'expert' ? 'Expert' : 'Customer',
+      name: role === 'expert' ? 'Expert' : 'User',
       role,
     };
     setUser(mockUser);
