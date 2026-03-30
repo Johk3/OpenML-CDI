@@ -6,6 +6,21 @@ For more information, see [CONTRIBUTING.md](CONTRIBUTING.md).
 install requirements
 run `uvicorn app.main:app --reload` to start server
 
+## Docker
+
+You can also build and run the application as a Docker container:
+
+```bash
+docker build -t openml-upload .
+docker run -d -p 8000:8000 -v openml-data:/data openml-upload
+```
+
+The app will be available at **http://localhost:8000**. A pre-built image is also published to `ghcr.io/ludev/openml-upload:latest` on every push to the default branch.
+
+For full instructions — including environment variables, volume configuration, and production deployment notes — see the [Docker hosting guide](docs/how-to/docker-hosting.md).
+
+
+
 ## Backend storage configuration (Issue #16)
 
 This repository now includes storage foundation infrastructure only.
