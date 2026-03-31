@@ -1,12 +1,15 @@
-from pydantic import BaseModel
-from uuid import UUID
 from datetime import datetime
+from typing import Any
+from uuid import UUID
+
+from pydantic import BaseModel, Field
+
 from app.database.models import Statuses
 
 
 class DatasetBase(BaseModel):
     title: str
-    dataset_metadata: dict = {}
+    dataset_metadata: dict[str, Any] = Field(default_factory=dict)
     owner_id: UUID
     issue_url: str = ""
 
@@ -18,7 +21,19 @@ class DatasetCreate(DatasetBase):
 class Dataset(DatasetBase):
     id: UUID
     created_at: datetime
+    status: Statuses
 
     class Config:
         from_attributes = True
         frozen = True  # no changes
+
+
+class DatasetUploadURLRequest(BaseModel):
+    name: str = Field(..., min_length=1)
+    description: str | dict[str, Any]
+    filename: str = Field(..., min_length=1)
+
+
+class DatasetUploadURLResponse(BaseModel):
+    id: UUID
+    presigned_url: str

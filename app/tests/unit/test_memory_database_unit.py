@@ -6,6 +6,7 @@ from app.database import models
 def test_test_session(db_test_session):
     test_user = models.User(
         email="test@test.com",
+        username="testuser",
         password_hash="testhash",
         first_name="John",
         last_name="Doe",
@@ -22,6 +23,7 @@ def test_test_session(db_test_session):
 
     assert query_user == test_user
     assert query_user.email == "test@test.com"
+    assert query_user.username == "testuser"
     assert query_user.first_name == "John"
     assert query_user.last_name == "Doe"
 

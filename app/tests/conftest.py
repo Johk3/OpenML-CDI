@@ -1,16 +1,26 @@
+import os
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 from app.database import Base
+
+os.environ.setdefault("HASHING_PEPPER", "test-pepper")
+os.environ.setdefault("JWT_SECRET", "test-jwt-secret")
 
 
 @pytest.fixture(scope="function")
 def test_engine():
 
-    # using sqlite in memory for testing
-    DATABASE_URI = "sqlite:///:memory:"
+    # Share one in-memory SQLite database across the app thread and test thread.
+    DATABASE_URI = "sqlite://"
 
-    engine = create_engine(DATABASE_URI, connect_args={"check_same_thread": False})
+    engine = create_engine(
+        DATABASE_URI,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
 
     # creating the database from our defined Base in app.database
     Base.metadata.create_all(engine)

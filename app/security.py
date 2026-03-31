@@ -59,7 +59,7 @@ def verify_hash(stored_hash: str, password: str) -> bool:
     except (
         ArgonExceptions.VerifyMismatchError,
         ArgonExceptions.VerificationError,
-        ArgonExceptions.InvalidHashError,
+        ArgonExceptions.InvalidHash,
     ):
         return False
     return is_valid

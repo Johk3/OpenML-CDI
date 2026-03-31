@@ -3,8 +3,14 @@ import os
 
 STORAGE_BACKEND_ENV = "STORAGE_BACKEND"
 LOCAL_UPLOAD_DIR_ENV = "LOCAL_UPLOAD_DIR"
+UPLOAD_TARGET_ENV = "UPLOAD_TARGET"
+UPLOAD_LOCATION_ENV = "UPLOAD_LOCATION"
+UPLOAD_URL_EXPIRES_SECONDS_ENV = "UPLOAD_URL_EXPIRES_SECONDS"
 DEFAULT_STORAGE_BACKEND = "local"
-DEFAULT_LOCAL_UPLOAD_DIR = "./data/local_uploads"
+DEFAULT_LOCAL_UPLOAD_DIR = ".local_uploads"
+DEFAULT_UPLOAD_TARGET = "uploads"
+DEFAULT_UPLOAD_LOCATION = "default"
+DEFAULT_UPLOAD_URL_EXPIRES_SECONDS = 3600
 SUPPORTED_STORAGE_BACKENDS = {"local"}
 DEFAULT_EMAIL_BACKEND = "console"
 DEFAULT_EMAIL_FROM = "noreply@example.com"
@@ -80,10 +86,44 @@ class EmailSettings:
 
 
 @dataclass(frozen=True)
+class UploadURLSettings:
+    target: str = DEFAULT_UPLOAD_TARGET
+    location: str = DEFAULT_UPLOAD_LOCATION
+    expires_seconds: int = DEFAULT_UPLOAD_URL_EXPIRES_SECONDS
+
+    @classmethod
+    def from_env(cls) -> "UploadURLSettings":
+        raw_target = os.getenv(UPLOAD_TARGET_ENV, DEFAULT_UPLOAD_TARGET)
+        target = raw_target.strip() or DEFAULT_UPLOAD_TARGET
+
+        raw_location = os.getenv(UPLOAD_LOCATION_ENV, DEFAULT_UPLOAD_LOCATION)
+        location = raw_location.strip() or DEFAULT_UPLOAD_LOCATION
+
+        raw_expiry = os.getenv(
+            UPLOAD_URL_EXPIRES_SECONDS_ENV,
+            str(DEFAULT_UPLOAD_URL_EXPIRES_SECONDS),
+        )
+        try:
+            expires_seconds = int(raw_expiry.strip())
+        except ValueError as error:
+            raise ValueError("UPLOAD_URL_EXPIRES_SECONDS must be an integer") from error
+
+        if expires_seconds <= 0:
+            raise ValueError("UPLOAD_URL_EXPIRES_SECONDS must be > 0")
+
+        return cls(
+            target=target,
+            location=location,
+            expires_seconds=expires_seconds,
+        )
+
+
+@dataclass(frozen=True)
 class Settings:
     # Group settings by domain so config stays centralized and maintainable.
     storage: StorageSettings
     email: EmailSettings
+    upload: UploadURLSettings
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -91,4 +131,5 @@ class Settings:
         return cls(
             storage=StorageSettings.from_env(),
             email=EmailSettings.from_env(),
+            upload=UploadURLSettings.from_env(),
         )

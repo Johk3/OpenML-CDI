@@ -1,14 +1,70 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.schemas.datasets import Dataset, DatasetCreate, Statuses
+from app.schemas.datasets import (
+    Dataset,
+    DatasetCreate,
+    DatasetUploadURLRequest,
+    DatasetUploadURLResponse,
+    Statuses,
+)
 from app.schemas.users import User, Roles
 from app.security import get_current_active_user
 from app.crud import dataset as dataset_crud
+from app.database.models import Dataset as DatasetModel
+from app.services.presign import generate_presigned_put_url
 import uuid
 from typing import Annotated
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
+
+
+@router.post(
+    "/upload-url",
+    response_model=DatasetUploadURLResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_upload_url(
+    payload: DatasetUploadURLRequest,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Session = Depends(get_db),
+) -> DatasetUploadURLResponse:
+    settings = request.app.state.settings
+
+    if isinstance(payload.description, dict):
+        dataset_metadata = dict(payload.description)
+    else:
+        dataset_metadata = {"description": payload.description}
+    dataset_metadata["filename"] = payload.filename
+
+    dataset = DatasetModel(
+        title=payload.name,
+        dataset_metadata=dataset_metadata,
+        owner_id=current_user.id,
+        status=Statuses.PENDING,
+    )
+
+    try:
+        db.add(dataset)
+        db.commit()
+        db.refresh(dataset)
+    except SQLAlchemyError as error:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create dataset record",
+        ) from error
+
+    presigned_url = generate_presigned_put_url(
+        payload.filename,
+        bucket_name=settings.upload.target,
+        region_name=settings.upload.location,
+        expires_in_seconds=settings.upload.expires_seconds,
+    )
+
+    return DatasetUploadURLResponse(id=dataset.id, presigned_url=presigned_url)
 
 
 @router.post("/create", response_model=Dataset)

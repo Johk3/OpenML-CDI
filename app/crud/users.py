@@ -245,11 +245,11 @@ def get_family_name(db: Session, family_id: uuid.UUID) -> str:
 
 def get_families(db: Session, user_id: uuid.UUID) -> list[uuid.UUID]:
     db_families = (
-        db.query(models.RefreshToken)
+        db.query(models.RefreshToken.family_id)
         .filter(models.RefreshToken.owner_id == user_id)
         .distinct()
         .all()
     )
     if not db_families:
         return []
-    return [family.family_id for family in db_families]
+    return [family_id for (family_id,) in db_families]
