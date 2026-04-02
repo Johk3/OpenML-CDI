@@ -55,3 +55,6 @@ dist/
 *.njsproj
 *.sln
 *.sw?
+
+#SOP
+.env

@@ -1,0 +1,10 @@
+creation_rules:
+  - path_regex: \.env
+    age:  >-
+      age1f8kpu6mqqsm48vj4ermwhmzp5c4n5wm6an2lrc8jwghpsqlqgdnqr58l0k,
+      age174mec4nryvjlm0z0e8324eumrq6ndh2mf9n3m20gm3r0xuuv9g0sfsk7fa,
+      age1ed00dj3wtla62nqr8zx9er560735fcjpq43t2y0wgrrvfz58h5sq4vvgkq,
+      age1gyf3waq6prpyfz8taulxf77ptl6d94uzsxrv9z57tszv3rr23yss0l8vdj,
+      age1p345jzmxg68ycqsvl73sl8gzn75x0euvwxkaklyzjhggq3dql9rqcnw50s,
+      age1st3ajt65nvkctakfa8esp8mgy88g3edlgvxcn4z68c524fk5d47qp9p9re,
+      age1d6w04e9872ma6dwc0rxhd40ejz0sgfjdgnwgq8czurrvxkfzwg0qp7dtve
