@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, Cookie
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas.auth import RegisterRequest, RegisterResponse
@@ -10,6 +10,7 @@ from app.crud.users import (
     get_user_model_by_identifier,
     verify_jti,
     get_families,
+    get_user_by_email,
 )
 from app.crud.users import revoke_family as revoke_family_crud
 from app.services.email import EmailDeliveryError
@@ -23,6 +24,23 @@ from typing import Annotated
 from app.schemas.users import User
 from app.security import get_current_active_user
 import uuid
+import os
+from requests_oauthlib import OAuth2Session
+from dotenv import load_dotenv
+
+load_dotenv()
+
+GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
+if GITHUB_CLIENT_ID == "":
+    raise HTTPException(status_code=500, detail="Github Client ID not provided")
+
+GITHUB_SECRET = os.getenv("GITHUB_SECRET", "")
+if GITHUB_SECRET == "":
+    raise HTTPException(status_code=500, detail="Github secret not provided")
+
+GITHUB_REDIRECT = os.getenv("GITHUB_REDIRECT", "")
+if GITHUB_REDIRECT == "":
+    raise HTTPException(status_code=500, detail="Github redirect url not provided")
 
 router = APIRouter(tags=["auth"])
 
@@ -101,12 +119,11 @@ def register(
     try:
         return register_user(
             db=db,
-            request=register_request,
-            email_sender=request.app.state.email_sender,
-            app_base_url=request.app.state.settings.email.app_base_url,
-            verification_ttl_hours=(
-                request.app.state.settings.email.verification_ttl_hours
-            ),
+            email=register_request.email,
+            username=register_request.username,
+            first_name=register_request.first_name,
+            last_name=register_request.last_name,
+            password=register_request.password,
         )
     except RegistrationValidationError as exc:
         return JSONResponse(
@@ -190,3 +207,116 @@ def revoke_family(
         if family_id_owner and family_id_owner.id == current_user.id:
             revoke_family_crud(db, family_id)
     return {"status_code": 200, "message": "Succesfully revoked sessions."}
+
+
+@router.get("/auth/github/login")
+def github_login():
+    github = OAuth2Session(
+        GITHUB_CLIENT_ID,
+        redirect_uri=GITHUB_REDIRECT,
+        scope=["read:user", "user:email"],
+    )
+    authorization_url, state = github.authorization_url(
+        "https://github.com/login/oauth/authorize"
+    )
+    response = RedirectResponse(authorization_url)
+    response.set_cookie(
+        key="oauth_state",
+        value=state,
+        httponly=True,
+        secure=False,  # Set to True in production (HTTPS)
+        max_age=600,
+    )
+    return response
+
+
+@router.get("/auth/me", response_model=User)
+def get_user(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """
+    Get current user.
+    """
+    return current_user
+
+
+@router.get("/auth/github/callback")
+def auth_github_callback(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    saved_state = request.cookies.get("oauth_state")
+    if not saved_state:
+        raise HTTPException(status_code=400, detail="State missing or expired.")
+    github = OAuth2Session(GITHUB_CLIENT_ID, state=saved_state)
+    try:
+        github.fetch_token(
+            "https://github.com/login/oauth/access_token",
+            client_secret=GITHUB_SECRET,
+            authorization_response=str(request.url),
+        )
+    except Exception as e:
+        print(f"Callback error {e}")
+        raise HTTPException(status_code=400, detail="Authentication failed.")
+    emails_response = github.get("https://api.github.com/user/emails")
+    if emails_response.status_code != 200:
+        raise HTTPException(
+            status_code=400, detail="Failed to fetch emails from github"
+        )
+    emails_data = emails_response.json()
+
+    primary_email = None
+    for email_obj in emails_data:
+        if email_obj.get("primary") and email_obj.get("verified"):
+            primary_email = email_obj.get("email")
+            break
+    if not primary_email:
+        raise HTTPException(status_code=400, detail="No verified primary email found")
+    response.delete_cookie(
+        key="oauth_state",
+        httponly=True,
+        secure=False,  # Set to True in production (HTTPS)
+    )
+
+    user = get_user_by_email(db, primary_email)
+    if not user:
+        user_response = github.get("https://api.github.com/user")
+        if user_response.status_code != 200:
+            raise HTTPException(
+                status_code=400, detail="Failed to fetch user profile from github"
+            )
+
+        user_data = user_response.json()
+        username = user_data.get(
+            "login"
+        )  # they can change the username in their profile
+        # if they do not want gh username
+        full_name = user_data.get("name") or ""
+
+        name_parts = full_name.strip().split(" ", 1)
+        first_name = name_parts[0] if name_parts[0] else ""
+        last_name = name_parts[1] if len(name_parts) > 1 else ""
+        register_user(
+            db=db,
+            email=primary_email,
+            username=username,
+            first_name=first_name,
+            last_name=last_name,
+        )
+        user = get_user_by_email(db, primary_email)
+        if not user:
+            raise HTTPException(status_code=500, detail="Failed to register user")
+    access_token, new_refresh_token = create_tokens(user.id, db)
+    response.set_cookie(
+        key="refresh_token",
+        value=new_refresh_token,
+        httponly=True,
+        secure=False,
+        samesite="strict",
+        path="/auth/refresh",
+    )
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+    }

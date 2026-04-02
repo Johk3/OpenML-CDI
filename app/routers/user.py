@@ -13,7 +13,7 @@ from app.crud.users import get_family_name as get_family_name_crud
 router = APIRouter(prefix="/user", tags=["user"])
 
 
-@router.post("/get", response_model=User)
+@router.get("/get", response_model=User)
 def get_user(
     user_id: uuid.UUID,
     db: Session = Depends(get_db),
