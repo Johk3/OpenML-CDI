@@ -11,13 +11,16 @@ export interface CroissantFieldDef {
   placeholder?: string;
   options?: string[];
   helperText: string;
+  pattern?: string;
+  patternMessage?: string;
+  isJson?: boolean;
 }
 
 export interface GeneratedFieldDef {
   id: string;
   label: string;
   section: FieldSection;
-  value: string | string[];
+  value: string | string[] | Record<string, unknown>;
   condition?: string;
   helperText: string;
 }

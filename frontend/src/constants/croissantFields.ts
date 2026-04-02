@@ -6,7 +6,44 @@ export const CROISSANT_GENERATED_FIELDS: GeneratedFieldDef[] = [
     id: '@context',
     label: 'JSON-LD Context',
     section: 'dataset',
-    value: 'https://mlcommons.org/croissant/1.1',
+    value: {
+      '@language': 'en',
+      '@vocab': 'https://schema.org/',
+      citeAs: 'cr:citeAs',
+      column: 'cr:column',
+      conformsTo: 'dct:conformsTo',
+      cr: 'http://mlcommons.org/croissant/',
+      data: { '@id': 'cr:data', '@type': '@json' },
+      dataBiases: 'cr:dataBiases',
+      dataCollection: 'cr:dataCollection',
+      dataType: { '@id': 'cr:dataType', '@type': '@vocab' },
+      dct: 'http://purl.org/dc/terms/',
+      extract: 'cr:extract',
+      field: 'cr:field',
+      fileProperty: 'cr:fileProperty',
+      fileObject: 'cr:fileObject',
+      fileSet: 'cr:fileSet',
+      format: 'cr:format',
+      includes: 'cr:includes',
+      isLiveDataset: 'cr:isLiveDataset',
+      jsonPath: 'cr:jsonPath',
+      key: 'cr:key',
+      md5: 'cr:md5',
+      parentField: 'cr:parentField',
+      path: 'cr:path',
+      personalSensitiveInformation: 'cr:personalSensitiveInformation',
+      rai: 'http://mlcommons.org/croissant/RAI/',
+      recordSet: 'cr:recordSet',
+      references: 'cr:references',
+      regex: 'cr:regex',
+      repeated: 'cr:repeated',
+      replace: 'cr:replace',
+      sc: 'https://schema.org/',
+      separator: 'cr:separator',
+      source: 'cr:source',
+      subField: 'cr:subField',
+      transform: 'cr:transform',
+    } as Record<string, unknown>,
     helperText:
       'Sets the JSON-LD vocabulary: schema.org, Croissant (cr:), RAI (rai:), and Dublin Core (dct:).',
   },
@@ -18,20 +55,11 @@ export const CROISSANT_GENERATED_FIELDS: GeneratedFieldDef[] = [
     helperText: 'Always "sc:Dataset" for a Croissant file.',
   },
   {
-    id: 'conformsTo.core',
+    id: 'conformsTo',
     label: 'Croissant Version',
     section: 'dataset',
     value: 'http://mlcommons.org/croissant/1.1',
     helperText: 'Declares conformance to Croissant 1.1.',
-  },
-  {
-    id: 'conformsTo.rai',
-    label: 'RAI Extension',
-    section: 'dataset',
-    value: 'http://mlcommons.org/croissant/RAI/1.0',
-    condition: 'rai-fields-present',
-    helperText:
-      'Emitted only when RAI fields are filled. Declares conformance to the Croissant RAI extension.',
   },
 ];
 
@@ -44,9 +72,11 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     section: 'dataset',
     inputType: 'text',
     required: true,
-    placeholder: 'my-awesome-dataset',
+    placeholder: 'madoff-airlines-dataset',
     helperText:
       'A unique identifier for your dataset. Lowercase letters, hyphens, or underscores. No spaces.',
+    pattern: '^[-a-zA-Z0-9_]+$',
+    patternMessage: 'Must only contain letters, numbers, hyphens, and underscores.',
   },
   {
     id: 'description',
@@ -123,7 +153,7 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     section: 'dataset',
     inputType: 'text',
     required: false,
-    placeholder: 'Acme Research Institute',
+    placeholder: 'Madoff Research Institute',
     helperText: 'The organization that published this dataset, if different from the creator(s).',
   },
   {
@@ -162,6 +192,8 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     placeholder: 'en',
     helperText:
       'The language of the dataset content as a BCP-47 code (e.g. "en", "de", "zh-Hans"). Skip if the data has no natural language content.',
+    pattern: '^[a-zA-Z]{2,3}(-[a-zA-Z0-9]+)*$',
+    patternMessage: 'Must be a valid BCP-47 language tag (e.g. en, en-US, zh-Hans).',
   },
   {
     id: 'citation',
@@ -179,7 +211,7 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     section: 'dataset',
     inputType: 'multi-text',
     required: false,
-    placeholder: 'European Research Council',
+    placeholder: 'Madoff Research Council',
     helperText: 'Organizations or people who funded the creation of this dataset.',
   },
   {
@@ -191,6 +223,8 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     placeholder: '2020-01-01/2023-12-31',
     helperText:
       'The time period the data covers, in ISO 8601 interval format. Use a single date if collected on one day.',
+    pattern: '^\\d{4}(-\\d{2}(-\\d{2})?)?(/\\d{4}(-\\d{2}(-\\d{2})?)?)?$',
+    patternMessage: 'Must be a valid ISO 8601 date or time interval (e.g. YYYY-MM-DD/YYYY-MM-DD).',
   },
   {
     id: 'spatialCoverage',
@@ -314,6 +348,8 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     placeholder: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
     helperText:
       'The SHA-256 checksum of this file. Tools use it to verify the download is intact. Generate with `sha256sum <file>`.',
+    pattern: '^[A-Fa-f0-9]{64}$',
+    patternMessage: 'Must be exactly 64 hexadecimal characters.',
   },
   {
     id: 'distribution.md5',
@@ -324,6 +360,8 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     placeholder: 'd8e8fca2dc0f896fd7cb4cb0031ba249',
     helperText:
       'The MD5 checksum of this file. SHA-256 is preferred, but MD5 is supported for legacy compatibility.',
+    pattern: '^[A-Fa-f0-9]{32}$',
+    patternMessage: 'Must be exactly 32 hexadecimal characters.',
   },
   {
     id: 'distribution.contentSize',
@@ -465,6 +503,7 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     placeholder: '{"count": 50000, "format": "COCO"}',
     helperText:
       'Machine-readable annotations about this record set, such as descriptive statistics. JSON format is recommended.',
+    isJson: true,
   },
 
   // ── field: identity and type ──────────────────────────────────────────────
@@ -562,6 +601,7 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     placeholder: '{"min": 0, "max": 120, "mean": 34.2}',
     helperText:
       'Machine-readable annotations about this field, such as descriptive statistics. JSON format is recommended.',
+    isJson: true,
   },
 
   // ── field: source reference ───────────────────────────────────────────────
@@ -880,7 +920,7 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     section: 'rai',
     inputType: 'multi-text',
     required: false,
-    placeholder: 'GPT-4, spaCy NER',
+    placeholder: 'GPT-5, Grok',
     helperText:
       'Any automated or machine-learning tools used to assist or produce annotations. List tool names and versions where possible.',
   },

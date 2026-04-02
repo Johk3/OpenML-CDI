@@ -6,10 +6,12 @@ import { CheckCircle, FileText, ArrowRight, Upload } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
+import { useNavigate } from 'react-router-dom';
 
 type UploadState = 'idle' | 'contact' | 'uploading' | 'success';
 
 export const UploadPage: React.FC = () => {
+  const navigate = useNavigate();
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
@@ -27,13 +29,12 @@ export const UploadPage: React.FC = () => {
   const handleContactSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setUploadState('uploading');
-    setTimeout(() => setUploadState('success'), 2000);
-  };
-
-  const resetFlow = () => {
-    setSelectedFile(null);
-    setContactDetails({ firstName: '', lastName: '', email: '' });
-    setUploadState('idle');
+    setTimeout(() => {
+      setUploadState('success');
+      setTimeout(() => {
+        navigate('/metadata');
+      }, 2000);
+    }, 2000);
   };
 
   return (
@@ -190,16 +191,14 @@ export const UploadPage: React.FC = () => {
                       <CheckCircle size={40} className="text-green-600 dark:text-green-400" />
                     </motion.div>
                     <h2 className="heading-2 mb-2">Upload Complete!</h2>
-                    <p className="text-muted-foreground text-sm mb-8 max-w-xs">
+                    <p className="text-muted-foreground text-sm mb-6 max-w-xs">
                       Thank you,{' '}
                       <span className="font-semibold text-foreground">
                         {contactDetails.firstName}
                       </span>
-                      . Your dataset has been submitted and is pending expert review.
+                      . Preparing the metadata form...
                     </p>
-                    <Button variant="outline" onClick={resetFlow}>
-                      Upload Another Dataset
-                    </Button>
+                    <div className="w-6 h-6 rounded-full border-2 border-muted border-t-primary animate-spin" />
                   </motion.div>
                 )}
               </CardContent>

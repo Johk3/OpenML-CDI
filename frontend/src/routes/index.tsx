@@ -7,6 +7,7 @@ import { AboutPage } from '../pages/AboutPage';
 import { DatasetDetailPage } from '../pages/DatasetDetailPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { MainLayout } from '../components/MainLayout';
+import { CroissantMetadataPage } from '../pages/CroissantMetadataPage';
 
 export const routes: RouteObject[] = [
   {
@@ -37,6 +38,10 @@ export const routes: RouteObject[] = [
       {
         path: 'about',
         element: <AboutPage />,
+      },
+      {
+        path: 'metadata',
+        element: <CroissantMetadataPage />,
       },
       {
         path: '*',
