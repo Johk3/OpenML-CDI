@@ -221,3 +221,9 @@ You are, of course, free to choose a different stack if it better fits your proj
 - Maven or Gradle
   https://maven.apache.org/guides
   https://docs.gradle.org
+
+---
+
+# Credits / Third-party libraries
+
+This project builds oSn a number of open-source libraries and tools across the backend, frontend, and tooling. See [docs/references/credits.md](docs/references/credits.md) for the full list with descriptions and links.
