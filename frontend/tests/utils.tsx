@@ -3,9 +3,9 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { routes } from '../src/routes';
 
 export const navigateTo = (path: string) => {
-  const rotuer = createMemoryRouter(routes, {
+  const router = createMemoryRouter(routes, {
     initialEntries: [path],
   });
 
-  render(<RouterProvider router={rotuer} />);
+  render(<RouterProvider router={router} />);
 };
