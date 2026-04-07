@@ -6,12 +6,15 @@ import { CheckCircle, FileText, ArrowRight, Upload } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 type UploadState = 'idle' | 'contact' | 'uploading' | 'success';
 
 export const UploadPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { user } = useAuth();
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
@@ -22,6 +25,10 @@ export const UploadPage: React.FC = () => {
   });
 
   const handleFileSelect = (file: File) => {
+    if (!user) {
+      navigate('/login', { state: { from: location } });
+      return;
+    }
     setSelectedFile(file);
     setUploadState('contact');
   };

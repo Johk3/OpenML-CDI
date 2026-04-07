@@ -8,6 +8,7 @@ import { DatasetDetailPage } from '../pages/DatasetDetailPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { MainLayout } from '../components/MainLayout';
 import { CroissantMetadataPage } from '../pages/CroissantMetadataPage';
+import { ProtectedRoute } from '../components/ProtectedRoute';
 
 export const routes: RouteObject[] = [
   {
@@ -41,7 +42,11 @@ export const routes: RouteObject[] = [
       },
       {
         path: 'metadata',
-        element: <CroissantMetadataPage />,
+        element: (
+          <ProtectedRoute>
+            <CroissantMetadataPage />
+          </ProtectedRoute>
+        ),
       },
       {
         path: '*',
