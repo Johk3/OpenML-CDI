@@ -1,5 +1,15 @@
 # Backend Testing Environment Guide
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Prerequisites](#prerequisites)
+- [Running tests](#running-tests)
+- [Project Structure](#project-structure)
+- [Writing tests](#writing-tests)
+- [Coverage](#coverage)
+- [CI/CD](#cicd)
+
 ## Overview
 
 This backend testing environment provides a simple way to create and use in memory databases for unit and integration tests. This exists so that testing is not done on the development databases.
@@ -116,3 +126,9 @@ The pytest.ini has --cov-fail-under=80, meaning tests fail if less than 80% of t
 ## CI/CD
 
 The environment outputs a test.xml file, this can later be parsed by a other CI tools.
+
+---
+
+**Related:** [Testing Guide](./testing.md) | [Unit Testing Guide](./unit-test.md) | [Integration Testing Guide](./integration-test.md) | [CI Pipeline](./CI-pipeline.md)
+
+[← Back to documentation index](../index.md)

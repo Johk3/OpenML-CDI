@@ -2,6 +2,8 @@
 Please follow the projects guidelines on contributing.
 For more information, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
+For guides on testing, CI, code reviews, and more, see the [documentation index](docs/index.md).
+
 # How to run
 install requirements
 run `uvicorn app.main:app --reload` to start server

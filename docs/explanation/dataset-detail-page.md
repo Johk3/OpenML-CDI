@@ -1,5 +1,12 @@
 # Dataset Detail Page
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Routing and Navigation](#routing-and-navigation)
+- [Data Types](#data-types)
+- [Testing](#testing)
+
 ## Overview
 
 The dataset detail page allows users to view information about an uploaded dataset. This includes basic details, Croissant metadata, and associated user/expert comments.
@@ -22,3 +29,9 @@ The associated mock interfaces for this functionality are located in `src/types/
 ## Testing
 
 Unit tests for this page can be found in `tests/unit/DatasetDetailPage.test.tsx`.
+
+---
+
+**Related:** [Frontend Routing](../reference/routing.md) | [Frontend Testing Reference](../reference/fontend-testing.md)
+
+[← Back to documentation index](../index.md)

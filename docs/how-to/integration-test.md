@@ -1,5 +1,17 @@
 # 🔗 Integration testing guide
 
+## Table of Contents
+
+- [What counts as an integration test here?](#-what-counts-as-an-integration-test-here)
+- [Keep scope realistic (but not huge)](#-keep-scope-realistic-but-not-huge)
+- [External dependencies (DB / network / queues)](#-external-dependencies-db--network--queues)
+- [Making integration tests stable (no flakiness)](#️-making-integration-tests-stable-no-flakiness)
+- [Recommended structure (AAA still applies)](#-recommended-structure-aaa-still-applies)
+- [Minimal example outline (pseudocode)](#-minimal-example-outline-pseudocode)
+- [Where integration tests live](#️-where-integration-tests-live)
+- [Pre-PR checklist](#-pre-pr-checklist-integration-tests)
+- [Related guides](#-related-guides)
+
 This is a how-to guide for writing **integration tests** in this repo (practical “how”).  
 For definitions and choosing the right test type, see [`testing.md`](./testing.md).  
 For isolated logic tests, see [`unit-test.md`](./unit-test.md).
@@ -167,3 +179,8 @@ Keep helpers small and straightforward (so contributors can understand them quic
 - [General testing guide](./testing.md)
 - [Unit testing guide](./unit-test.md)
 - [End-to-end testing guide](./e2e-test.md)
+- [Backend Testing Environment](./testing_backend_environment.md)
+
+---
+
+[← Back to documentation index](../index.md)

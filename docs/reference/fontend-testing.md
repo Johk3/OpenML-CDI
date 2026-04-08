@@ -1,5 +1,15 @@
 # Testing Reference
 
+## Table of Contents
+
+- [Important links](#important-links)
+- [Test Directory Structure](#test-directory-structure)
+- [Shared Test Files](#shared-test-files)
+- [Suggested Naming Conventions](#suggested-naming-conventions)
+- [Running Tests](#running-tests)
+- [Recommended Working Model](#recommended-working-model)
+- [Example Future Structure](#example-future-structure)
+
 ## Important links
 
 To be able to test rendering we use the react test library. In order to find elements in the DOM the package includes some useful queries
@@ -230,3 +240,9 @@ tests/
 ```
 
 This keeps the current centralized testing approach while making the purpose of each area clear.
+
+---
+
+**Related:** [Testing Guide](../how-to/testing.md) | [Unit Testing Guide](../how-to/unit-test.md) | [Integration Testing Guide](../how-to/integration-test.md)
+
+[← Back to documentation index](../index.md)

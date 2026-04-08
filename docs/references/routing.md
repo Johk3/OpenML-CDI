@@ -58,6 +58,6 @@ Navigating to any path not explicitly defined in the `children` array will fallb
 
 ---
 
-**Related:** [Dataset Detail Page](./dataset-detail-page.md) | [Frontend Testing Reference](./fontend-testing.md)
+> **Note:** This file is a duplicate of [`reference/routing.md`](../reference/routing.md).
 
 [← Back to documentation index](../index.md)

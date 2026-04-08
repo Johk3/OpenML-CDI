@@ -1,5 +1,13 @@
 # Pull Request Size Guidelines
 
+## Table of Contents
+
+- [The Golden Rules](#the-golden-rules)
+- [Why Small PRs Matter](#why-small-prs-matter)
+- [Separate Refactoring from Features](#separate-refactoring-from-features)
+- [Stack Your PRs](#stack-your-prs)
+- [What if a PR must be large?](#what-if-a-pr-must-be-large)
+
 In our project, we aim to keep Pull Requests (PRs) **small and focused**.
 
 Research shows that reviewing more than 400 lines of code at once causes the reviewer's attention to drop off significantly, leading to missed bugs and superficial "Looks Good To Me" (LGTM) reviews.
@@ -37,3 +45,9 @@ Sometimes, large PRs are unavoidable (e.g., initial project setup or installing 
 - Warn the team in Whatsapp before requesting a review.
 - Write a highly detailed PR description.
 - Leave inline comments on your own code explaining _why_ you made certain decisions, guiding the reviewer through the massive file changes.
+
+---
+
+**Related:** [How to Do a Code Review](./code-reviews.md) | [How to Write a Commit Message](./commit-messages.md)
+
+[← Back to documentation index](../index.md)

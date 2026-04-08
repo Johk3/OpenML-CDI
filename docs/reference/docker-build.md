@@ -1,5 +1,13 @@
 # Docker image build & publish
 
+## Table of Contents
+
+- [Image name](#image-name)
+- [When it publishes](#when-it-publishes)
+- [Tagging scheme](#tagging-scheme)
+- [Local testing notes](#local-testing-notes)
+- [Troubleshooting](#troubleshooting)
+
 This repository publishes a container image to GitHub Container Registry (GHCR).
 
 ## Image name
@@ -40,3 +48,9 @@ Pushing to GHCR from a local runner may require extra auth setup and may not beh
 If you see “tag is needed when pushing to registry”, it usually means your workflow produced zero tags; ensure your tagging rules always yield at least one tag (e.g., sha) for any triggering event.
 
 If you see permission/scope errors, verify the workflow job has packages: write and that repository Actions permissions allow write access.
+
+---
+
+**Related:** [CI Pipeline](../how-to/CI-pipeline.md)
+
+[← Back to documentation index](../index.md)

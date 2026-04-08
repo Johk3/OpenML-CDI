@@ -1,5 +1,16 @@
 # Testing guide
 
+## Table of Contents
+
+- [Goals of our testing strategy](#goals-of-our-testing-strategy)
+- [Test types](#test-types)
+- [When to write which test](#when-to-write-which-test)
+- [What belongs in / out of scope for each type](#-what-belongs-in--out-of-scope-for-each-type)
+- [Choosing the right test type](#-choosing-the-right-test-type)
+- [Expectations for pull requests](#expectations-for-pull-requests)
+- [Where tests live in this repo](#where-tests-live-in-this-repo)
+- [Related documentation](#related-documentation)
+
 This guide explains the different kinds of tests in this repository, when to use each, and how they fit together. It links to more detailed how-to guides for each test type.
 
 > [!TIP]
@@ -229,3 +240,9 @@ Each guide explains the expected structure and naming conventions for that test 
 - [Unit testing guide](./unit-test.md)
 - [Integration testing guide](./integration-test.md)
 - [End-to-end testing guide](./e2e-test.md)
+- [Backend Testing Environment](./testing_backend_environment.md) – pytest fixtures, in-memory DB, and coverage setup
+- [CI Pipeline](./CI-pipeline.md) – pre-commit checks that run your tests automatically
+
+---
+
+[← Back to documentation index](../index.md)

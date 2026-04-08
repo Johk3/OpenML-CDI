@@ -1,5 +1,14 @@
 # How to Write a Commit Message
 
+## Table of Contents
+
+- [Types](#types)
+- [Scope](#scope)
+- [Short Description Rules](#short-description-rules)
+- [Examples](#examples)
+- [Commit Size](#commit-size)
+- [Quick Checklist Before Committing](#quick-checklist-before-committing)
+
 This project follows the [Conventional Commits](https://www.conventionalcommits.org/) standard.
 Every commit message must follow this format:
 
@@ -117,3 +126,9 @@ feat(db): create User model with email, password_hash, and role fields
 - [ ] If the change is complex, did I add a body with bullet points?
 - [ ] Does this commit represent **one** logical change only?
 - [ ] Have I removed all debug prints, `console.log` statements, and commented-out
+
+---
+
+**Related:** [CI Pipeline](./CI-pipeline.md) | [Pull Request Size Guidelines](./pull-request-size.md)
+
+[← Back to documentation index](../index.md)

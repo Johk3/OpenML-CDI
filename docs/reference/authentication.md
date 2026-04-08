@@ -1,5 +1,14 @@
 # Authentication guide
 
+## Table of Contents
+
+- [Endpoints](#endpoints)
+  - [POST /auth/register](#post-authregister)
+  - [POST /auth/token](#post-authtoken)
+  - [POST /auth/refresh](#post-authrefresh)
+- [Protect Routes](#protect-routes)
+- [Environment variables](#environment-variables)
+
 This document describes the current backend authentication endpoints and the
 new registration flow.
 
@@ -150,3 +159,9 @@ Registration and email delivery use the following settings:
 
 When `EMAIL_BACKEND=console`, verification links are printed locally instead of
 being sent through SMTP.
+
+---
+
+**Related:** [Backend Testing Environment](../how-to/testing_backend_environment.md)
+
+[← Back to documentation index](../index.md)

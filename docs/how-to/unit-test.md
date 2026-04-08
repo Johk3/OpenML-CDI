@@ -1,5 +1,16 @@
 # 🧪 Unit testing guide
 
+## Table of Contents
+
+- [What counts as a unit test here?](#-what-counts-as-a-unit-test-here)
+- [Characteristics of good unit tests](#-characteristics-of-good-unit-tests)
+- [Recommended structure: Arrange / Act / Assert (AAA)](#-recommended-structure-arrange--act--assert-aaa)
+- [What to mock (and what not to)](#what-to-mock-and-what-not-to)
+- [Examples](#examples)
+- [Reliability rules (avoid flaky tests)](#️-reliability-rules-avoid-flaky-tests)
+- [Pre-PR checklist](#-pre-pr-checklist-unit-tests)
+- [Related guides](#-related-guides)
+
 This is a how-to guide for writing **unit tests** in this repo (practical “how”, not deep theory).  
 For definitions and “which test type should I write?”, see [`testing.md`](./testing.md).
 
@@ -254,3 +265,8 @@ it("creates a user with deterministic id and timestamp", async () => {
 - [General testing guide](./testing.md)
 - [Integration testing guide](./integration-test.md)
 - [End-to-end testing guide](./e2e-test.md)
+- [Backend Testing Environment](./testing_backend_environment.md)
+
+---
+
+[← Back to documentation index](../index.md)

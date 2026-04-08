@@ -1,5 +1,15 @@
 # 🌐 End-to-end (E2E) testing guide
 
+## Table of Contents
+
+- [What counts as an E2E test here?](#-what-counts-as-an-e2e-test-here)
+- [Scope and strategy: Less is more](#-scope-and-strategy-less-is-more)
+- [Test data: Setup and cleanup](#-test-data-setup-and-cleanup)
+- [Avoiding flaky tests](#️-avoiding-flaky-tests)
+- [Minimal example outline (pseudocode)](#-minimal-example-outline-pseudocode)
+- [Pre-PR checklist](#-pre-pr-checklist-e2e-tests)
+- [Related guides](#-related-guides)
+
 This is a how-to guide for writing **end-to-end (E2E) tests** in this repo.  
 For definitions and choosing the right test type, see [`testing.md`](./testing.md).
 
@@ -102,3 +112,8 @@ Assert:
 - [General testing guide](./testing.md)
 - [Unit testing guide](./unit-test.md)
 - [Integration testing guide](./integration-test.md)
+- [Backend Testing Environment](./testing_backend_environment.md)
+
+---
+
+[← Back to documentation index](../index.md)

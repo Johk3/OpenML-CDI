@@ -68,3 +68,9 @@ Click the green Review changes button in the top right. You have three options:
 - Ask, don't tell: Instead of "You did this wrong, use a map function," try "Have you considered using a map function here? It might be cleaner."
 - Praise good code: If someone wrote a really elegant solution, leave a comment saying so! Code reviews should highlight the good, not just the bad.
 - Don't nitpick formatting: Let our automated linters (black for Python, eslint for React) argue about spaces and brackets. Focus your human energy on logic.
+
+---
+
+**Related:** [Code Review and Ownership Philosophy](../explanation/review-policy.md) | [Pull Request Size Guidelines](./pull-request-size.md) | [CI Pipeline](./CI-pipeline.md)
+
+[← Back to documentation index](../index.md)

@@ -1,5 +1,12 @@
 # CI pipeline
 
+## Table of Contents
+
+- [Description](#description)
+- [Migrating from pre-commit](#migrating-from-pre-commit)
+- [Installation](#installation)
+- [Usage](#usage)
+
 ## Description
 
 To ensure consistency across multiple developers both in code formatting and error handling we need some static code analysis tool. Static refers to the code being analyzed without running it. In our repository we use tool called [Lefthook](https://lefthook.dev/intro.html) to automate the analysis of our code.
@@ -52,3 +59,9 @@ To check that all tests will pass manually you can run the following command:
 ```sh
 lefthook run pre-commit --all-files
 ```
+
+---
+
+**Related:** [How to Write a Commit Message](./commit-messages.md)
+
+[← Back to documentation index](../index.md)
