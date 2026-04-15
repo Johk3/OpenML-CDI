@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { FileUploadZone } from '../components/FileUploadZone';
 import { Input } from '../components/Input';
-import { CheckCircle, FileText, ArrowRight, Upload, XCircle } from 'lucide-react';
+import { CheckCircle, FileText, ArrowRight, Upload, Info, Clock, XCircle } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -39,14 +39,7 @@ export const UploadPage: React.FC = () => {
 
     // Simulate upload process
     setTimeout(() => {
-      if (selectedFile?.name.includes('fail')) {
-        setUploadState('error');
-      } else {
-        setUploadState('success');
-        setTimeout(() => {
-          navigate('/metadata');
-        }, 2000);
-      }
+      setUploadState('success');
     }, 2000);
   };
 
@@ -185,7 +178,7 @@ export const UploadPage: React.FC = () => {
                     <div className="w-16 h-16 rounded-full border-4 border-muted border-t-primary animate-spin mb-6" />
                     <h2 className="heading-2 mb-2">Uploading…</h2>
                     <p className="text-muted-foreground text-sm">
-                      Processing{' '}
+                      Uploading{' '}
                       <span className="font-medium text-foreground">{selectedFile?.name}</span>
                     </p>
                   </>
@@ -204,14 +197,38 @@ export const UploadPage: React.FC = () => {
                       <CheckCircle size={40} className="text-green-600 dark:text-green-400" />
                     </motion.div>
                     <h2 className="heading-2 mb-2">Upload Complete!</h2>
-                    <p className="text-muted-foreground text-sm mb-6 max-w-xs">
+                    <p className="text-muted-foreground text-sm mb-4 max-w-xs">
                       Thank you,{' '}
                       <span className="font-semibold text-foreground">
                         {contactDetails.firstName}
                       </span>
-                      . Preparing the metadata form...
+                      . Your submission has been received.
                     </p>
-                    <div className="w-6 h-6 rounded-full border-2 border-muted border-t-primary animate-spin" />
+
+                    {/* Processing status feedback */}
+                    <div className="upload-status-badge">
+                      <Clock size={13} />
+                      <span>Pending Processing</span>
+                    </div>
+
+                    <div className="upload-status-notice">
+                      <Info size={14} className="shrink-0 mt-0.5" />
+                      <span>
+                        Processing timeline varies by submission. You can influence the speediness
+                        of the processing of your dataset by giving us a detailed description of
+                        your dataset metadata. Your dataset status will update once processing
+                        begins. You can track progress on <strong>My Datasets</strong>.
+                      </span>
+                    </div>
+
+                    <div className="flex gap-3 mt-6">
+                      <Button variant="outline" onClick={() => navigate('/datasets')}>
+                        View My Datasets
+                      </Button>
+                      <Button onClick={() => navigate('/metadata')}>
+                        Configure Metadata <ArrowRight size={16} />
+                      </Button>
+                    </div>
                   </motion.div>
                 ) : (
                   <motion.div
