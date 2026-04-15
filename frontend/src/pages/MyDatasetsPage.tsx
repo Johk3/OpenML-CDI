@@ -22,7 +22,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
-import '../styles/datasets.css';
 
 // Mock data to demonstrate different states
 // This data is NOT real or relevant to the project and is only for demonstration purposes
