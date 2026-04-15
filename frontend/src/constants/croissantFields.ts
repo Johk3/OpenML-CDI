@@ -116,6 +116,9 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     required: true,
     placeholder: 'Jane Doe',
     helperText: 'Full names of the people or organizations who created this dataset.',
+    pattern: '^([^.,]+)(,\\s*[^.,]+)*$',
+    patternMessage:
+      'Must be a comma-separated list of names without special characters like periods.',
   },
   {
     id: 'datePublished',
@@ -329,6 +332,8 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     placeholder: 'text/csv',
     helperText:
       'The MIME type of this file (e.g. text/csv, application/parquet, image/jpeg). You can also use a URL for niche formats.',
+    pattern: '^([a-zA-Z0-9\\-.]+\\/[a-zA-Z0-9\\-.]+|https?:\\/\\/.*)$',
+    patternMessage: 'Must be a valid MIME type (e.g., text/csv) or a URL.',
   },
   {
     id: 'distribution.description',
@@ -423,6 +428,8 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     required: false,
     placeholder: 'image/jpeg',
     helperText: 'The MIME type shared by all files in this set.',
+    pattern: '^([a-zA-Z0-9\\-.]+\\/[a-zA-Z0-9\\-.]+|https?:\\/\\/.*)$',
+    patternMessage: 'Must be a valid MIME type (e.g., text/csv) or a URL.',
   },
   {
     id: 'fileSet.includes',

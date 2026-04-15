@@ -208,6 +208,8 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
                 : 'Comma separated values...'
             }
             required={field.required}
+            pattern={field.pattern}
+            title={field.patternMessage}
             value={Array.isArray(value) ? value.join(', ') : String(value ?? '')}
             onChange={(e) => {
               const val = e.target.value;
