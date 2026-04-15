@@ -2,14 +2,14 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { FileUploadZone } from '../components/FileUploadZone';
 import { Input } from '../components/Input';
-import { CheckCircle, FileText, ArrowRight, Upload } from 'lucide-react';
+import { CheckCircle, FileText, ArrowRight, Upload, XCircle } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-type UploadState = 'idle' | 'contact' | 'uploading' | 'success';
+type UploadState = 'idle' | 'contact' | 'uploading' | 'success' | 'error';
 
 export const UploadPage: React.FC = () => {
   const navigate = useNavigate();
@@ -36,11 +36,17 @@ export const UploadPage: React.FC = () => {
   const handleContactSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setUploadState('uploading');
+
+    // Simulate upload process
     setTimeout(() => {
-      setUploadState('success');
-      setTimeout(() => {
-        navigate('/metadata');
-      }, 2000);
+      if (selectedFile?.name.includes('fail')) {
+        setUploadState('error');
+      } else {
+        setUploadState('success');
+        setTimeout(() => {
+          navigate('/metadata');
+        }, 2000);
+      }
     }, 2000);
   };
 
@@ -163,7 +169,7 @@ export const UploadPage: React.FC = () => {
           </motion.div>
         )}
 
-        {(uploadState === 'uploading' || uploadState === 'success') && (
+        {(uploadState === 'uploading' || uploadState === 'success' || uploadState === 'error') && (
           <motion.div
             key={uploadState}
             initial={{ opacity: 0, scale: 0.95 }}
@@ -183,7 +189,7 @@ export const UploadPage: React.FC = () => {
                       <span className="font-medium text-foreground">{selectedFile?.name}</span>
                     </p>
                   </>
-                ) : (
+                ) : uploadState === 'success' ? (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -206,6 +212,28 @@ export const UploadPage: React.FC = () => {
                       . Preparing the metadata form...
                     </p>
                     <div className="w-6 h-6 rounded-full border-2 border-muted border-t-primary animate-spin" />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex flex-col items-center"
+                  >
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: 'spring', stiffness: 200, damping: 15 }}
+                      className="w-20 h-20 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mb-6"
+                    >
+                      <XCircle size={40} className="text-red-600 dark:text-red-400" />
+                    </motion.div>
+                    <h2 className="heading-2 mb-2">Upload Failed</h2>
+                    <p className="text-muted-foreground text-sm mb-6 max-w-xs">
+                      There was a problem uploading your file. Please try again.
+                    </p>
+                    <Button onClick={() => setUploadState('idle')} variant="outline">
+                      Try Again
+                    </Button>
                   </motion.div>
                 )}
               </CardContent>

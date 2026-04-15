@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, it, expect } from 'vitest';
 import { Header } from '@/components/Header';
 import { renderWithRouter, mockNavigate } from '../../utils';
+import { useAuth } from '@/context/AuthContext';
 
 describe('Header component', () => {
   beforeEach(() => {
@@ -25,6 +26,11 @@ describe('Header component', () => {
     });
 
     it('renders the Login button when no user is logged in', () => {
+      vi.mocked(useAuth).mockReturnValueOnce({
+        user: null,
+        login: vi.fn(),
+        logout: vi.fn(),
+      });
       renderWithRouter(<Header />);
       expect(screen.getByRole('button', { name: /login/i })).toBeInTheDocument();
     });
