@@ -1,0 +1,40 @@
+# This
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/backend/app          # bind mount — edits reflect immediately
+      - ./.env:/backend/.env
+      - ./app/data:/backend/app/data
+      - ./alembic.ini:/backend/alembic.ini
+      - ./alembic:/backend/alembic
+    environment:
+      - ENVIRONMENT=development
+    networks:
+      - app-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5173:5173"
+      - "24678:24678"           # Vite HMR websocket port
+    volumes:
+      - ./frontend:/app                      # bind mount source code
+      - frontend-node-modules:/app/node_modules  # isolate node_modules
+    environment:
+      - VITE_API_URL=http://localhost:5173
+    networks:
+      - app-network
+
+volumes:
+  frontend-node-modules:        # named volume prevents host/container conflicts
+
+networks:
+  app-network:
+    driver: bridge

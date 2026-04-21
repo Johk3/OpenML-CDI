@@ -7,14 +7,14 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useUserContext } from '@/hooks/useUserContext';
 
 type UploadState = 'idle' | 'contact' | 'uploading' | 'success' | 'error';
 
 export const UploadPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
+  const { user } = useUserContext();
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 

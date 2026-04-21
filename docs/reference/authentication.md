@@ -1,10 +1,26 @@
 # Authentication guide
 
+This document describes the backend authentication endpoints and the frontend
+auth contract currently expected by the Vite client.
+
+## Frontend status
+
+The current frontend is GitHub-only for sign-in.
+
+- users do not create accounts manually in the frontend
+- users do not sign in with email/password in the frontend
+- frontend sign-in happens through GitHub OAuth, then the frontend exchanges the
+  GitHub `code` with the backend for an app access token plus an `HttpOnly`
+  refresh cookie
+
+The email/password and registration endpoints below are kept for backend
+reference only and should be treated as legacy from the frontend point of view.
+
 ## Table of Contents
 
 - [Endpoints](#endpoints)
-  - [POST /auth/register](#post-authregister)
-  - [POST /auth/token](#post-authtoken)
+  - [POST /auth/register](#legacy--backend-only-post-authregister)
+  - [POST /auth/token](#legacy--backend-only-post-authtoken)
   - [POST /auth/refresh](#post-authrefresh)
 - [Protect Routes](#protect-routes)
 - [Environment variables](#environment-variables)
@@ -14,7 +30,7 @@ new registration flow.
 
 ## Endpoints
 
-### `POST /auth/register`
+### Legacy / backend-only: `POST /auth/register`
 
 Create a new account and trigger a verification email.
 
@@ -97,9 +113,9 @@ Verification behavior:
 - a verification email is triggered immediately
 - login is currently still allowed before verification is completed
 
-### `POST /auth/token`
+### Legacy / backend-only: `POST /auth/token`
 
-Authenticate with the existing OAuth form flow.
+Authenticate with the legacy form-based flow.
 
 Form fields:
 
@@ -119,6 +135,40 @@ Success response:
 ### `POST /auth/refresh`
 
 Exchange a refresh token for a new access token and rotated refresh token.
+
+### `GET /api/auth/github/login?code=...`
+
+Frontend GitHub callback exchange expected by the current Vite client.
+
+This is the active sign-in path used by the frontend.
+
+Success response:
+
+```json
+{
+  "access_token": "jwt",
+  "token_type": "bearer"
+}
+```
+
+Behavior assumptions used by the frontend:
+
+- the frontend redirects users to GitHub directly using the configured OAuth
+  client id and callback URI
+- GitHub redirects back to
+  `http://localhost:5173/login/callback?code=...`
+- the frontend sends that `code` to `GET /api/auth/github/login?code=...`
+- the backend responds with the access token in the JSON body and sets the
+  refresh token in an `HttpOnly` cookie
+- the frontend stores only the access token in memory and never reads, writes,
+  or logs the refresh token
+
+### `GET /api/auth/me`
+
+Return the currently authenticated user for frontend hydration after login.
+
+The frontend expects this route to return the same user shape as `User` in the
+backend schema.
 
 ## Protect Routes
 
@@ -145,7 +195,7 @@ def delete_user(
 
 ## Environment variables
 
-Registration and email delivery use the following settings:
+Legacy registration and email delivery use the following settings:
 
 - `EMAIL_BACKEND` default `console`
 - `EMAIL_FROM` default `noreply@example.com`
@@ -159,6 +209,26 @@ Registration and email delivery use the following settings:
 
 When `EMAIL_BACKEND=console`, verification links are printed locally instead of
 being sent through SMTP.
+
+## Frontend environment and CORS assumptions
+
+The current frontend token handling relies on the following browser/server
+contract:
+
+- frontend origin: `http://localhost:5173`
+- backend API origin: `http://localhost:8000` with frontend requests pointed at
+  `http://localhost:8000/api`
+- refresh and logout requests must be sent with credentials enabled
+- backend CORS must allow the exact frontend origin and `allow_credentials=true`
+- refresh cookie must be scoped server-side to the refresh path and kept
+  `HttpOnly`
+
+Frontend env vars:
+
+- `VITE_API_BASE_URL` default `http://localhost:8000/api`
+- `VITE_GITHUB_CLIENT_ID`
+- `VITE_GITHUB_OAUTH_SCOPE` default `user:email`
+- `VITE_GITHUB_REDIRECT_URI` default `http://localhost:5173/login/callback`
 
 ---
 

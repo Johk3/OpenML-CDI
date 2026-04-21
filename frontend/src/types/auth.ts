@@ -1,9 +1,20 @@
-export type UserRole = 'user' | 'expert';
+export type UserRole = 'expert' | 'uploader';
 
 export interface User {
   id: string;
-  name: string;
+  email: string;
+  username: string;
+  first_name: string;
+  last_name: string;
   role: UserRole;
+  is_verified: boolean;
+  created_at: string;
+  datasets: string[];
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
 }
 
 export type DatasetStatus = 'ready' | 'processing' | 'finished' | 'error';

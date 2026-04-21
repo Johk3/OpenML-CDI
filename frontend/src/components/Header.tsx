@@ -1,8 +1,9 @@
 import React from 'react';
 import { Database, LogIn, LogOut, User as UserIcon, Sun, Moon } from 'lucide-react';
 import { useNavigate, NavLink } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../hooks/useAuth';
 import { Button } from './ui/button';
+import { useUserContext } from '@/hooks/useUserContext';
 
 // Simple theme toggle using localStorage + .dark class without a full context
 function useDarkMode() {
@@ -17,15 +18,21 @@ function useDarkMode() {
 }
 
 export const Header: React.FC = () => {
-  const { user, logout } = useAuth();
+  const { logout } = useAuth();
+  const { user } = useUserContext();
   const navigate = useNavigate();
   const { dark, toggle } = useDarkMode();
+  const displayName =
+    [user?.first_name, user?.last_name].filter(Boolean).join(' ') ||
+    user?.username ||
+    (user as { name?: string } | null)?.name ||
+    'User';
 
-  const handleAuthAction = (e: React.MouseEvent) => {
+  const handleAuthAction = async (e: React.MouseEvent) => {
     e.preventDefault();
     if (user) {
-      logout();
-      navigate('/');
+      await logout();
+      navigate('/login');
     } else {
       navigate('/login');
     }
@@ -81,7 +88,7 @@ export const Header: React.FC = () => {
               <>
                 <span className="text-xs text-muted-foreground flex items-center gap-1.5 font-medium">
                   <UserIcon size={14} className="text-primary" />
-                  {user.name}
+                  {displayName}
                   <span className="text-muted-foreground/60">·</span>
                   <span className="capitalize text-primary/80">{user.role}</span>
                 </span>

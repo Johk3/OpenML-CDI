@@ -213,7 +213,6 @@ def revoke_family(
 def github_login():
     github = OAuth2Session(
         GITHUB_CLIENT_ID,
-        redirect_uri=GITHUB_REDIRECT,
         scope=["read:user", "user:email"],
     )
     authorization_url, state = github.authorization_url(

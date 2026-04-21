@@ -13,16 +13,18 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:5173"
+    ],  # TODO: move cors and allowed origins to config
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
-app.include_router(dataset.router)
-app.include_router(user.router)
-app.include_router(auth.router)
+app.include_router(dataset.router, prefix="/api")
+app.include_router(user.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
 app.mount(
     "/assets", StaticFiles(directory="app/static/assets", html=True), name="static"
 )

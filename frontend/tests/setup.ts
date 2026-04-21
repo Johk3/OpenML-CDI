@@ -60,8 +60,8 @@ vi.mock('motion/react', async () => {
 });
 
 // Global mock for AuthContext
-vi.mock('../src/context/AuthContext', async () => {
-  const actual = await vi.importActual<Record<string, unknown>>('../src/context/AuthContext');
+vi.mock('@/contexts/AuthContext', async () => {
+  const actual = await vi.importActual<Record<string, unknown>>('@/contexts/AuthContext');
 
   type ReactMod = {
     createElement: (...args: unknown[]) => unknown;

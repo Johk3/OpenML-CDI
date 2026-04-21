@@ -13,6 +13,7 @@ frontend/node_modules
 
 #secrets
 app/.env
+.env
 
 
 # Database

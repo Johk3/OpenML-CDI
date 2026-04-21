@@ -14,9 +14,9 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { Dataset } from '../types/auth';
-import { useAuth } from '../context/useAuth';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
+import { useUserContext } from '@/hooks/useUserContext';
 
 // Mock data fetching function
 const fetchDatasetMock = async (id: string): Promise<Dataset> => {
@@ -62,7 +62,7 @@ const fetchDatasetMock = async (id: string): Promise<Dataset> => {
             {
               id: 'c-2',
               author: 'User Aron',
-              role: 'user',
+              role: 'uploader',
               text: 'Thanks for the feedback. I will upload a new version with the seats.',
               date: '2026-03-11T09:15:00Z',
             },
@@ -76,7 +76,7 @@ const fetchDatasetMock = async (id: string): Promise<Dataset> => {
 export const DatasetDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user } = useUserContext();
 
   const [dataset, setDataset] = useState<Dataset | null>(null);
   const [loading, setLoading] = useState<boolean>(true);

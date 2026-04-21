@@ -11,7 +11,6 @@ import {
   Calendar,
   Download,
 } from 'lucide-react';
-import { useAuth } from '../context/useAuth';
 import { Dataset, DatasetStatus } from '../types/auth';
 import { Card, CardContent, CardHeader } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -22,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import { useUserContext } from '@/hooks/useUserContext';
 
 // Mock data to demonstrate different states
 // This data is NOT real or relevant to the project and is only for demonstration purposes
@@ -95,7 +95,7 @@ const StatusBadge = ({ status }: { status: DatasetStatus }) => {
 };
 
 export const MyDatasetsPage: React.FC = () => {
-  const { user } = useAuth();
+  const { user } = useUserContext();
   const [datasets, setDatasets] = useState<Dataset[]>(MOCK_DATASETS);
 
   if (!user) {

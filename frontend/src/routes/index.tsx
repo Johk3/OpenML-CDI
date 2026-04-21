@@ -5,6 +5,7 @@ import { MyDatasetsPage } from '../pages/MyDatasetsPage';
 import { LoginPage } from '../pages/LoginPage';
 import { AboutPage } from '../pages/AboutPage';
 import { DatasetDetailPage } from '../pages/DatasetDetailPage';
+import { GitHubCallbackPage } from '../pages/GitHubCallbackPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { MainLayout } from '../components/MainLayout';
 import { CroissantMetadataPage } from '../pages/CroissantMetadataPage';
@@ -35,6 +36,10 @@ export const routes: RouteObject[] = [
       {
         path: 'login',
         element: <LoginPage />,
+      },
+      {
+        path: 'login/callback',
+        element: <GitHubCallbackPage />,
       },
       {
         path: 'about',

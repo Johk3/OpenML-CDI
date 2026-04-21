@@ -1,6 +1,7 @@
 import { screen, fireEvent, within } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { navigateTo } from '../utils';
+import { navigateTo, renderWithRouter } from '../utils';
+import { MyDatasetsPage } from '@/pages/MyDatasetsPage';
 
 const mockUseAuth = vi.fn();
 vi.mock('../../src/context/useAuth', () => ({
@@ -24,7 +25,21 @@ describe('MyDatasetsPage', () => {
     mockUseAuth.mockReturnValue({
       user: { id: 'user-1', name: 'Standard User', role: 'user' },
     });
-    navigateTo('/datasets');
+    renderWithRouter(<MyDatasetsPage />, {
+      userContext: {
+        user: {
+          id: 'test-user',
+          first_name: 'Test',
+          last_name: 'User',
+          role: 'uploader',
+          email: 'test@test.com',
+          username: 'testuser',
+          datasets: ['dataset'],
+          created_at: 'a',
+          is_verified: true,
+        },
+      },
+    });
 
     expect(screen.getByRole('heading', { name: /my datasets/i })).toBeInTheDocument();
     expect(screen.getByText(/view and manage the datasets you have uploaded/i)).toBeInTheDocument();
@@ -40,7 +55,21 @@ describe('MyDatasetsPage', () => {
     mockUseAuth.mockReturnValue({
       user: { id: 'expert-1', name: 'Expert User', role: 'expert' },
     });
-    navigateTo('/datasets');
+    renderWithRouter(<MyDatasetsPage />, {
+      userContext: {
+        user: {
+          id: 'test-user',
+          first_name: 'Test',
+          last_name: 'User',
+          role: 'expert',
+          email: 'test@test.com',
+          username: 'testuser',
+          datasets: ['dataset'],
+          created_at: 'a',
+          is_verified: true,
+        },
+      },
+    });
 
     expect(screen.getByRole('heading', { name: /all user datasets/i })).toBeInTheDocument();
     expect(screen.getByText(/expert mode active/i)).toBeInTheDocument();
@@ -58,7 +87,21 @@ describe('MyDatasetsPage', () => {
     mockUseAuth.mockReturnValue({
       user: { id: 'expert-1', name: 'Expert User', role: 'expert' },
     });
-    navigateTo('/datasets');
+    renderWithRouter(<MyDatasetsPage />, {
+      userContext: {
+        user: {
+          id: 'test-user',
+          first_name: 'Test',
+          last_name: 'User',
+          role: 'expert',
+          email: 'test@test.com',
+          username: 'testuser',
+          datasets: ['dataset'],
+          created_at: 'a',
+          is_verified: true,
+        },
+      },
+    });
 
     const firstDatasetTitle = screen.getAllByRole('heading', { level: 3 })[0];
     const card = firstDatasetTitle.closest('[data-slot="card"]');

@@ -2,11 +2,11 @@ import { screen } from '@testing-library/react';
 import { vi } from 'vitest';
 import { navigateTo } from '../utils';
 
-vi.mock('../../src/context/useAuth', () => ({
-  useAuth: vi.fn(() => ({
+vi.mock('@/hooks/useUserContext', () => ({
+  useUserContext: vi.fn(() => ({
     user: { id: 'test-user', name: 'Test User', role: 'expert' },
-    login: vi.fn(),
-    logout: vi.fn(),
+    isLoading: false,
+    isError: false,
   })),
 }));
 
