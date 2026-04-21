@@ -16,6 +16,7 @@ class Statuses(str, enum.Enum):
     PENDING = "pending"
     CLAIMED = "claimed"
     CONVERTED = "converted"
+    QUARANTINED = "quarantined"
 
 
 class User(Base):

@@ -16,6 +16,7 @@ DEFAULT_EMAIL_BACKEND = "console"
 DEFAULT_EMAIL_FROM = "noreply@example.com"
 DEFAULT_APP_BASE_URL = "http://localhost:8000"
 DEFAULT_EMAIL_VERIFICATION_TTL_HOURS = 24
+DEFAULT_QUARANTINE_DIR = ".quarantine"
 
 
 def _get_bool_env(name: str, default: bool) -> bool:
@@ -29,6 +30,7 @@ def _get_bool_env(name: str, default: bool) -> bool:
 class StorageSettings:
     backend: str = DEFAULT_STORAGE_BACKEND
     local_upload_dir: str = DEFAULT_LOCAL_UPLOAD_DIR
+    quarantine_dir: str = DEFAULT_QUARANTINE_DIR
 
     @classmethod
     def from_env(cls) -> "StorageSettings":
@@ -39,6 +41,9 @@ class StorageSettings:
         raw_upload_dir = os.getenv(LOCAL_UPLOAD_DIR_ENV, DEFAULT_LOCAL_UPLOAD_DIR)
         local_upload_dir = raw_upload_dir.strip()
 
+        raw_quarantine_dir = os.getenv("QUARANTINE_DIR", DEFAULT_QUARANTINE_DIR)
+        quarantine_dir = raw_quarantine_dir.strip()
+
         if backend not in SUPPORTED_STORAGE_BACKENDS:
             raise ValueError(
                 "Unsupported STORAGE_BACKEND " f"'{backend}'. " "Supported: local"
@@ -47,6 +52,7 @@ class StorageSettings:
         return cls(
             backend=backend,
             local_upload_dir=local_upload_dir or DEFAULT_LOCAL_UPLOAD_DIR,
+            quarantine_dir=quarantine_dir or DEFAULT_QUARANTINE_DIR,
         )
 
 

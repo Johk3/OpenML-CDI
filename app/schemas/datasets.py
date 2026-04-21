@@ -32,6 +32,10 @@ class DatasetUploadURLRequest(BaseModel):
     name: str = Field(..., min_length=1)
     description: str | dict[str, Any]
     filename: str = Field(..., min_length=1)
+    content_type: str | None = None
+
+
+# Any file extension is accepted — format validation is deferred to a post-upload step
 
 
 class DatasetUploadURLResponse(BaseModel):

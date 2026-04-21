@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status, BackgroundTasks
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -16,6 +16,8 @@ from app.database.models import Dataset as DatasetModel
 from app.services.presign import generate_presigned_put_url
 import uuid
 from typing import Annotated
+from pathlib import Path
+from app.services.scan import scan_uploaded_file
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
@@ -32,12 +34,16 @@ def create_upload_url(
     db: Session = Depends(get_db),
 ) -> DatasetUploadURLResponse:
     settings = request.app.state.settings
+    upload_target = request.app.state.storage.create_upload_target(payload.filename)
 
     if isinstance(payload.description, dict):
         dataset_metadata = dict(payload.description)
     else:
         dataset_metadata = {"description": payload.description}
     dataset_metadata["filename"] = payload.filename
+    if payload.content_type:
+        dataset_metadata["content_type"] = payload.content_type
+    dataset_metadata["storage_key"] = upload_target.storage_key
 
     dataset = DatasetModel(
         title=payload.name,
@@ -58,13 +64,43 @@ def create_upload_url(
         ) from error
 
     presigned_url = generate_presigned_put_url(
-        payload.filename,
+        upload_target.storage_key,
         bucket_name=settings.upload.target,
         region_name=settings.upload.location,
         expires_in_seconds=settings.upload.expires_seconds,
     )
-
     return DatasetUploadURLResponse(id=dataset.id, presigned_url=presigned_url)
+
+
+@router.post("/{dataset_id}/confirm-upload", status_code=status.HTTP_202_ACCEPTED)
+def confirm_upload(
+    dataset_id: uuid.UUID,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Session = Depends(get_db),
+):
+    settings = request.app.state.settings
+    dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
+    expertOrOwner(current_user, dataset, db)
+
+    storage_key = dataset.dataset_metadata.get("storage_key")
+    filename = dataset.dataset_metadata.get("filename")
+    file_reference = storage_key or filename
+    if not file_reference:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Dataset file reference missing",
+        )
+    background_tasks.add_task(
+        scan_uploaded_file,
+        dataset_id=dataset_id,
+        file_path=Path(settings.storage.local_upload_dir) / file_reference,
+        quarantine_dir=Path(settings.storage.quarantine_dir),
+        final_dir=Path(settings.storage.local_upload_dir) / "ready",
+        db=db,
+    )
+    return {"message": "Upload confirmed, scan started"}
 
 
 @router.post("/create", response_model=Dataset)
@@ -92,6 +128,14 @@ def expertOrOwner(current_user: User, dataset: Dataset | None, db: Session) -> N
             # Perhaps overkill but this way attackers cannot deduce existing dataset ids
             status_code=403,
             detail="Not authorized to access this dataset",
+        )
+
+
+def ensure_status_update_allowed(dataset: Dataset, next_status: Statuses) -> None:
+    if dataset.status == Statuses.QUARANTINED and next_status != Statuses.QUARANTINED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Quarantined datasets cannot be processed",
         )
 
 
@@ -138,6 +182,7 @@ def update_status_dataset(
     """
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
     expertOrOwner(current_user, dataset, db)
+    ensure_status_update_allowed(dataset, status)
     dataset_crud.update_dataset_status(db=db, dataset_id=dataset_id, status=status)
     return {"status_code": 200, "message": "Dataset status updated successfully"}
 
