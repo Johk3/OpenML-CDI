@@ -40,6 +40,11 @@ class LocalStorageBackend:
         local_path = self._resolve_storage_key_path(storage_key)
         return local_path.read_bytes()
 
+    def open(self, storage_key: str, mode: str = "rb"):
+        """Open a file-like object for a storage key."""
+        local_path = self._resolve_storage_key_path(storage_key)
+        return open(local_path, mode)
+
     def _sanitize_filename(self, filename: str) -> str:
         """Keep only safe filename characters and drop any path components."""
         base_name = Path(filename).name

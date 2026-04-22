@@ -1,12 +1,14 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { CROISSANT_USER_FIELDS } from '../constants/croissantFields';
 import { CroissantFieldInput } from '../components/CroissantFieldInput';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { ArrowLeft, Save, Plus, Trash2, AlertCircle } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { serializeCroissant, CroissantFormData, FieldValue } from '../utils/serializeCroissant';
+import { DatasetService } from '@/services/datasetService';
+import { AxiosError } from 'axios';
 
 const SECTIONS = [
   { id: 'dataset', label: 'Dataset', description: 'Core dataset metadata' },
@@ -22,6 +24,9 @@ function distHasHash(item: Record<string, unknown>): boolean {
 
 export const CroissantMetadataPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const datasetId = (location.state as { datasetId?: string } | null)?.datasetId ?? null;
+
   const [formData, setFormData] = useState<CroissantFormData>({
     dataset: {},
     distribution: [],
@@ -32,7 +37,47 @@ export const CroissantMetadataPage: React.FC = () => {
   const [activeDistIdx, setActiveDistIdx] = useState(0);
   const [activeTab, setActiveTab] = useState('dataset');
   const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
+
+  // Initialize form with existing dataset info if available
+  useEffect(() => {
+    if (!datasetId) return;
+
+    const fetchDataset = async () => {
+      setIsLoading(true);
+      try {
+        const dataset = await DatasetService.getDataset(datasetId);
+        setFormData((prev) => {
+          // Only pre-fill if fields are currently empty
+          const newDataset = { ...prev.dataset };
+
+          if (!newDataset.name && dataset.title) {
+            newDataset.name = dataset.title;
+          }
+
+          if (!newDataset.description && dataset.dataset_metadata?.description) {
+            const desc = dataset.dataset_metadata.description;
+            newDataset.description = typeof desc === 'string' ? desc : desc.text || '';
+          }
+
+          return {
+            ...prev,
+            dataset: newDataset,
+          };
+        });
+      } catch (err) {
+        console.error('Failed to fetch dataset:', err);
+        // We don't block the user, just log it
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchDataset();
+  }, [datasetId]);
 
   // TODO: For now we use a simplified version and neglect RAI, recordSet, fileSet. Implement these in the future.
   const datasetFields = CROISSANT_USER_FIELDS.filter((f) => f.section === 'dataset');
@@ -126,7 +171,7 @@ export const CroissantMetadataPage: React.FC = () => {
     formRef.current?.requestSubmit();
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitAttempted(true);
 
@@ -155,15 +200,39 @@ export const CroissantMetadataPage: React.FC = () => {
     }
 
     const croissantJson = serializeCroissant(formData);
-    // TODO: SEND DATA TO BACKEND HERE
-    console.log('Croissant JSON:\n', JSON.stringify(croissantJson, null, 2));
-    alert('Croissant metadata saved! Check browser console for output.');
-    navigate('/datasets');
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      if (datasetId) {
+        await DatasetService.updateMetadata(datasetId, croissantJson as Record<string, unknown>);
+      }
+      // If no datasetId then just navigate away as the metadata already in memory
+      navigate('/datasets');
+    } catch (err) {
+      const axiosErr = err as AxiosError<{ detail?: string }>;
+      setSubmitError(
+        axiosErr.response?.data?.detail ?? 'Failed to save metadata. Please try again.',
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const activeDistItem = formData.distribution[activeDistIdx] ?? {};
   const showHashError =
     submitAttempted && formData.distribution.length > 0 && !distHasHash(activeDistItem);
+
+  if (isLoading) {
+    return (
+      <div className="container flex flex-col items-center justify-center min-h-[60vh]">
+        <div className="w-12 h-12 rounded-full border-4 border-muted border-t-primary animate-spin mb-4" />
+        <h2 className="text-xl font-semibold">Loading dataset details...</h2>
+        <p className="text-muted-foreground mt-2">Retrieving your dataset configuration.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="container max-w-5xl py-10">
@@ -181,11 +250,18 @@ export const CroissantMetadataPage: React.FC = () => {
           <Button variant="outline" onClick={() => navigate('/datasets')} type="button">
             Cancel
           </Button>
-          <Button onClick={handleSaveClick} type="button">
-            <Save className="mr-2 h-4 w-4" /> Save Metadata
+          <Button onClick={handleSaveClick} type="button" disabled={isSubmitting}>
+            <Save className="mr-2 h-4 w-4" /> {isSubmitting ? 'Saving…' : 'Save Metadata'}
           </Button>
         </div>
       </div>
+
+      {submitError && (
+        <div className="mb-6 flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          {submitError}
+        </div>
+      )}
 
       <Tabs
         value={activeTab}

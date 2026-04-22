@@ -8,6 +8,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../co
 import { Badge } from '../components/ui/badge';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useUserContext } from '@/hooks/useUserContext';
+import { DatasetService } from '@/services/datasetService';
+import { AxiosError } from 'axios';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 
 type UploadState = 'idle' | 'contact' | 'uploading' | 'success' | 'error';
 
@@ -17,8 +21,13 @@ export const UploadPage: React.FC = () => {
   const { user } = useUserContext();
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [datasetId, setDatasetId] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
-  const [contactDetails, setContactDetails] = useState({
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
     firstName: '',
     lastName: '',
     email: '',
@@ -33,14 +42,53 @@ export const UploadPage: React.FC = () => {
     setUploadState('contact');
   };
 
-  const handleContactSubmit = (e: React.FormEvent) => {
+  const handleContactSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setUploadState('uploading');
+    if (!selectedFile || !user) return;
 
-    // Simulate upload process
-    setTimeout(() => {
+    setUploadState('uploading');
+    setErrorMessage(null);
+
+    try {
+      // Firstly: Register the dataset and get a pre-signed PUT URL
+      const { id, presigned_url } = await DatasetService.requestUploadUrl({
+        name: formData.name,
+        description: {
+          text: formData.description,
+          contact: {
+            first_name: formData.firstName,
+            last_name: formData.lastName,
+            email: formData.email,
+          },
+        },
+        filename: selectedFile.name,
+        content_type: selectedFile.type || undefined,
+      });
+
+      // Secondly: Upload the file directly to storage
+      await DatasetService.uploadFileToPresignedUrl(presigned_url, selectedFile, (event) => {
+        if (event.total) {
+          const percent = Math.round((event.loaded * 100) / event.total);
+          setUploadProgress(percent);
+        }
+      });
+      setUploadProgress(100);
+
+      // Thirdly: Tell the backend the upload is done
+      await DatasetService.confirmUpload(id);
+
+      setDatasetId(id);
       setUploadState('success');
-    }, 2000);
+    } catch (err) {
+      const axiosErr = err as AxiosError<{ detail?: string }>;
+      const detail = axiosErr.response?.data?.detail;
+      setErrorMessage(
+        detail === 'Not authorized to create this dataset'
+          ? 'You do not have permission to upload datasets.'
+          : (detail ?? 'An unexpected error occurred. Please try again.'),
+      );
+      setUploadState('error');
+    }
   };
 
   return (
@@ -100,7 +148,7 @@ export const UploadPage: React.FC = () => {
               <CardHeader className="pb-4">
                 <CardTitle className="text-xl">Almost there!</CardTitle>
                 <CardDescription>
-                  Provide your contact details to complete the upload.
+                  Tell us about yourself and your dataset to complete the upload.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
@@ -126,33 +174,54 @@ export const UploadPage: React.FC = () => {
                 </div>
 
                 <form onSubmit={handleContactSubmit} className="space-y-4">
+                  {/* Dataset details */}
+                  <Input
+                    label="Dataset Name"
+                    placeholder="ImageNet"
+                    required
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  />
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="description">
+                      Description
+                      <span className="text-destructive ml-1">*</span>
+                    </Label>
+                    <Textarea
+                      id="description"
+                      placeholder="Give a description of the dataset that you are uploading. Providing any information that may help the expert in processing the dataset is appreciated."
+                      required
+                      value={formData.description}
+                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    />
+                  </div>
+
+                  {/* Contact details */}
                   <div className="grid grid-cols-2 gap-3">
                     <Input
                       label="First Name"
+                      placeholder="John"
                       required
-                      value={contactDetails.firstName}
-                      onChange={(e) =>
-                        setContactDetails({ ...contactDetails, firstName: e.target.value })
-                      }
+                      value={formData.firstName}
+                      onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
                     />
                     <Input
                       label="Last Name"
+                      placeholder="Porquilious"
                       required
-                      value={contactDetails.lastName}
-                      onChange={(e) =>
-                        setContactDetails({ ...contactDetails, lastName: e.target.value })
-                      }
+                      value={formData.lastName}
+                      onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
                     />
                   </div>
                   <Input
                     label="Email Address"
                     type="email"
+                    placeholder="john.porquilious@example.com"
                     required
-                    value={contactDetails.email}
-                    onChange={(e) =>
-                      setContactDetails({ ...contactDetails, email: e.target.value })
-                    }
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   />
+
                   <Button type="submit" className="w-full" size="lg">
                     Upload Dataset <ArrowRight size={16} />
                   </Button>
@@ -175,12 +244,44 @@ export const UploadPage: React.FC = () => {
               <CardContent className="pt-12 pb-12 flex flex-col items-center">
                 {uploadState === 'uploading' ? (
                   <>
-                    <div className="w-16 h-16 rounded-full border-4 border-muted border-t-primary animate-spin mb-6" />
-                    <h2 className="heading-2 mb-2">Uploading…</h2>
-                    <p className="text-muted-foreground text-sm">
+                    <div className="relative mb-8">
+                      <div className="w-24 h-24 rounded-full border-4 border-muted flex items-center justify-center">
+                        <span className="text-xl font-bold text-primary">{uploadProgress}%</span>
+                      </div>
+                      <svg
+                        className="absolute top-0 left-0 w-24 h-24 -rotate-90 pointer-events-none"
+                        viewBox="0 0 100 100"
+                      >
+                        <circle
+                          cx="50"
+                          cy="50"
+                          r="48"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                          className="text-primary transition-all duration-300 ease-out"
+                          strokeDasharray={2 * Math.PI * 48}
+                          strokeDashoffset={2 * Math.PI * 48 * (1 - uploadProgress / 100)}
+                        />
+                      </svg>
+                    </div>
+
+                    <h2 className="heading-2 mb-2">
+                      {uploadProgress < 100 ? 'Uploading…' : 'Finalizing…'}
+                    </h2>
+                    <p className="text-muted-foreground text-sm mb-6">
                       Uploading{' '}
                       <span className="font-medium text-foreground">{selectedFile?.name}</span>
                     </p>
+
+                    <div className="w-full max-w-xs bg-muted rounded-full h-1.5 overflow-hidden">
+                      <motion.div
+                        className="h-full bg-primary"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${uploadProgress}%` }}
+                        transition={{ duration: 0.1 }}
+                      />
+                    </div>
                   </>
                 ) : uploadState === 'success' ? (
                   <motion.div
@@ -199,10 +300,8 @@ export const UploadPage: React.FC = () => {
                     <h2 className="heading-2 mb-2">Upload Complete!</h2>
                     <p className="text-muted-foreground text-sm mb-4 max-w-xs">
                       Thank you,{' '}
-                      <span className="font-semibold text-foreground">
-                        {contactDetails.firstName}
-                      </span>
-                      . Your submission has been received.
+                      <span className="font-semibold text-foreground">{formData.firstName}</span>.
+                      Your submission has been received.
                     </p>
 
                     {/* Processing status feedback */}
@@ -217,7 +316,21 @@ export const UploadPage: React.FC = () => {
                         Processing timeline varies by submission. You can influence the speediness
                         of the processing of your dataset by giving us a detailed description of
                         your dataset metadata. Your dataset status will update once processing
-                        begins. You can track progress on <strong>My Datasets</strong>.
+                        begins. You can track progress on{' '}
+                        <button
+                          onClick={() => navigate('/datasets')}
+                          className="font-bold underline hover:text-primary transition-colors"
+                        >
+                          My Datasets
+                        </button>{' '}
+                        or view your{' '}
+                        <button
+                          onClick={() => navigate(`/datasets/${datasetId}`)}
+                          className="font-bold underline hover:text-primary transition-colors"
+                        >
+                          newly created dataset
+                        </button>
+                        .
                       </span>
                     </div>
 
@@ -225,7 +338,7 @@ export const UploadPage: React.FC = () => {
                       <Button variant="outline" onClick={() => navigate('/datasets')}>
                         View My Datasets
                       </Button>
-                      <Button onClick={() => navigate('/metadata')}>
+                      <Button onClick={() => navigate('/metadata', { state: { datasetId } })}>
                         Configure Metadata <ArrowRight size={16} />
                       </Button>
                     </div>
@@ -246,7 +359,7 @@ export const UploadPage: React.FC = () => {
                     </motion.div>
                     <h2 className="heading-2 mb-2">Upload Failed</h2>
                     <p className="text-muted-foreground text-sm mb-6 max-w-xs">
-                      There was a problem uploading your file. Please try again.
+                      {errorMessage ?? 'There was a problem uploading your file. Please try again.'}
                     </p>
                     <Button onClick={() => setUploadState('idle')} variant="outline">
                       Try Again

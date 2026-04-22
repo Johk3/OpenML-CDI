@@ -1,4 +1,4 @@
-from typing import Protocol
+from typing import Protocol, Any
 from .types import UploadTarget
 
 
@@ -17,4 +17,8 @@ class StorageBackend(Protocol):
 
     def read_bytes(self, storage_key: str) -> bytes:
         """Read raw bytes previously stored for a storage key."""
+        ...
+
+    def open(self, storage_key: str, mode: str = "rb") -> Any:
+        """Return a file-like object for a storage key."""
         ...

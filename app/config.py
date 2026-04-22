@@ -11,7 +11,7 @@ DEFAULT_LOCAL_UPLOAD_DIR = ".local_uploads"
 DEFAULT_UPLOAD_TARGET = "uploads"
 DEFAULT_UPLOAD_LOCATION = "default"
 DEFAULT_UPLOAD_URL_EXPIRES_SECONDS = 3600
-SUPPORTED_STORAGE_BACKENDS = {"local"}
+SUPPORTED_STORAGE_BACKENDS = {"local", "smart"}
 DEFAULT_EMAIL_BACKEND = "console"
 DEFAULT_EMAIL_FROM = "noreply@example.com"
 DEFAULT_APP_BASE_URL = "http://localhost:8000"
@@ -31,6 +31,11 @@ class StorageSettings:
     backend: str = DEFAULT_STORAGE_BACKEND
     local_upload_dir: str = DEFAULT_LOCAL_UPLOAD_DIR
     quarantine_dir: str = DEFAULT_QUARANTINE_DIR
+    s3_bucket: str = ""
+    s3_region: str = ""
+    s3_endpoint: str = ""
+    s3_access_key: str = ""
+    s3_secret_key: str = ""
 
     @classmethod
     def from_env(cls) -> "StorageSettings":
@@ -53,6 +58,11 @@ class StorageSettings:
             backend=backend,
             local_upload_dir=local_upload_dir or DEFAULT_LOCAL_UPLOAD_DIR,
             quarantine_dir=quarantine_dir or DEFAULT_QUARANTINE_DIR,
+            s3_bucket=os.getenv("S3_BUCKET", "").strip(),
+            s3_region=os.getenv("S3_REGION", "").strip(),
+            s3_endpoint=os.getenv("S3_ENDPOINT", "").strip(),
+            s3_access_key=os.getenv("S3_ACCESS_KEY", "").strip(),
+            s3_secret_key=os.getenv("S3_SECRET_KEY", "").strip(),
         )
 
 

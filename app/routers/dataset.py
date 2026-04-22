@@ -13,7 +13,6 @@ from app.schemas.users import User, Roles
 from app.security import get_current_active_user
 from app.crud import dataset as dataset_crud
 from app.database.models import Dataset as DatasetModel
-from app.services.presign import generate_presigned_put_url
 import uuid
 from typing import Annotated
 from pathlib import Path
@@ -33,7 +32,6 @@ def create_upload_url(
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Session = Depends(get_db),
 ) -> DatasetUploadURLResponse:
-    settings = request.app.state.settings
     upload_target = request.app.state.storage.create_upload_target(payload.filename)
 
     if isinstance(payload.description, dict):
@@ -63,13 +61,28 @@ def create_upload_url(
             detail="Failed to create dataset record",
         ) from error
 
-    presigned_url = generate_presigned_put_url(
-        upload_target.storage_key,
-        bucket_name=settings.upload.target,
-        region_name=settings.upload.location,
-        expires_in_seconds=settings.upload.expires_seconds,
+    presigned_url = (
+        f"{request.base_url}api/datasets/upload/{upload_target.storage_key}".replace(
+            "//api", "/api"
+        )
     )
-    return DatasetUploadURLResponse(id=dataset.id, presigned_url=presigned_url)
+    dataset_url = f"/datasets/{dataset.id}"
+
+    return DatasetUploadURLResponse(
+        id=dataset.id, presigned_url=presigned_url, dataset_url=dataset_url
+    )
+
+
+@router.put("/upload/{storage_key:path}")
+async def upload_file(
+    storage_key: str,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """Receive file bytes and write to the configured storage backend."""
+    data = await request.body()
+    request.app.state.storage.write_bytes(storage_key, data)
+    return {"message": "Upload successful", "storage_key": storage_key}
 
 
 @router.post("/{dataset_id}/confirm-upload", status_code=status.HTTP_202_ACCEPTED)
@@ -95,12 +108,16 @@ def confirm_upload(
     background_tasks.add_task(
         scan_uploaded_file,
         dataset_id=dataset_id,
-        file_path=Path(settings.storage.local_upload_dir) / file_reference,
+        storage_key=storage_key or filename,
         quarantine_dir=Path(settings.storage.quarantine_dir),
         final_dir=Path(settings.storage.local_upload_dir) / "ready",
+        storage=request.app.state.storage,
         db=db,
     )
-    return {"message": "Upload confirmed, scan started"}
+    return {
+        "message": "Upload confirmed, scan started",
+        "dataset_url": f"/datasets/{dataset_id}",
+    }
 
 
 @router.post("/create", response_model=Dataset)
@@ -199,10 +216,16 @@ def update_metadata_dataset(
     """
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
     expertOrOwner(current_user, dataset, db)
+    # Sync title if present in metadata
+    if isinstance(metadata, dict) and "name" in metadata:
+        dataset_crud.update_dataset_title(
+            db=db, dataset_id=dataset_id, title=metadata["name"]
+        )
+
     dataset_crud.update_dataset_metadata(
         db=db, dataset_id=dataset_id, metadata=metadata
     )
-    return {"status_code": 200, "message": "Dataset metadate updated successfully"}
+    return {"status_code": 200, "message": "Dataset metadata updated successfully"}
 
 
 @router.post("/owner")

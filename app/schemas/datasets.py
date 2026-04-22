@@ -41,3 +41,4 @@ class DatasetUploadURLRequest(BaseModel):
 class DatasetUploadURLResponse(BaseModel):
     id: UUID
     presigned_url: str
+    dataset_url: str | None = None

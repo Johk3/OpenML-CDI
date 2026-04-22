@@ -25,6 +25,7 @@ export const routes: RouteObject[] = [
         index: true,
         element: <UploadPage />,
       },
+
       {
         path: 'datasets',
         element: <MyDatasetsPage />,

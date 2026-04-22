@@ -1,4 +1,4 @@
-import { screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { UploadPage } from '../../src/pages/UploadPage';
 import { renderWithRouter, mockNavigate } from '../utils';
@@ -56,36 +56,28 @@ describe('UploadPage', () => {
       const file = new File(['success'], 'data.csv', { type: 'text/csv' });
       fireEvent.change(fileInput, { target: { files: [file] } });
 
+      fireEvent.change(screen.getByLabelText(/Dataset Name/i), { target: { value: 'My Dataset' } });
+      fireEvent.change(screen.getByLabelText(/Description/i), {
+        target: { value: 'Some description' },
+      });
       fireEvent.change(screen.getByLabelText(/First Name/i), { target: { value: 'John' } });
       fireEvent.change(screen.getByLabelText(/Last Name/i), { target: { value: 'Doe' } });
       fireEvent.change(screen.getByLabelText(/Email Address/i), {
         target: { value: 'john@example.com' },
       });
+    });
 
+    it('processes the upload and shows the completion state', async () => {
       const uploadButton = screen.getByText(/Upload Dataset/i);
       fireEvent.click(uploadButton);
-    });
 
-    it('shows the uploading indicator', () => {
       expect(screen.getByText('Uploading…')).toBeInTheDocument();
-    });
 
-    it('shows the completion state after delay', async () => {
-      act(() => {
-        vi.advanceTimersByTime(2500);
-      });
       await waitFor(() => {
         expect(screen.getByText('Upload Complete!')).toBeInTheDocument();
       });
-    });
 
-    it('shows the user first name in the completion state', async () => {
-      act(() => {
-        vi.advanceTimersByTime(2500);
-      });
-      await waitFor(() => {
-        expect(screen.getByText('John')).toBeInTheDocument();
-      });
+      expect(screen.getByText('John')).toBeInTheDocument();
     });
   });
 });

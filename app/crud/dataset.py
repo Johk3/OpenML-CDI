@@ -52,7 +52,10 @@ def update_dataset_metadata(
     db: Session, dataset_id: uuid.UUID, metadata: dict
 ) -> schemas.Dataset:
     db_dataset = _get_dataset(db, dataset_id)
-    db_dataset.dataset_metadata = metadata
+    # Perform a shallow merge to preserve torage_key, filename, etc
+    current_metadata = dict(db_dataset.dataset_metadata or {})
+    current_metadata.update(metadata)
+    db_dataset.dataset_metadata = current_metadata
     db.commit()
     db.refresh(db_dataset)
     return schemas.Dataset.model_validate(db_dataset)
