@@ -13,7 +13,6 @@ def test_quarantined_dataset_cannot_be_moved_to_processing(client, db_test_sessi
             id=uploader_id,
             email="uploader@example.com",
             username="uploader",
-            password_hash="fake-hash",
             first_name="Upload",
             last_name="User",
             role=Roles.UPLOADER,
@@ -40,7 +39,7 @@ def test_quarantined_dataset_cannot_be_moved_to_processing(client, db_test_sessi
     access_token = create_access_token({"sub": str(uploader_id), "type": "access"})
 
     response = client.post(
-        "/datasets/status",
+        "/api/datasets/status",
         params={"dataset_id": str(dataset_id), "status": "claimed"},
         headers={"Authorization": f"Bearer {access_token}"},
     )

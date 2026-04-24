@@ -14,6 +14,7 @@ services:
       - ./alembic:/backend/alembic
     environment:
       - ENVIRONMENT=development
+      - AUTH_DEV_MODE_APPROVE_ALL_LOGINS=true
     networks:
       - app-network
 

@@ -27,22 +27,15 @@ class User(Base):
     )  # optionally change to serverside default in production
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     username: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     first_name: Mapped[str] = mapped_column(String, nullable=False)
     last_name: Mapped[str] = mapped_column(String, nullable=False)
     role: Mapped[Roles] = mapped_column(SQLEnum(Roles), default=Roles.UPLOADER)
-    is_verified: Mapped[bool] = mapped_column(
-        Boolean, default=True, nullable=False
-    )  # only using oauth so no manual verifying
     datasets = relationship("Dataset", back_populates="owner")
     refresh_tokens = relationship(
         "RefreshToken", back_populates="owner", cascade="all, delete-orphan"
-    )
-    email_verification_tokens = relationship(
-        "EmailVerificationToken", back_populates="owner"
     )
 
 
@@ -87,26 +80,6 @@ class RefreshToken(Base):
     token_family = relationship(
         "TokenFamilyName", back_populates="refresh_tokens", cascade="all, delete-orphan"
     )
-
-
-class EmailVerificationToken(Base):
-    __tablename__ = "email_verification_tokens"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, default=uuid.uuid4, primary_key=True, index=True
-    )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, ForeignKey("users.id"), nullable=False
-    )
-    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
-    )
-    expires_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
-    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    owner = relationship("User", back_populates="email_verification_tokens")
 
 
 class TokenFamilyName(Base):

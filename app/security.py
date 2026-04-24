@@ -6,8 +6,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 import jwt
-from argon2 import PasswordHasher
-from argon2 import exceptions as ArgonExceptions
 from dotenv import load_dotenv
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -15,17 +13,10 @@ from jwt.exceptions import InvalidTokenError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.crud.users import DUMMY_HASH
 from app.database import get_db
 from app.schemas.users import User
 
 load_dotenv()
-HASHING_PEPPER = os.getenv("HASHING_PEPPER", "")
-
-if HASHING_PEPPER == "":
-    raise ValueError(
-        "Please supply a hashing pepper using the env var 'HASHING_PEPPER'"
-    )
 JWT_SECRET = os.getenv("JWT_SECRET", "")
 if JWT_SECRET == "":
     raise ValueError("""Please supply a JWT secret (Ed25519 private key)
@@ -38,31 +29,8 @@ ACCESS_TOKEN_EXPIRY_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRY_MINUTES", 5))
 REFRESH_TOKEN_EXPIRY_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRY_DAYS", 7))
 
 
-ph = PasswordHasher()
-
-
-def make_password_hash(password: str) -> str:
-    return ph.hash(password + HASHING_PEPPER)
-
-
 def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
-
-
-def verify_hash(stored_hash: str, password: str) -> bool:
-    if not stored_hash:
-        stored_hash = DUMMY_HASH
-    try:
-        is_valid = ph.verify(stored_hash, password + HASHING_PEPPER)
-        if is_valid and ph.check_needs_rehash(stored_hash):
-            pass  # TODO store new hash
-    except (
-        ArgonExceptions.VerifyMismatchError,
-        ArgonExceptions.VerificationError,
-        ArgonExceptions.InvalidHash,
-    ):
-        return False
-    return is_valid
 
 
 class Token(BaseModel):
@@ -74,7 +42,7 @@ class TokenData(BaseModel):
     user_id: uuid.UUID | None = None
 
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/github/login")
 
 
 def create_tokens(

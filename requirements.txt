@@ -3,7 +3,6 @@ sqlalchemy
 python-dotenv
 aiofiles
 boto3
-argon2-cffi
 email-validator
 alembic
 pre-commit

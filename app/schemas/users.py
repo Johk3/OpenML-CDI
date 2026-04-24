@@ -12,14 +12,9 @@ class UserBase(BaseModel):
     role: Roles
 
 
-class UserCreate(UserBase):
-    password: str
-
-
 class User(UserBase):
     id: UUID
     created_at: datetime
-    is_verified: bool
     datasets: list[UUID] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True, frozen=True)

@@ -54,7 +54,6 @@ def _create_access_token_for_user(db_session_factory, user_id: uuid.UUID) -> str
                 id=user_id,
                 email="uploader@example.com",
                 username="uploader",
-                password_hash="fake-hash",
                 first_name="Upload",
                 last_name="User",
                 role=Roles.UPLOADER,
@@ -103,7 +102,7 @@ def test_upload_url_creates_pending_dataset_and_returns_presigned_url(
     )
 
     response = client.post(
-        "/datasets/upload-url",
+        "/api/datasets/upload-url",
         json={
             "name": "My dataset",
             "description": {"field": "value"},
@@ -163,7 +162,7 @@ def test_confirm_upload_triggers_scan_and_returns_202(
     )
 
     response = client.post(
-        f"/datasets/{dataset_id}/confirm-upload",
+        f"/api/datasets/{dataset_id}/confirm-upload",
         headers={"Authorization": f"Bearer {access_token}"},
     )
 
@@ -199,7 +198,7 @@ def test_upload_url_accepts_unsupported_format_and_persists_content_type(
     )
 
     response = client.post(
-        "/datasets/upload-url",
+        "/api/datasets/upload-url",
         json={
             "name": "Unsupported but accepted",
             "description": {"field": "value"},
@@ -226,7 +225,7 @@ def test_upload_url_accepts_unsupported_format_and_persists_content_type(
 
 def test_upload_url_requires_authentication(client: TestClient):
     response = client.post(
-        "/datasets/upload-url",
+        "/api/datasets/upload-url",
         json={
             "name": "My dataset",
             "description": "any description",
@@ -243,7 +242,7 @@ def test_upload_url_returns_400_when_required_metadata_missing(
     access_token = _create_access_token_for_user(db_session_factory, uuid.uuid4())
 
     response = client.post(
-        "/datasets/upload-url",
+        "/api/datasets/upload-url",
         json={
             "name": "My dataset",
             "description": "any description",
@@ -287,7 +286,6 @@ def test_upload_url_rolls_back_and_returns_500_on_db_commit_failure(monkeypatch)
             last_name="User",
             role=Roles.UPLOADER,
             created_at=datetime.now(timezone.utc),
-            is_verified=True,
             datasets=[],
         )
 
@@ -303,7 +301,7 @@ def test_upload_url_rolls_back_and_returns_500_on_db_commit_failure(monkeypatch)
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
             response = client.post(
-                "/datasets/upload-url",
+                "/api/datasets/upload-url",
                 json={
                     "name": "My dataset",
                     "description": "any description",

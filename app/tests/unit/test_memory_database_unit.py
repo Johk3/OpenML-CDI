@@ -7,7 +7,6 @@ def test_test_session(db_test_session):
     test_user = models.User(
         email="test@test.com",
         username="testuser",
-        password_hash="testhash",
         first_name="John",
         last_name="Doe",
     )

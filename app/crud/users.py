@@ -1,17 +1,12 @@
+import uuid
+from datetime import datetime, timezone
+
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
+
 from app.database import models
 from app.database.models import Roles
 from app.schemas import users as schemas
-from sqlalchemy import or_
-from datetime import timezone, datetime
-import uuid
-import os
-from dotenv import load_dotenv
-from fastapi import HTTPException
-
-load_dotenv()
-
-DUMMY_HASH = os.getenv("DUMMY_HASH", "")
 
 
 def get_user(db: Session, user_id: uuid.UUID) -> schemas.User | None:
@@ -36,44 +31,12 @@ def get_user_model_by_username(db: Session, username: str) -> models.User | None
     return db.query(models.User).filter(models.User.username == username).first()
 
 
-def get_user_model_by_identifier(db: Session, identifier: str) -> models.User | None:
-    return (
-        db.query(models.User)
-        .filter(
-            or_(models.User.email == identifier, models.User.username == identifier)
-        )
-        .first()
-    )
-
-
 def change_user_email(db: Session, user_email: str, user_id: uuid.UUID) -> schemas.User:
     db_user = _get_user(db, user_id)
-    if db_user:
-        db_user.email = user_email
-        db.commit()
-        db.refresh(db_user)
-        return schemas.User.model_validate(db_user)
-    raise ValueError("User not found")
-
-
-def create_user(db: Session, user: schemas.UserCreate) -> schemas.User:
-    from app.security import make_password_hash
-
-    hashed_password = make_password_hash(user.password)
-    if get_user_by_email(db, user.email):
-        raise ValueError("Email already registered")
-    new_user = models.User(
-        email=user.email,
-        username=user.username,
-        password_hash=hashed_password,
-        first_name=user.first_name,
-        last_name=user.last_name,
-        role=user.role,
-    )
-    db.add(new_user)
+    db_user.email = user_email
     db.commit()
-    db.refresh(new_user)
-    return schemas.User.model_validate(new_user)
+    db.refresh(db_user)
+    return schemas.User.model_validate(db_user)
 
 
 def _get_user(db: Session, user_id: uuid.UUID) -> models.User:
@@ -81,23 +44,6 @@ def _get_user(db: Session, user_id: uuid.UUID) -> models.User:
     if db_user:
         return db_user
     raise ValueError("User not found")
-
-
-def update_password(db: Session, user_id: uuid.UUID, password: str) -> schemas.User:
-    from app.security import make_password_hash
-
-    db_user = _get_user(db, user_id)
-    db_user.password_hash = make_password_hash(password)
-    db.commit()
-    db.refresh(db_user)
-    return schemas.User.model_validate(db_user)
-
-
-def get_password_hash(db: Session, identifier: str) -> str:
-    db_user = get_user_model_by_identifier(db, identifier)
-    if not db_user:
-        return DUMMY_HASH
-    return db_user.password_hash
 
 
 def del_user(db: Session, user_id: uuid.UUID) -> None:
@@ -152,9 +98,7 @@ def revoke_jti_model(db: Session, refresh_jti: models.RefreshToken) -> None:
 
 
 class TokenReuseDetectedError(Exception):
-    """Raised when a revoked token is used"""
-
-    pass
+    """Raised when a revoked token is used."""
 
 
 def verify_jti(
@@ -166,7 +110,7 @@ def verify_jti(
     db_jwt = (
         db.query(models.RefreshToken)
         .filter(models.RefreshToken.token_hash == hashed_jti)
-        .with_for_update()  # This makes the db operation lock the row until commit
+        .with_for_update()  # Lock until commit to avoid token reuse race conditions.
         .first()
     )
     if not db_jwt:
@@ -174,30 +118,13 @@ def verify_jti(
     if db_jwt.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
         return None, None
     if db_jwt.is_revoked:
-        # replay attack
         revoke_family(db, db_jwt.family_id)
         raise TokenReuseDetectedError()
     revoke_jti_model(db, db_jwt)
     return schemas.User.model_validate(db_jwt.owner), db_jwt.family_id
 
 
-def create_email_verification_token(
-    db: Session,
-    *,
-    user_id: uuid.UUID,
-    token_hash: str,
-    expires_at: datetime,
-) -> models.EmailVerificationToken:
-    verification_token = models.EmailVerificationToken(
-        user_id=user_id,
-        token_hash=token_hash,
-        expires_at=expires_at,
-    )
-    db.add(verification_token)
-    return verification_token
-
-
-def revoke_family(db: Session, family_id: uuid.UUID):
+def revoke_family(db: Session, family_id: uuid.UUID) -> None:
     db.query(models.RefreshToken).filter(
         models.RefreshToken.family_id == family_id
     ).update({"is_revoked": True}, synchronize_session="evaluate")
@@ -211,12 +138,11 @@ def get_family_owner(db: Session, family_id: uuid.UUID) -> schemas.User | None:
         .first()
     )
     if db_family:
-        owner_id = db_family.owner_id
-        return _get_user(db, owner_id)
+        return _get_user(db, db_family.owner_id)
     return None
 
 
-def set_family_name(db: Session, family_id: uuid.UUID, device_name: str):
+def set_family_name(db: Session, family_id: uuid.UUID, device_name: str) -> None:
     db_name = (
         db.query(models.TokenFamilyName)
         .filter(models.TokenFamilyName.family_id == family_id)

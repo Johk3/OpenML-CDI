@@ -6,8 +6,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from app.database import Base
 
-os.environ.setdefault("HASHING_PEPPER", "test-pepper")
 os.environ.setdefault("JWT_SECRET", "test-jwt-secret")
+os.environ.setdefault("AUTH_DEV_MODE_APPROVE_ALL_LOGINS", "true")
 
 
 @pytest.fixture(scope="function")

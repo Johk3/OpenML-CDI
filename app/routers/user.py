@@ -78,19 +78,6 @@ def change_device_name(
     return {"status_code": 200, "message": "Family name changed"}
 
 
-@router.post("/update_password")
-def update_password_user(
-    current_user: Annotated[User, Depends(get_current_active_user)],
-    password: str,
-    db: Session = Depends(get_db),
-):
-    """
-    update a users password.
-    """
-    user_crud.update_password(db, current_user.id, password)
-    return {"status_code": 200, "message": "User password updated"}
-
-
 @router.post("/update_role")
 def update_role_user(
     current_user: Annotated[User, Depends(get_current_active_user)],
