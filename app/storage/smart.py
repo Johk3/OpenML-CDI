@@ -21,12 +21,16 @@ class SmartStorageBackend:
         """Return the name of the backend."""
         return "smart" if self.s3_enabled else "local"
 
-    def create_upload_target(self, filename: str) -> UploadTarget:
+    def create_upload_target(
+        self, filename: str, prefix: str | None = None
+    ) -> UploadTarget:
         """
-        Create an upload target.
+        Create an upload target, optionally grouped under a common prefix.
         """
         safe_filename = self.local._sanitize_filename(filename)
-        storage_key = f"datasets/{uuid4().hex}_{safe_filename}"
+        # Use provided prefix batch UUID or generate a new one per file
+        folder_prefix = prefix or uuid4().hex
+        storage_key = f"datasets/{folder_prefix}/{safe_filename}"
         local_path = self.local._resolve_storage_key_path(storage_key)
         return UploadTarget(storage_key=storage_key, local_path=local_path)
 

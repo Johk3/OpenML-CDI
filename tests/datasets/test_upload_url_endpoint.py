@@ -77,45 +77,28 @@ def test_upload_url_creates_pending_dataset_and_returns_presigned_url(
     monkeypatch.setattr(
         client.app.state.storage,
         "create_upload_target",
-        lambda _filename: UploadTarget(
+        lambda _filename, **kwargs: UploadTarget(
             storage_key=expected_storage_key,
             local_path=Path(f"/tmp/{expected_storage_key}"),
         ),
     )
 
-    def fake_generate_presigned_put_url(
-        object_key: str,
-        *,
-        bucket_name: str,
-        region_name: str,
-        expires_in_seconds: int,
-    ):
-        assert object_key == expected_storage_key
-        assert bucket_name == "uploads"
-        assert region_name == "default"
-        assert expires_in_seconds == 3600
-        return f"https://storage.example/upload/{object_key}?signature=test"
-
-    monkeypatch.setattr(
-        "app.routers.dataset.generate_presigned_put_url",
-        fake_generate_presigned_put_url,
-    )
 
     response = client.post(
         "/api/datasets/upload-url",
         json={
             "name": "My dataset",
             "description": {"field": "value"},
-            "filename": filename,
+            "filenames": [filename],
         },
         headers={"Authorization": f"Bearer {access_token}"},
     )
 
     assert response.status_code == 201
     body = response.json()
-    assert set(body.keys()) == {"id", "presigned_url"}
-    assert body["presigned_url"] == (
-        f"https://storage.example/upload/{expected_storage_key}?signature=test"
+    assert set(body.keys()) == {"id", "presigned_urls", "dataset_url"}
+    assert body["presigned_urls"][0] == (
+        f"http://testserver/api/datasets/upload/{expected_storage_key}"
     )
     dataset_id = uuid.UUID(body["id"])
 
@@ -125,8 +108,8 @@ def test_upload_url_creates_pending_dataset_and_returns_presigned_url(
         assert dataset.title == "My dataset"
         assert dataset.dataset_metadata == {
             "field": "value",
-            "filename": filename,
-            "storage_key": expected_storage_key,
+            "filenames": [filename],
+            "storage_keys": [expected_storage_key],
         }
         assert dataset.owner_id == uploader_id
         assert dataset.status == Statuses.PENDING
@@ -157,7 +140,7 @@ def test_confirm_upload_triggers_scan_and_returns_202(
     scan_calls = []
 
     monkeypatch.setattr(
-        "app.routers.dataset.scan_uploaded_file",
+        "app.routers.dataset.scan_uploaded_files",
         lambda **kwargs: scan_calls.append(kwargs),
     )
 
@@ -167,13 +150,13 @@ def test_confirm_upload_triggers_scan_and_returns_202(
     )
 
     assert response.status_code == 202
-    assert response.json() == {"message": "Upload confirmed, scan started"}
+    assert response.json() == {
+        "message": "Upload confirmed, scan started",
+        "dataset_url": f"/datasets/{dataset_id}",
+    }
     assert len(scan_calls) == 1
     assert scan_calls[0]["dataset_id"] == dataset_id
-    assert scan_calls[0]["file_path"] == (
-        Path(client.app.state.settings.storage.local_upload_dir)
-        / "datasets/generated_data.csv"
-    )
+    assert scan_calls[0]["storage_keys"] == ["datasets/generated_data.csv"]
 
 
 def test_upload_url_accepts_unsupported_format_and_persists_content_type(
@@ -187,14 +170,10 @@ def test_upload_url_accepts_unsupported_format_and_persists_content_type(
     monkeypatch.setattr(
         client.app.state.storage,
         "create_upload_target",
-        lambda _filename: UploadTarget(
+        lambda _filename, **kwargs: UploadTarget(
             storage_key=expected_storage_key,
             local_path=Path(f"/tmp/{expected_storage_key}"),
         ),
-    )
-    monkeypatch.setattr(
-        "app.routers.dataset.generate_presigned_put_url",
-        lambda *_args, **_kwargs: "https://storage.example/upload/customblob",
     )
 
     response = client.post(
@@ -202,8 +181,8 @@ def test_upload_url_accepts_unsupported_format_and_persists_content_type(
         json={
             "name": "Unsupported but accepted",
             "description": {"field": "value"},
-            "filename": filename,
-            "content_type": "application/x-custom-dataset",
+            "filenames": [filename],
+            "content_types": ["application/x-custom-dataset"],
         },
         headers={"Authorization": f"Bearer {access_token}"},
     )
@@ -216,9 +195,9 @@ def test_upload_url_accepts_unsupported_format_and_persists_content_type(
         assert dataset is not None
         assert dataset.dataset_metadata == {
             "field": "value",
-            "filename": filename,
-            "content_type": "application/x-custom-dataset",
-            "storage_key": expected_storage_key,
+            "filenames": [filename],
+            "content_types": ["application/x-custom-dataset"],
+            "storage_keys": [expected_storage_key],
         }
         assert dataset.status == Statuses.PENDING
 
@@ -229,7 +208,7 @@ def test_upload_url_requires_authentication(client: TestClient):
         json={
             "name": "My dataset",
             "description": "any description",
-            "filename": "sample.csv",
+            "filenames": ["sample.csv"],
         },
     )
 
@@ -289,13 +268,6 @@ def test_upload_url_rolls_back_and_returns_500_on_db_commit_failure(monkeypatch)
             datasets=[],
         )
 
-    def fake_generate_presigned_put_url(**_kwargs):
-        raise AssertionError("presigned URL should not be generated on DB failure")
-
-    monkeypatch.setattr(
-        "app.routers.dataset.generate_presigned_put_url",
-        fake_generate_presigned_put_url,
-    )
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_active_user] = override_current_user
     try:
@@ -305,7 +277,7 @@ def test_upload_url_rolls_back_and_returns_500_on_db_commit_failure(monkeypatch)
                 json={
                     "name": "My dataset",
                     "description": "any description",
-                    "filename": "sample.csv",
+                    "filenames": ["sample.csv"],
                 },
             )
     finally:
@@ -314,3 +286,60 @@ def test_upload_url_rolls_back_and_returns_500_on_db_commit_failure(monkeypatch)
     assert response.status_code == 500
     assert response.json() == {"detail": "Failed to create dataset record"}
     assert failing_db.rollback_called is True
+
+def test_upload_url_handles_folder_structure(
+    client: TestClient, db_session_factory, monkeypatch
+):
+    uploader_id = uuid.uuid4()
+    access_token = _create_access_token_for_user(db_session_factory, uploader_id)
+    
+    # Simulate a folder upload with nested files
+    filenames = ["folder/data.csv", "folder/sub/meta.txt"]
+    
+    captured_prefixes = []
+    
+    def fake_create_upload_target(filename: str, prefix: str | None = None):
+        captured_prefixes.append(prefix)
+        # Verify sanitization happens (handled by backend but mocked here for simplicity)
+        return UploadTarget(
+            storage_key=f"datasets/{prefix}/{filename}",
+            local_path=Path(f"/tmp/{prefix}/{filename}"),
+        )
+
+    monkeypatch.setattr(
+        client.app.state.storage,
+        "create_upload_target",
+        fake_create_upload_target
+    )
+
+    response = client.post(
+        "/api/datasets/upload-url",
+        json={
+            "name": "Folder dataset",
+            "description": {"text": "Testing nested paths"},
+            "filenames": filenames,
+        },
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    
+    # Verify both files share the same prefix
+    assert len(captured_prefixes) == 2
+    assert captured_prefixes[0] == captured_prefixes[1]
+    assert captured_prefixes[0] is not None
+    
+    # Verify the presigned URLs have the correct structure
+    prefix = captured_prefixes[0]
+    assert body["presigned_urls"][0].endswith(f"datasets/{prefix}/folder/data.csv")
+    assert body["presigned_urls"][1].endswith(f"datasets/{prefix}/folder/sub/meta.txt")
+
+    with db_session_factory() as db:
+        dataset = db.get(Dataset, uuid.UUID(body["id"]))
+        metadata = dataset.dataset_metadata
+        assert metadata["filenames"] == filenames
+        assert metadata["storage_keys"] == [
+            f"datasets/{prefix}/folder/data.csv",
+            f"datasets/{prefix}/folder/sub/meta.txt",
+        ]

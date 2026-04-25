@@ -14,9 +14,10 @@ from app.security import get_current_active_user
 from app.crud import dataset as dataset_crud
 from app.database.models import Dataset as DatasetModel
 import uuid
+from uuid import uuid4
 from typing import Annotated
 from pathlib import Path
-from app.services.scan import scan_uploaded_file
+from app.services.scan import scan_uploaded_files
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
@@ -32,16 +33,26 @@ def create_upload_url(
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Session = Depends(get_db),
 ) -> DatasetUploadURLResponse:
-    upload_target = request.app.state.storage.create_upload_target(payload.filename)
+    storage_keys = []
+    presigned_urls = []
+    batch_uuid = uuid4().hex
+    for i, filename in enumerate(payload.filenames):
+        upload_target = request.app.state.storage.create_upload_target(
+            filename, prefix=batch_uuid
+        )
+        storage_keys.append(upload_target.storage_key)
+        url = f"{request.url_for('upload_file', storage_key=upload_target.storage_key)}"
+        presigned_urls.append(url)
 
     if isinstance(payload.description, dict):
         dataset_metadata = dict(payload.description)
     else:
         dataset_metadata = {"description": payload.description}
-    dataset_metadata["filename"] = payload.filename
-    if payload.content_type:
-        dataset_metadata["content_type"] = payload.content_type
-    dataset_metadata["storage_key"] = upload_target.storage_key
+
+    dataset_metadata["filenames"] = payload.filenames
+    if payload.content_types:
+        dataset_metadata["content_types"] = payload.content_types
+    dataset_metadata["storage_keys"] = storage_keys
 
     dataset = DatasetModel(
         title=payload.name,
@@ -49,7 +60,6 @@ def create_upload_url(
         owner_id=current_user.id,
         status=Statuses.PENDING,
     )
-
     try:
         db.add(dataset)
         db.commit()
@@ -60,16 +70,9 @@ def create_upload_url(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create dataset record",
         ) from error
-
-    presigned_url = (
-        f"{request.base_url}api/datasets/upload/{upload_target.storage_key}".replace(
-            "//api", "/api"
-        )
-    )
     dataset_url = f"/datasets/{dataset.id}"
-
     return DatasetUploadURLResponse(
-        id=dataset.id, presigned_url=presigned_url, dataset_url=dataset_url
+        id=dataset.id, presigned_urls=presigned_urls, dataset_url=dataset_url
     )
 
 
@@ -97,18 +100,23 @@ def confirm_upload(
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
     expertOrOwner(current_user, dataset, db)
 
-    storage_key = dataset.dataset_metadata.get("storage_key")
-    filename = dataset.dataset_metadata.get("filename")
-    file_reference = storage_key or filename
-    if not file_reference:
+    storage_keys = dataset.dataset_metadata.get("storage_keys", [])
+    if not storage_keys:
+        # Fallback for single-file datasets
+        storage_key = dataset.dataset_metadata.get("storage_key")
+        filename = dataset.dataset_metadata.get("filename")
+        if storage_key or filename:
+            storage_keys = [storage_key or filename]
+
+    if not storage_keys:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Dataset file reference missing",
+            detail="Dataset file references missing",
         )
     background_tasks.add_task(
-        scan_uploaded_file,
+        scan_uploaded_files,
         dataset_id=dataset_id,
-        storage_key=storage_key or filename,
+        storage_keys=storage_keys,
         quarantine_dir=Path(settings.storage.quarantine_dir),
         final_dir=Path(settings.storage.local_upload_dir) / "ready",
         storage=request.app.state.storage,

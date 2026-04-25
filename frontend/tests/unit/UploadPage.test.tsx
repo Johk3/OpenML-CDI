@@ -20,12 +20,12 @@ describe('UploadPage', () => {
   });
 
   it('renders the drag & drop text', () => {
-    expect(screen.getByText(/Drag & Drop your dataset here/i)).toBeInTheDocument();
+    expect(screen.getByText(/Drag & Drop your datasets here/i)).toBeInTheDocument();
   });
 
   describe('when a file is selected', () => {
     beforeEach(() => {
-      const fileInput = screen.getByTitle('') as HTMLInputElement;
+      const fileInput = document.getElementById('file-input') as HTMLInputElement;
       const file = new File(['hello'], 'hello.csv', { type: 'text/csv' });
       fireEvent.change(fileInput, { target: { files: [file] } });
     });
@@ -35,7 +35,7 @@ describe('UploadPage', () => {
     });
 
     it('displays the selected file name', () => {
-      expect(screen.getByText('hello.csv')).toBeInTheDocument();
+      expect(screen.getByText('1 file selected')).toBeInTheDocument();
     });
 
     describe('when the user clicks "Change" file', () => {
@@ -52,7 +52,7 @@ describe('UploadPage', () => {
 
   describe('when submitting the form successfully', () => {
     beforeEach(() => {
-      const fileInput = screen.getByTitle('');
+      const fileInput = document.getElementById('file-input') as HTMLInputElement;
       const file = new File(['success'], 'data.csv', { type: 'text/csv' });
       fireEvent.change(fileInput, { target: { files: [file] } });
 

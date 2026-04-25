@@ -31,8 +31,8 @@ class Dataset(DatasetBase):
 class DatasetUploadURLRequest(BaseModel):
     name: str = Field(..., min_length=1)
     description: str | dict[str, Any]
-    filename: str = Field(..., min_length=1)
-    content_type: str | None = None
+    filenames: list[str] = Field(..., min_items=1)
+    content_types: list[str | None] | None = None
 
 
 # Any file extension is accepted — format validation is deferred to a post-upload step
@@ -40,5 +40,5 @@ class DatasetUploadURLRequest(BaseModel):
 
 class DatasetUploadURLResponse(BaseModel):
     id: UUID
-    presigned_url: str
+    presigned_urls: list[str]
     dataset_url: str | None = None

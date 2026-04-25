@@ -8,28 +8,33 @@ import { CONFIG } from '@/constants/config';
 const MAX_FILE_SIZE_BYTES = CONFIG.FILE_UPLOAD_LIMIT_BYTES;
 
 interface FileUploadZoneProps {
-  onFileSelect: (file: File) => void;
+  onFilesSelect: (files: File[]) => void;
   className?: string;
 }
 
-export const FileUploadZone: React.FC<FileUploadZoneProps> = ({ onFileSelect, className }) => {
+export const FileUploadZone: React.FC<FileUploadZoneProps> = ({ onFilesSelect, className }) => {
   const [isDragActive, setIsDragActive] = useState(false);
   const [sizeError, setSizeError] = useState<string | null>(null);
 
   const validateAndSelect = useCallback(
-    (file: File) => {
+    (files: FileList) => {
       setSizeError(null);
+      const validFiles: File[] = [];
 
-      if (file.size > MAX_FILE_SIZE_BYTES) {
-        setSizeError(
-          `File exceeds the ${MAX_FILE_SIZE_BYTES / 1024 / 1024 / 1024} GB limit. Please choose a smaller file.`,
-        );
-        return;
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (file.size > MAX_FILE_SIZE_BYTES) {
+          setSizeError(
+            `File "${file.name}" exceeds the ${MAX_FILE_SIZE_BYTES / 1024 / 1024 / 1024} GB limit.`,
+          );
+          return;
+        }
+        validFiles.push(file);
       }
 
-      onFileSelect(file);
+      onFilesSelect(validFiles);
     },
-    [onFileSelect],
+    [onFilesSelect],
   );
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
@@ -50,7 +55,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({ onFileSelect, cl
       e.stopPropagation();
       setIsDragActive(false);
       if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-        validateAndSelect(e.dataTransfer.files[0]);
+        validateAndSelect(e.dataTransfer.files);
       }
     },
     [validateAndSelect],
@@ -59,7 +64,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({ onFileSelect, cl
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files.length > 0) {
-        validateAndSelect(e.target.files[0]);
+        validateAndSelect(e.target.files);
       }
     },
     [validateAndSelect],
@@ -79,7 +84,23 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({ onFileSelect, cl
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        <input type="file" className="upload-input-hidden" onChange={handleChange} title="" />
+        <input
+          type="file"
+          id="file-input"
+          className="upload-input-hidden"
+          onChange={handleChange}
+          title=""
+          multiple
+        />
+        <input
+          type="file"
+          id="folder-input"
+          className="upload-input-hidden"
+          webkitdirectory=""
+          directory=""
+          onChange={handleChange}
+          title=""
+        />
         <motion.div
           className="upload-icon-container"
           animate={{ y: isDragActive ? -5 : 0 }}
@@ -87,8 +108,17 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({ onFileSelect, cl
         >
           <UploadCloud size={40} />
         </motion.div>
-        <h3 className="upload-title">Drag &amp; Drop your dataset here</h3>
-        <p className="upload-subtitle">or click to browse from your computer</p>
+        <h3 className="upload-title">Drag &amp; Drop your datasets here</h3>
+        <p className="upload-subtitle">
+          or click to browse{' '}
+          <label htmlFor="file-input" className="upload-browse-link">
+            files
+          </label>{' '}
+          or{' '}
+          <label htmlFor="folder-input" className="upload-browse-link">
+            folders
+          </label>
+        </p>
         <p className="upload-any-format">All file formats accepted</p>
 
         {sizeError && (

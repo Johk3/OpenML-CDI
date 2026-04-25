@@ -17,10 +17,14 @@ class LocalStorageBackend:
         """Return the backend identifier used by configuration/factory code."""
         return "local"
 
-    def create_upload_target(self, filename: str) -> UploadTarget:
+    def create_upload_target(
+        self, filename: str, prefix: str | None = None
+    ) -> UploadTarget:
         """Create a unique, safe local upload destination for a filename."""
         safe_filename = self._sanitize_filename(filename)
-        storage_key = f"datasets/{uuid4().hex}_{safe_filename}"
+        # Use provided batch UUID or generate a new one per file
+        folder_prefix = prefix or uuid4().hex
+        storage_key = f"datasets/{folder_prefix}/{safe_filename}"
 
         local_path = self._resolve_storage_key_path(storage_key)
 
@@ -46,14 +50,16 @@ class LocalStorageBackend:
         return open(local_path, mode)
 
     def _sanitize_filename(self, filename: str) -> str:
-        """Keep only safe filename characters and drop any path components."""
-        base_name = Path(filename).name
-        cleaned_name = SAFE_FILENAME_CHARS.sub("_", base_name)
-        cleaned_name = cleaned_name.strip("._")
-
-        if not cleaned_name:
+        """Keep only safe filename characters."""
+        parts = Path(filename).parts
+        safe_parts = []
+        for part in parts:
+            cleaned_part = SAFE_FILENAME_CHARS.sub("_", part).strip("._")
+            if cleaned_part:
+                safe_parts.append(cleaned_part)
+        if not safe_parts:
             return "upload.bin"
-        return cleaned_name
+        return "/".join(safe_parts)
 
     def _is_within_root(self, path: Path) -> bool:
         """Check that the resolved path stays inside the configured root."""

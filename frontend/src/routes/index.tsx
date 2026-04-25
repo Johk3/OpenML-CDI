@@ -10,15 +10,22 @@ import { NotFoundPage } from '../pages/NotFoundPage';
 import { MainLayout } from '../components/MainLayout';
 import { CroissantMetadataPage } from '../pages/CroissantMetadataPage';
 import { ProtectedRoute } from '../components/ProtectedRoute';
+import { Providers } from '../providers/Providers';
 
 export const routes: RouteObject[] = [
   {
     path: '/',
-    element: <App />,
+    element: (
+      <Providers>
+        <App />
+      </Providers>
+    ),
     errorElement: (
-      <MainLayout>
-        <NotFoundPage />
-      </MainLayout>
+      <Providers>
+        <MainLayout>
+          <NotFoundPage />
+        </MainLayout>
+      </Providers>
     ),
     children: [
       {
