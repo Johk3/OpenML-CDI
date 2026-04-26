@@ -56,7 +56,7 @@ def _create_access_token_for_user(db_session_factory, user_id: uuid.UUID) -> str
                 username="uploader",
                 first_name="Upload",
                 last_name="User",
-                role=Roles.UPLOADER,
+                role=Roles.USER,
             )
         )
         db.commit()
@@ -263,7 +263,7 @@ def test_upload_url_rolls_back_and_returns_500_on_db_commit_failure(monkeypatch)
             username="uploader",
             first_name="Upload",
             last_name="User",
-            role=Roles.UPLOADER,
+            role=Roles.USER,
             created_at=datetime.now(timezone.utc),
             datasets=[],
         )

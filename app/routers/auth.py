@@ -1,3 +1,4 @@
+import logging
 import os
 import secrets
 import uuid
@@ -17,11 +18,13 @@ from app.crud.users import (
     get_user_by_email,
     get_user_model_by_username,
     revoke_family as revoke_family_crud,
+    update_role,
     verify_jti,
 )
 from app.database import get_db
 from app.schemas.users import User
 from app.security import create_tokens, decode_refresh_JWT, get_current_active_user
+from app.services.github_roles import resolve_github_repository_role
 from app.services.registration import (
     RegistrationConflictError,
     RegistrationValidationError,
@@ -38,6 +41,7 @@ DEFAULT_DEV_USERNAME = "dev-user"
 DEFAULT_DEV_FIRST_NAME = "Dev"
 DEFAULT_DEV_LAST_NAME = "User"
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["auth"])
 
 
@@ -184,6 +188,34 @@ def _ensure_oauth_user(
     return created_user
 
 
+def _sync_oauth_user_role(
+    *,
+    db: Session,
+    user: User,
+    github_username: str,
+    github_session: OAuth2Session | None = None,
+) -> User:
+    if github_session is None:
+        resolved_role = resolve_github_repository_role(github_username)
+    else:
+        resolved_role = resolve_github_repository_role(
+            github_username, session=github_session
+        )
+
+    if user.role != resolved_role:
+        user = update_role(db, user.id, resolved_role)
+
+    logger.info(
+        "Persisted GitHub-derived user role",
+        extra={
+            "user_id": str(user.id),
+            "github_username": github_username,
+            "assigned_role": resolved_role.value,
+        },
+    )
+    return user
+
+
 @router.post("/auth/refresh")
 def refresh_access(
     response: Response,
@@ -286,7 +318,7 @@ def github_login():
     github_client_id, _github_secret, github_redirect = _resolve_github_oauth_settings()
     github = OAuth2Session(
         github_client_id,
-        scope=["read:user", "user:email"],
+        scope=["read:user", "user:email", "read:org"],
         redirect_uri=github_redirect,
     )
     authorization_url, state = github.authorization_url(
@@ -327,6 +359,11 @@ def auth_github_callback(
             preferred_username=username,
             first_name=first_name,
             last_name=last_name,
+        )
+        user = _sync_oauth_user_role(
+            db=db,
+            user=user,
+            github_username=username,
         )
         response.delete_cookie(
             key="oauth_state",
@@ -375,21 +412,21 @@ def auth_github_callback(
         secure=False,  # Set to True in production (HTTPS)
     )
 
+    user_response = github.get("https://api.github.com/user")
+    if user_response.status_code != 200:
+        raise HTTPException(
+            status_code=400, detail="Failed to fetch user profile from github"
+        )
+
+    user_data = user_response.json()
+    username = user_data.get("login") or primary_email.split("@", 1)[0]
+    full_name = user_data.get("name") or ""
+    name_parts = full_name.strip().split(" ", 1)
+    first_name = name_parts[0] if name_parts[0] else DEFAULT_DEV_FIRST_NAME
+    last_name = name_parts[1] if len(name_parts) > 1 else DEFAULT_DEV_LAST_NAME
+
     user = get_user_by_email(db, primary_email)
     if not user:
-        user_response = github.get("https://api.github.com/user")
-        if user_response.status_code != 200:
-            raise HTTPException(
-                status_code=400, detail="Failed to fetch user profile from github"
-            )
-
-        user_data = user_response.json()
-        username = user_data.get("login") or primary_email.split("@", 1)[0]
-        full_name = user_data.get("name") or ""
-        name_parts = full_name.strip().split(" ", 1)
-        first_name = name_parts[0] if name_parts[0] else DEFAULT_DEV_FIRST_NAME
-        last_name = name_parts[1] if len(name_parts) > 1 else DEFAULT_DEV_LAST_NAME
-
         user = _ensure_oauth_user(
             db=db,
             email=primary_email,
@@ -397,5 +434,12 @@ def auth_github_callback(
             first_name=first_name,
             last_name=last_name,
         )
+
+    user = _sync_oauth_user_role(
+        db=db,
+        user=user,
+        github_username=username,
+        github_session=github,
+    )
 
     return _issue_tokens(response, user.id, db)

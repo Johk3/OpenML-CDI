@@ -6,7 +6,7 @@ const FEATURES = [
   {
     icon: <Globe size={22} />,
     title: 'Open Science',
-    desc: 'All datasets are publicly available to researchers worldwide.',
+    desc: 'All datasets are publicly available to experts worldwide.',
   },
   {
     icon: <Shield size={22} />,

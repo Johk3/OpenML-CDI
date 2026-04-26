@@ -15,7 +15,7 @@ def test_quarantined_dataset_cannot_be_moved_to_processing(client, db_test_sessi
             username="uploader",
             first_name="Upload",
             last_name="User",
-            role=Roles.UPLOADER,
+            role=Roles.USER,
             created_at=datetime.now(timezone.utc),
         )
     )

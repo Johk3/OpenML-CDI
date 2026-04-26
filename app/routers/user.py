@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.database.models import Roles
 from app.schemas.users import User
 from app.crud import users as user_crud
 import uuid
@@ -76,19 +75,6 @@ def change_device_name(
     user_crud.set_family_name(db, family_id, device_name)
 
     return {"status_code": 200, "message": "Family name changed"}
-
-
-@router.post("/update_role")
-def update_role_user(
-    current_user: Annotated[User, Depends(get_current_active_user)],
-    role: Roles,
-    db: Session = Depends(get_db),
-):
-    """
-    Update a user role.
-    """
-    user_crud.update_role(db, current_user.id, role)
-    return {"status_code": 200, "message": "User role changed"}
 
 
 @router.get("/get_family_name")

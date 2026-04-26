@@ -9,7 +9,8 @@ from app.schemas.datasets import (
     DatasetUploadURLResponse,
     Statuses,
 )
-from app.schemas.users import User, Roles
+from app.database.models import Roles
+from app.schemas.users import User
 from app.security import get_current_active_user
 from app.crud import dataset as dataset_crud
 from app.database.models import Dataset as DatasetModel
@@ -98,7 +99,7 @@ def confirm_upload(
 ):
     settings = request.app.state.settings
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expertOrOwner(current_user, dataset, db)
+    expert_or_owner(current_user, dataset)
 
     storage_keys = dataset.dataset_metadata.get("storage_keys", [])
     if not storage_keys:
@@ -145,7 +146,7 @@ def create_new_dataset(
     return dataset_crud.create_dataset(db=db, dataset=dataset)
 
 
-def expertOrOwner(current_user: User, dataset: Dataset | None, db: Session) -> None:
+def expert_or_owner(current_user: User, dataset: Dataset | None) -> None:
     if not dataset or (
         dataset.owner_id != current_user.id and current_user.role != Roles.EXPERT
     ):
@@ -174,7 +175,7 @@ def get_dataset(
     Retrieve info about a dataset.
     """
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expertOrOwner(current_user, dataset, db)
+    expert_or_owner(current_user, dataset)
     if dataset:
         return dataset
     raise HTTPException(status_code=404, detail="Dataset not found")
@@ -190,7 +191,7 @@ def delete_dataset(
     Delete a dataset.
     """
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expertOrOwner(current_user, dataset, db)
+    expert_or_owner(current_user, dataset)
     dataset_crud.delete_dataset(db=db, dataset_id=dataset_id)
     return {"status_code": 200, "message": "Dataset deleted successfully"}
 
@@ -206,7 +207,7 @@ def update_status_dataset(
     Update a datasets status.
     """
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expertOrOwner(current_user, dataset, db)
+    expert_or_owner(current_user, dataset)
     ensure_status_update_allowed(dataset, status)
     dataset_crud.update_dataset_status(db=db, dataset_id=dataset_id, status=status)
     return {"status_code": 200, "message": "Dataset status updated successfully"}
@@ -223,7 +224,7 @@ def update_metadata_dataset(
     Update a datasets metadata.
     """
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expertOrOwner(current_user, dataset, db)
+    expert_or_owner(current_user, dataset)
     # Sync title if present in metadata
     if isinstance(metadata, dict) and "name" in metadata:
         dataset_crud.update_dataset_title(
@@ -247,7 +248,7 @@ def update_owner_dataset(
     Update a datasets owner.
     """
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expertOrOwner(current_user, dataset, db)
+    expert_or_owner(current_user, dataset)
     dataset_crud.update_dataset_owner(
         db=db, dataset_id=dataset_id, new_owner_id=owner_id
     )
@@ -265,7 +266,7 @@ def update_issue_url_dataset(
     Update a datasets issue url.
     """
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expertOrOwner(current_user, dataset, db)
+    expert_or_owner(current_user, dataset)
     dataset_crud.update_dataset_issue_url(
         db=db, dataset_id=dataset_id, issue_url=issue_url
     )
@@ -283,6 +284,6 @@ def update_title_url_dataset(
     Update a datasets title.
     """
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expertOrOwner(current_user, dataset, db)
+    expert_or_owner(current_user, dataset)
     dataset_crud.update_dataset_title(db=db, dataset_id=dataset_id, title=title)
     return {"status_code": 200, "message": "Dataset title updated successfully"}

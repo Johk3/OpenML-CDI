@@ -59,7 +59,7 @@ def register_user(
         username=normalized_username,
         first_name=first_name.strip(),
         last_name=last_name.strip(),
-        role=Roles.UPLOADER,
+        role=Roles.USER,
     )
     db.add(new_user)
     db.commit()

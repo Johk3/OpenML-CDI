@@ -230,7 +230,7 @@ export const UploadPage: React.FC = () => {
               </Badge>
               <h1 className="heading-1 mb-3">Share Your Dataset</h1>
               <p className="subheading max-w-xl mx-auto">
-                Contribute to the OpenML community. Every dataset you share helps researchers build
+                Contribute to the OpenML community. Every dataset you share helps experts build
                 better models.
               </p>
             </div>
@@ -240,7 +240,7 @@ export const UploadPage: React.FC = () => {
             <div className="grid grid-cols-3 gap-4 mt-8 text-center">
               {[
                 { label: 'Secure Upload', desc: 'End-to-end encrypted' },
-                { label: 'Open Access', desc: 'Free for researchers' },
+                { label: 'Open Access', desc: 'Free for experts' },
                 { label: 'Expert Review', desc: 'Quality guaranteed' },
               ].map((f) => (
                 <div key={f.label} className="p-4 rounded-xl bg-card border border-border/60">

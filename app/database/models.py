@@ -9,7 +9,7 @@ import enum
 
 class Roles(str, enum.Enum):
     EXPERT = "expert"
-    UPLOADER = "uploader"
+    USER = "user"
 
 
 class Statuses(str, enum.Enum):
@@ -32,7 +32,7 @@ class User(Base):
     )
     first_name: Mapped[str] = mapped_column(String, nullable=False)
     last_name: Mapped[str] = mapped_column(String, nullable=False)
-    role: Mapped[Roles] = mapped_column(SQLEnum(Roles), default=Roles.UPLOADER)
+    role: Mapped[Roles] = mapped_column(SQLEnum(Roles), default=Roles.USER)
     datasets = relationship("Dataset", back_populates="owner")
     refresh_tokens = relationship(
         "RefreshToken", back_populates="owner", cascade="all, delete-orphan"

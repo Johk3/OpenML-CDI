@@ -31,7 +31,7 @@ const defaultUser: User = {
   id: 'test-user',
   first_name: 'Test',
   last_name: 'User',
-  role: 'uploader',
+  role: 'user',
   email: 'test@test.com',
   username: 'testuser',
   datasets: ['dataset'],

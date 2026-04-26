@@ -4,6 +4,7 @@ from urllib.parse import parse_qs, urlparse
 from fastapi.testclient import TestClient
 
 from app.database import models
+from app.database.models import Roles
 from app.security import decode_refresh_JWT
 
 
@@ -44,6 +45,10 @@ def _login_user(
 def test_dev_mode_login_creates_user_and_sets_refresh_cookie(
     client, db_test_session, monkeypatch
 ):
+    monkeypatch.setattr(
+        "app.routers.auth.resolve_github_repository_role", lambda _: Roles.USER
+    )
+
     response = _login_user(
         client,
         monkeypatch,
@@ -67,6 +72,78 @@ def test_dev_mode_login_creates_user_and_sets_refresh_cookie(
     assert stored_user.username == "new_user"
     assert stored_user.first_name == "New"
     assert stored_user.last_name == "User"
+    assert stored_user.role == Roles.USER
+
+
+def test_login_assigns_expert_for_github_maintainer(
+    client, db_test_session, monkeypatch
+):
+    resolved_usernames: list[str] = []
+
+    def fake_resolve_role(username: str) -> Roles:
+        resolved_usernames.append(username)
+        return Roles.EXPERT
+
+    monkeypatch.setattr(
+        "app.routers.auth.resolve_github_repository_role", fake_resolve_role
+    )
+
+    response = _login_user(
+        client,
+        monkeypatch,
+        email="maintainer@example.com",
+        username="maintainer",
+    )
+    access_token = response.json()["access_token"]
+
+    stored_user = (
+        db_test_session.query(models.User)
+        .filter(models.User.email == "maintainer@example.com")
+        .one()
+    )
+    assert stored_user.role == Roles.EXPERT
+    assert resolved_usernames == ["maintainer"]
+
+    me_response = client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert me_response.status_code == 200
+    assert me_response.json()["role"] == "expert"
+
+
+def test_login_downgrades_expert_after_github_permission_removal(
+    client, db_test_session, monkeypatch
+):
+    resolved_roles = iter([Roles.EXPERT, Roles.USER])
+    monkeypatch.setattr(
+        "app.routers.auth.resolve_github_repository_role",
+        lambda _username: next(resolved_roles),
+    )
+
+    _login_user(
+        client,
+        monkeypatch,
+        email="sync@example.com",
+        username="sync-user",
+    )
+    first_user = (
+        db_test_session.query(models.User)
+        .filter(models.User.email == "sync@example.com")
+        .one()
+    )
+    assert first_user.role == Roles.EXPERT
+
+    _login_user(
+        client,
+        monkeypatch,
+        email="sync@example.com",
+        username="sync-user",
+    )
+
+    db_test_session.refresh(first_user)
+    assert first_user.role == Roles.USER
 
 
 def test_login_redirects_to_github_when_dev_mode_disabled(client, monkeypatch):
