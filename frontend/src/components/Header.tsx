@@ -86,7 +86,10 @@ export const Header: React.FC = () => {
 
             {user ? (
               <>
-                <span className="text-xs text-muted-foreground flex items-center gap-1.5 font-medium">
+                <span
+                  className="text-xs text-muted-foreground flex items-center gap-1.5 font-medium cursor-pointer hover:text-primary transition-colors"
+                  onClick={() => navigate('/profile')}
+                >
                   <UserIcon size={14} className="text-primary" />
                   {displayName}
                   <span className="text-muted-foreground/60">·</span>

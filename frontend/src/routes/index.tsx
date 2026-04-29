@@ -10,6 +10,7 @@ import { NotFoundPage } from '../pages/NotFoundPage';
 import { MainLayout } from '../components/MainLayout';
 import { CroissantMetadataPage } from '../pages/CroissantMetadataPage';
 import { ProtectedRoute } from '../components/ProtectedRoute';
+import { UserPage } from '../pages/UserPage';
 import { Providers } from '../providers/Providers';
 
 export const routes: RouteObject[] = [
@@ -58,6 +59,14 @@ export const routes: RouteObject[] = [
         element: (
           <ProtectedRoute>
             <CroissantMetadataPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'profile',
+        element: (
+          <ProtectedRoute>
+            <UserPage />
           </ProtectedRoute>
         ),
       },
