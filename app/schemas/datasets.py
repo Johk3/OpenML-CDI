@@ -10,7 +10,7 @@ from app.database.models import Statuses
 class DatasetBase(BaseModel):
     title: str
     dataset_metadata: dict[str, Any] = Field(default_factory=dict)
-    owner_id: UUID
+    owner_id: UUID | None
     issue_url: str = ""
 
 

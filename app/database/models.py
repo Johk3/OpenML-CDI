@@ -46,7 +46,7 @@ class Dataset(Base):
     )
     title: Mapped[str] = mapped_column(String, nullable=False)
     owner_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, ForeignKey("users.id"), nullable=False
+        Uuid, ForeignKey("users.id"), nullable=True
     )
     owner = relationship("User", back_populates="datasets")
     created_at: Mapped[datetime] = mapped_column(
