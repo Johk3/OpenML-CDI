@@ -1,4 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status, BackgroundTasks
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Request,
+    status,
+    BackgroundTasks,
+    Query,
+)
+from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -19,6 +28,7 @@ from uuid import uuid4
 from typing import Annotated
 from pathlib import Path
 from app.services.scan import scan_uploaded_files
+from app.database import SessionLocal
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
@@ -45,7 +55,9 @@ def create_upload_url(
         url = f"{request.url_for('upload_file', storage_key=upload_target.storage_key)}"
         presigned_urls.append(url)
 
-    if isinstance(payload.description, dict):
+    if payload.description is None:
+        dataset_metadata = {"description": ""}
+    elif isinstance(payload.description, dict):
         dataset_metadata = dict(payload.description)
     else:
         dataset_metadata = {"description": payload.description}
@@ -121,7 +133,7 @@ def confirm_upload(
         quarantine_dir=Path(settings.storage.quarantine_dir),
         final_dir=Path(settings.storage.local_upload_dir) / "ready",
         storage=request.app.state.storage,
-        db=db,
+        db_factory=SessionLocal,
     )
     return {
         "message": "Upload confirmed, scan started",
@@ -165,6 +177,22 @@ def ensure_status_update_allowed(dataset: Dataset, next_status: Statuses) -> Non
         )
 
 
+@router.get("/list", response_model=list[Dataset])
+def list_datasets(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    """
+    Return all datasets owned by the current user.
+    Experts receive every dataset in the system.
+    """
+    if current_user.role == Roles.EXPERT:
+        return dataset_crud.get_all_datasets(db=db, offset=offset, limit=limit)
+    return dataset_crud.get_datasets_for_user(db=db, user_id=current_user.id)
+
+
 @router.get("/get", response_model=Dataset)
 def get_dataset(
     dataset_id: uuid.UUID,
@@ -204,10 +232,18 @@ def update_status_dataset(
     db: Session = Depends(get_db),
 ):
     """
-    Update a datasets status.
+    Update a datasets status. Only experts are allowed to change status.
     """
+    if current_user.role != Roles.EXPERT:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only experts can change dataset status",
+        )
+
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expert_or_owner(current_user, dataset)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
     ensure_status_update_allowed(dataset, status)
     dataset_crud.update_dataset_status(db=db, dataset_id=dataset_id, status=status)
     return {"status_code": 200, "message": "Dataset status updated successfully"}
@@ -287,3 +323,45 @@ def update_title_url_dataset(
     expert_or_owner(current_user, dataset)
     dataset_crud.update_dataset_title(db=db, dataset_id=dataset_id, title=title)
     return {"status_code": 200, "message": "Dataset title updated successfully"}
+
+
+@router.get("/{dataset_id}/download")
+def download_dataset(
+    dataset_id: uuid.UUID,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Session = Depends(get_db),
+):
+    """
+    Download the dataset file(s).
+    """
+    dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
+    expert_or_owner(current_user, dataset, db)
+
+    storage_keys = dataset.dataset_metadata.get("storage_keys", [])
+    if not storage_keys:
+        storage_key = dataset.dataset_metadata.get("storage_key")
+        if storage_key:
+            storage_keys = [storage_key]
+
+    if not storage_keys:
+        raise HTTPException(status_code=404, detail="No files found for this dataset")
+
+    # For now, we only support downloading the
+    # first file (which is the ZIP if > 1 files were uploaded)
+    storage_key = storage_keys[0]
+    filename = dataset.dataset_metadata.get("filenames", [f"dataset_{dataset_id}.bin"])[
+        0
+    ]
+
+    def iter_file():
+        with request.app.state.storage.open(storage_key, "rb") as f:
+            # chunked read
+            while chunk := f.read(1024 * 1024):  # 1MB chunks
+                yield chunk
+
+    return StreamingResponse(
+        iter_file(),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )

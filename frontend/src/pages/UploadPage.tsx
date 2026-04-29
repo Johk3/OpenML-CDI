@@ -327,14 +327,11 @@ export const UploadPage: React.FC = () => {
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   />
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="description">
-                      Description
-                      <span className="text-destructive ml-1">*</span>
-                    </Label>
+                    <Label htmlFor="description">Description</Label>
                     <Textarea
                       id="description"
                       placeholder="Give a description of the dataset that you are uploading. Providing any information that may help the expert in processing the dataset is appreciated."
-                      required
+                      required={false}
                       value={formData.description}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     />

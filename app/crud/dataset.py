@@ -93,3 +93,26 @@ def delete_dataset(db: Session, dataset_id: uuid.UUID) -> None:
     db_dataset = _get_dataset(db, dataset_id)
     db.delete(db_dataset)
     db.commit()
+
+
+def get_datasets_for_user(db: Session, user_id: uuid.UUID) -> list[schemas.Dataset]:
+    rows = (
+        db.query(models.Dataset)
+        .filter(models.Dataset.owner_id == user_id)
+        .order_by(models.Dataset.created_at.desc())
+        .all()
+    )
+    return [schemas.Dataset.model_validate(r) for r in rows]
+
+
+def get_all_datasets(
+    db: Session, offset: int = 0, limit: int = 100
+) -> list[schemas.Dataset]:
+    rows = (
+        db.query(models.Dataset)
+        .order_by(models.Dataset.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    return [schemas.Dataset.model_validate(r) for r in rows]

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import {
   Clock,
@@ -10,6 +10,7 @@ import {
   FileText,
   Calendar,
   Download,
+  Trash2,
 } from 'lucide-react';
 import { Dataset, DatasetStatus } from '../types/auth';
 import { Card, CardContent, CardHeader } from '../components/ui/card';
@@ -22,60 +23,73 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { useUserContext } from '@/hooks/useUserContext';
+import { DatasetService } from '@/services/datasetService';
+import { BackendDataset } from '@/types/dataset';
 
-// Mock data to demonstrate different states
-// This data is NOT real or relevant to the project and is only for demonstration purposes
-const MOCK_DATASETS: Dataset[] = [
-  {
-    id: 'ds-1',
-    title: 'CTF Team Airon Prediction',
-    description: 'A dataset containing the results of the CTF Team Airon competition.',
-    date: '2026-02-23',
-    status: 'processing',
-    metrics: { instances: 10450, features: 21 },
-  },
-  {
-    id: 'ds-2',
-    title: 'CTF Team AirJoe Prediction',
-    description: 'A dataset containing the results of the CTF Team AirJoe competition.',
-    date: '2026-02-21',
-    status: 'finished',
-    metrics: { instances: 1716, features: 5 },
-  },
-  {
-    id: 'ds-3',
-    title: 'Madoff Airline Crash Data',
-    description: 'A dataset containing all of the plane crash data from 1918 to 2026.',
-    date: '2026-02-18',
-    status: 'ready',
-  },
-  {
-    id: 'ds-4',
-    title: 'Madoff Airline Success Data',
-    description: 'A dataset containing all of the successful plane landings from 1918 to 2026.',
-    date: '2026-02-15',
-    status: 'error',
-  },
-];
+function toFrontendDataset(b: BackendDataset): Dataset {
+  const metadata = b.dataset_metadata || {};
+  let description = '';
+  let metrics: Dataset['metrics'];
+  let croissantMetadata: Dataset['croissantMetadata'];
+
+  const descriptionValue = metadata.description;
+  if (typeof descriptionValue === 'string') {
+    description = descriptionValue;
+  } else if (
+    typeof descriptionValue === 'object' &&
+    descriptionValue !== null &&
+    typeof (descriptionValue as { text?: unknown }).text === 'string'
+  ) {
+    description = (descriptionValue as { text: string }).text;
+  }
+
+  const metricsValue = metadata.metrics;
+  if (
+    typeof metricsValue === 'object' &&
+    metricsValue !== null &&
+    typeof (metricsValue as { instances?: unknown }).instances === 'number' &&
+    typeof (metricsValue as { features?: unknown }).features === 'number'
+  ) {
+    metrics = {
+      instances: (metricsValue as { instances: number }).instances,
+      features: (metricsValue as { features: number }).features,
+    };
+  }
+
+  const croissantValue = metadata.croissantMetadata;
+  if (typeof croissantValue === 'object' && croissantValue !== null) {
+    croissantMetadata = croissantValue as Dataset['croissantMetadata'];
+  }
+
+  return {
+    id: b.id || 'no-id',
+    title: b.title || 'Untitled Dataset',
+    description: description || 'No description provided.',
+    date: b.created_at ? b.created_at.slice(0, 10) : 'Unknown',
+    status: (b.status || 'pending') as DatasetStatus,
+    metrics,
+    croissantMetadata,
+  };
+}
 
 const STATUS_CONFIG: Record<DatasetStatus, { label: string; icon: React.ReactNode; cls: string }> =
   {
-    ready: {
-      label: 'Ready for Processing',
+    pending: {
+      label: 'Pending Expert Review',
       icon: <Clock size={13} />,
       cls: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800/60 dark:text-slate-300 dark:border-slate-700',
     },
-    processing: {
-      label: 'Processing…',
+    converted: {
+      label: 'Ongoing Processing',
       icon: <Loader2 size={13} className="animate-spin" />,
       cls: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800',
     },
-    finished: {
+    claimed: {
       label: 'Verified & Published',
       icon: <CheckCircle2 size={13} />,
       cls: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800',
     },
-    error: {
+    quarantined: {
       label: 'Processing Error',
       icon: <AlertCircle size={13} />,
       cls: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800',
@@ -95,8 +109,28 @@ const StatusBadge = ({ status }: { status: DatasetStatus }) => {
 };
 
 export const MyDatasetsPage: React.FC = () => {
-  const { user } = useUserContext();
-  const [datasets, setDatasets] = useState<Dataset[]>(MOCK_DATASETS);
+  const navigate = useNavigate();
+  const { user, isLoading: userLoading } = useUserContext();
+  const [datasets, setDatasets] = useState<Dataset[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Wait until the user context has finished resolving
+    if (userLoading) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    DatasetService.listDatasets()
+      .then((backendDatasets) => setDatasets(backendDatasets.map(toFrontendDataset)))
+      .catch(() => setError('Failed to load datasets. Please try again later.'))
+      .finally(() => setLoading(false));
+  }, [user, userLoading]);
 
   if (!user) {
     return (
@@ -117,9 +151,36 @@ export const MyDatasetsPage: React.FC = () => {
     );
   }
 
+  const handleMetadataConfiguration = (datasetId: string) => {
+    navigate('/metadata', { state: { datasetId: datasetId } });
+  };
+
+  const handleDelete = (id: string) => {
+    if (!confirm('Are you sure you want to delete this dataset?')) return;
+    setDeleting(id);
+    DatasetService.deleteDataset(id)
+      .then(() => setDatasets((cur) => cur.filter((ds) => ds.id !== id)))
+      .catch(() => setError('Failed to delete dataset.'))
+      .finally(() => setDeleting(null));
+  };
+
   const isExpert = user.role === 'expert';
-  const handleStatusChange = (id: string, newStatus: DatasetStatus) =>
+  const handleStatusChange = async (id: string, newStatus: DatasetStatus) => {
+    if (!isExpert) return;
+    const previous = datasets.find((ds) => ds.id === id)?.status;
+    if (!previous || previous === newStatus) return;
+
+    setUpdatingStatusId(id);
     setDatasets((cur) => cur.map((ds) => (ds.id === id ? { ...ds, status: newStatus } : ds)));
+    try {
+      await DatasetService.updateStatus(id, newStatus);
+    } catch {
+      setDatasets((cur) => cur.map((ds) => (ds.id === id ? { ...ds, status: previous } : ds)));
+      setError('Failed to update dataset status.');
+    } finally {
+      setUpdatingStatusId(null);
+    }
+  };
 
   return (
     <motion.div
@@ -152,7 +213,17 @@ export const MyDatasetsPage: React.FC = () => {
           )}
         </div>
 
-        {datasets.length === 0 ? (
+        {loading ? (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="datasets-empty">
+            <Loader2 size={32} className="animate-spin mb-4 text-primary" />
+            <p className="subheading">Loading datasets…</p>
+          </motion.div>
+        ) : error ? (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="datasets-empty">
+            <AlertCircle size={32} className="mb-4 text-destructive" />
+            <p className="subheading">{error}</p>
+          </motion.div>
+        ) : datasets.length === 0 ? (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="datasets-empty">
             <div className="empty-icon">
               <Database size={32} />
@@ -165,19 +236,9 @@ export const MyDatasetsPage: React.FC = () => {
             </p>
           </motion.div>
         ) : (
-          <motion.div
-            initial="hidden"
-            animate="visible"
-            variants={{
-              visible: { transition: { staggerChildren: 0.05 } },
-            }}
-            className="datasets-grid"
-          >
+          <div className="datasets-grid">
             {datasets.map((dataset) => (
-              <motion.div
-                key={dataset.id}
-                variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
-              >
+              <div key={dataset.id}>
                 <Link to={`/datasets/${dataset.id}`} className="block h-full">
                   <Card className="flex flex-col h-full group transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 border-border/70">
                     <CardHeader className="pb-2">
@@ -190,6 +251,33 @@ export const MyDatasetsPage: React.FC = () => {
                             <Calendar size={11} />
                             {dataset.date}
                           </span>
+                          {deleting === dataset.id ? (
+                            <Button variant="outline" size="xs" disabled>
+                              <Loader2 size={12} className="animate-spin mr-2" />
+                              Deleting...
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="xs"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                handleDelete(dataset.id);
+                              }}
+                            >
+                              <Trash2 size={12} /> Delete
+                            </Button>
+                          )}
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              handleMetadataConfiguration(dataset.id);
+                            }}
+                          >
+                            <FileText size={12} /> Configure Metadata
+                          </Button>
                           {isExpert && (
                             <Button
                               variant="outline"
@@ -234,6 +322,7 @@ export const MyDatasetsPage: React.FC = () => {
                           >
                             <SelectTrigger
                               className="h-7 text-xs w-auto max-w-[160px]"
+                              disabled={updatingStatusId === dataset.id}
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
@@ -242,10 +331,10 @@ export const MyDatasetsPage: React.FC = () => {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="ready">Ready for Processing</SelectItem>
-                              <SelectItem value="processing">Processing…</SelectItem>
-                              <SelectItem value="finished">Verified &amp; Published</SelectItem>
-                              <SelectItem value="error">Processing Error</SelectItem>
+                              <SelectItem value="pending">Pending Expert Review</SelectItem>
+                              <SelectItem value="converted">Ongoing Processing</SelectItem>
+                              <SelectItem value="claimed">Verified &amp; Published</SelectItem>
+                              <SelectItem value="quarantined">Processing Error</SelectItem>
                             </SelectContent>
                           </Select>
                         )}
@@ -253,9 +342,9 @@ export const MyDatasetsPage: React.FC = () => {
                     </CardContent>
                   </Card>
                 </Link>
-              </motion.div>
+              </div>
             ))}
-          </motion.div>
+          </div>
         )}
       </div>
     </motion.div>

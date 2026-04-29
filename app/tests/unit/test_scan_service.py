@@ -2,6 +2,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+from sqlalchemy.orm import Session
 
 from app.database.models import Dataset, Statuses
 from app.services.scan import scan_uploaded_files
@@ -60,7 +61,7 @@ def test_scan_uploaded_clean_csv_moves_file_to_ready_and_marks_clean(
         quarantine_dir=quarantine_dir,
         final_dir=final_dir,
         storage=MockStorage(),
-        db=db_test_session,
+        db_factory=lambda: Session(bind=db_test_session.bind),
     )
 
     db_test_session.refresh(dataset)
@@ -68,7 +69,7 @@ def test_scan_uploaded_clean_csv_moves_file_to_ready_and_marks_clean(
     final_path = final_dir / str(dataset.id) / filename
     assert final_path.exists()
     assert final_path.read_bytes() == b"feature,target\n1,0\n"
-    assert dataset.status == Statuses.CLAIMED
+    assert dataset.status == Statuses.PENDING
     assert dataset.dataset_metadata["malware_scan"]["files"][0]["status"] == "clean"
 
 
@@ -106,7 +107,7 @@ def test_scan_uploaded_nested_folder_preserves_structure(
         quarantine_dir=quarantine_dir,
         final_dir=final_dir,
         storage=MockStorage(),
-        db=db_test_session,
+        db_factory=lambda: Session(bind=db_test_session.bind),
     )
 
     db_test_session.refresh(dataset)
@@ -114,7 +115,7 @@ def test_scan_uploaded_nested_folder_preserves_structure(
     expected_path = final_dir / str(dataset_id) / rel_path
     assert expected_path.exists()
     assert expected_path.read_bytes() == b"nested data"
-    assert dataset.status == Statuses.CLAIMED
+    assert dataset.status == Statuses.PENDING
 
 
 @pytest.mark.parametrize(
@@ -159,7 +160,7 @@ def test_scan_uploaded_infected_files_stay_quarantined_and_mark_dataset(
         quarantine_dir=quarantine_dir,
         final_dir=final_dir,
         storage=MockStorage(),
-        db=db_test_session,
+        db_factory=lambda: Session(bind=db_test_session.bind),
     )
 
     db_test_session.refresh(dataset)

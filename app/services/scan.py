@@ -1,7 +1,7 @@
 import uuid
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from sqlalchemy.orm import Session
 from app.database.models import Dataset, Statuses
 
@@ -68,7 +68,7 @@ def scan_uploaded_files(
     quarantine_dir: Path,
     final_dir: Path,
     storage: Any,
-    db: Session,
+    db_factory: Callable[[], Session],
 ) -> None:
     quarantine_dir.mkdir(parents=True, exist_ok=True)
 
@@ -76,50 +76,47 @@ def scan_uploaded_files(
     dataset_final_dir = final_dir / str(dataset_id)
     dataset_final_dir.mkdir(parents=True, exist_ok=True)
 
-    dataset = db.get(Dataset, dataset_id)
-    if dataset is None:
-        return
+    with db_factory() as db:
+        dataset = db.get(Dataset, dataset_id)
+        if dataset is None:
+            return
 
-    overall_results = []
-    all_clean = True
+        overall_results = []
+        all_clean = True
 
-    for storage_key in storage_keys:
-        rel_path = _get_relative_path(storage_key)
-        temp_id = uuid.uuid4().hex
-        quarantine_path = quarantine_dir / f"scan_{temp_id}_{rel_path.name}"
+        for storage_key in storage_keys:
+            rel_path = _get_relative_path(storage_key)
+            temp_id = uuid.uuid4().hex
+            quarantine_path = quarantine_dir / f"scan_{temp_id}_{rel_path.name}"
 
-        try:
-            with storage.open(storage_key, "rb") as src:
-                with quarantine_path.open("wb") as dst:
-                    shutil.copyfileobj(src, dst)
-        except Exception as e:
-            all_clean = False
-            overall_results.append(
-                {
-                    "file": str(rel_path),
-                    "status": "missing",
-                    "message": f"Failed to retrieve file for scan: {str(e)}",
-                }
-            )
-            continue
+            try:
+                with storage.open(storage_key, "rb") as src:
+                    with quarantine_path.open("wb") as dst:
+                        shutil.copyfileobj(src, dst)
+            except Exception as e:
+                all_clean = False
+                overall_results.append(
+                    {
+                        "file": str(rel_path),
+                        "status": "missing",
+                        "message": f"Failed to retrieve file for scan: {str(e)}",
+                    }
+                )
+                continue
 
-        scan_result = _scan_file(quarantine_path)
-        scan_result["file"] = str(rel_path)
-        overall_results.append(scan_result)
+            scan_result = _scan_file(quarantine_path)
+            scan_result["file"] = str(rel_path)
+            overall_results.append(scan_result)
 
-        if scan_result["status"] == "clean":
-            final_path = dataset_final_dir / rel_path
-            # Ensure the nested directory structure exists in the destination
-            final_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(quarantine_path), final_path)
-        else:
-            all_clean = False
+            if scan_result["status"] == "clean":
+                final_path = dataset_final_dir / rel_path
+                # Ensure the nested directory structure exists in the destination
+                final_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(quarantine_path), final_path)
+            else:
+                all_clean = False
 
-    _set_scan_metadata(dataset, {"files": overall_results, "engine": SCAN_ENGINE})
-
-    if all_clean:
-        dataset.status = Statuses.CLAIMED
-    else:
-        dataset.status = Statuses.QUARANTINED
-
-    db.commit()
+        _set_scan_metadata(dataset, {"files": overall_results, "engine": SCAN_ENGINE})
+        # Uploaded datasets stay pending expert review unless malware is detected.
+        dataset.status = Statuses.PENDING if all_clean else Statuses.QUARANTINED
+        db.commit()

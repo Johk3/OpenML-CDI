@@ -17,12 +17,22 @@ export interface TokenResponse {
   token_type: string;
 }
 
-export type DatasetStatus = 'ready' | 'processing' | 'finished' | 'error';
+export type DatasetStatus = 'pending' | 'claimed' | 'converted' | 'quarantined';
 
 export interface CroissantVariable {
   name: string;
   type: string;
   description?: string;
+}
+
+export interface CroissantDistribution {
+  name?: string;
+  description?: string;
+  contentUrl?: string;
+  encodingFormat?: string;
+  sha256?: string;
+  md5?: string;
+  contentSize?: string;
 }
 
 export interface CroissantMetadata {
@@ -32,6 +42,7 @@ export interface CroissantMetadata {
   license: string;
   variables: CroissantVariable[];
   url?: string;
+  distribution?: CroissantDistribution[];
 }
 
 export interface Comment {
@@ -54,4 +65,11 @@ export interface Dataset {
   };
   croissantMetadata?: CroissantMetadata;
   comments?: Comment[];
+  files?: string[];
+  contact?: {
+    first_name: string;
+    last_name: string;
+    email: string;
+  };
+  rawMetadata?: Record<string, unknown>;
 }

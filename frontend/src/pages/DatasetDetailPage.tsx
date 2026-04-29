@@ -12,66 +12,116 @@ import {
   Link as LinkIcon,
   Loader2,
   AlertCircle,
+  User as UserIcon,
+  Mail,
+  FileCode,
+  Download,
+  ChevronDown,
+  ChevronUp,
+  FileJson,
 } from 'lucide-react';
-import { Dataset } from '../types/auth';
+import { CroissantDistribution, CroissantMetadata, Dataset, DatasetStatus } from '../types/auth';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { useUserContext } from '@/hooks/useUserContext';
+import { DatasetService } from '@/services/datasetService';
+import { BackendDataset } from '@/types/dataset';
 
-// Mock data fetching function
-const fetchDatasetMock = async (id: string): Promise<Dataset> => {
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      // Mock cases
-      if (id === 'ds-not-found') {
-        reject(new Error('Dataset not found'));
-      } else {
-        resolve({
-          id,
-          title: `Madoff Airlines Dataset ${id}`,
-          description:
-            'A description of the Madoff Airlines Dataset, this dataset was gathered shortly after the events of the great madoff crash of 2008. The data includes information about the plane and the passengers.',
-          date: '2026-03-11',
-          status: 'finished',
-          metrics: { instances: 50000, features: 128 },
-          croissantMetadata: {
-            title: `Croissant Metadata: ${id}`,
-            description:
-              'This descriptive section comes directly from the Croissant metadata, providing precise information about the data collection methodology.',
-            contributors: ['Aron Madoff', 'Gabe Madoff'],
-            license: 'CC-BY-4.0',
-            url: 'https://openml.org/d/1234',
-            variables: [
-              { name: 'age', type: 'integer', description: 'Patient age in years' },
-              { name: 'name', type: 'string', description: 'Patient name' },
-              {
-                name: 'status',
-                type: 'categorical',
-                description: 'Health status (deceased, alive)',
-              },
-            ],
-          },
-          comments: [
-            {
-              id: 'c-1',
-              author: 'Dr. Expert',
-              role: 'expert',
-              text: 'This dataset look well-structured. I recommend adding a new column for which seat each person was located in.',
-              date: '2026-03-10T14:30:00Z',
-            },
-            {
-              id: 'c-2',
-              author: 'User Aron',
-              role: 'user',
-              text: 'Thanks for the feedback. I will upload a new version with the seats.',
-              date: '2026-03-11T09:15:00Z',
-            },
-          ],
-        });
-      }
-    }, 800); // simulate network delay
-  });
-};
+function parseDistribution(value: unknown): CroissantDistribution[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item) => typeof item === 'object' && item !== null)
+    .map((item) => {
+      const obj = item as Record<string, unknown>;
+      return {
+        name: typeof obj.name === 'string' ? obj.name : undefined,
+        description: typeof obj.description === 'string' ? obj.description : undefined,
+        contentUrl: typeof obj.contentUrl === 'string' ? obj.contentUrl : undefined,
+        encodingFormat: typeof obj.encodingFormat === 'string' ? obj.encodingFormat : undefined,
+        sha256: typeof obj.sha256 === 'string' ? obj.sha256 : undefined,
+        md5: typeof obj.md5 === 'string' ? obj.md5 : undefined,
+        contentSize:
+          typeof obj.contentSize === 'string' || typeof obj.contentSize === 'number'
+            ? String(obj.contentSize)
+            : undefined,
+      };
+    });
+}
+
+function toFrontendDataset(b: BackendDataset): Dataset {
+  const metadata = b.dataset_metadata || {};
+  let description = '';
+  let contact: Dataset['contact'];
+  let metrics: Dataset['metrics'];
+
+  const descriptionValue = metadata.description;
+  if (typeof descriptionValue === 'string') {
+    description = descriptionValue;
+  } else if (
+    typeof descriptionValue === 'object' &&
+    descriptionValue !== null &&
+    typeof (descriptionValue as { text?: unknown }).text === 'string'
+  ) {
+    description = (descriptionValue as { text: string }).text;
+    const contactValue = (descriptionValue as { contact?: unknown }).contact;
+    if (
+      typeof contactValue === 'object' &&
+      contactValue !== null &&
+      typeof (contactValue as { first_name?: unknown }).first_name === 'string' &&
+      typeof (contactValue as { last_name?: unknown }).last_name === 'string' &&
+      typeof (contactValue as { email?: unknown }).email === 'string'
+    ) {
+      contact = contactValue as Dataset['contact'];
+    }
+  }
+
+  // Detect Croissant Metadata
+  let croissant: CroissantMetadata | undefined = undefined;
+  if (metadata.conformsTo || metadata['@type'] === 'sc:Dataset' || metadata['@context']) {
+    const creatorValue = metadata.creator;
+    const contributors =
+      Array.isArray(creatorValue) && creatorValue.length > 0
+        ? creatorValue.map((c) =>
+            typeof c === 'string' ? c : (c as { name?: string }).name || 'Unknown',
+          )
+        : [];
+    croissant = {
+      title: (metadata.name as string) || (metadata.title as string) || b.title,
+      description: (metadata.description as string) || description,
+      license: (metadata.license as string) || 'Unspecified',
+      contributors,
+      variables: [], // Simplified for now
+      url: (metadata.url as string) || undefined,
+      distribution: parseDistribution(metadata.distribution),
+    };
+  }
+
+  const metricsValue = metadata.metrics;
+  if (
+    typeof metricsValue === 'object' &&
+    metricsValue !== null &&
+    typeof (metricsValue as { instances?: unknown }).instances === 'number' &&
+    typeof (metricsValue as { features?: unknown }).features === 'number'
+  ) {
+    metrics = {
+      instances: (metricsValue as { instances: number }).instances,
+      features: (metricsValue as { features: number }).features,
+    };
+  }
+
+  return {
+    id: b.id || 'no-id',
+    title: b.title || 'Untitled Dataset',
+    description: description || 'No description provided.',
+    date: b.created_at ? b.created_at.slice(0, 10) : 'Unknown',
+    status: (b.status || 'pending') as DatasetStatus,
+    metrics,
+    croissantMetadata: croissant || (metadata.croissantMetadata as CroissantMetadata | undefined),
+    files: metadata.filenames as string[],
+    contact: contact,
+    rawMetadata: b.dataset_metadata,
+  };
+}
 
 export const DatasetDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -81,6 +131,7 @@ export const DatasetDetailPage: React.FC = () => {
   const [dataset, setDataset] = useState<Dataset | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [showAllFiles, setShowAllFiles] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -88,18 +139,16 @@ export const DatasetDetailPage: React.FC = () => {
     let isMounted = true;
 
     const loadDataset = async () => {
-      // Defer state updates to avoid synchronous setState warnings
       await Promise.resolve();
-
       if (!isMounted) return;
       setLoading(true);
       setError(null);
 
       try {
-        const data = await fetchDatasetMock(id);
-        if (isMounted) setDataset(data);
+        const data: BackendDataset = await DatasetService.getDataset(id);
+        if (isMounted) setDataset(toFrontendDataset(data));
       } catch (err) {
-        if (isMounted) setError(err instanceof Error ? err.message : String(err));
+        if (isMounted) setError(err instanceof Error ? err.message : 'Dataset not found.');
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -154,6 +203,12 @@ export const DatasetDetailPage: React.FC = () => {
   }
 
   const { croissantMetadata, comments } = dataset;
+  const statusLabel: Record<DatasetStatus, string> = {
+    pending: 'Pending Expert Review',
+    converted: 'Ongoing Processing',
+    claimed: 'Verified & Published',
+    quarantined: 'Processing Error',
+  };
 
   return (
     <motion.div
@@ -200,7 +255,7 @@ export const DatasetDetailPage: React.FC = () => {
 
         <div className="flex gap-3 shrink-0">
           <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-primary/10 text-primary border border-primary/20">
-            {dataset.status.charAt(0).toUpperCase() + dataset.status.slice(1)}
+            {statusLabel[dataset.status]}
           </span>
         </div>
       </div>
@@ -219,9 +274,32 @@ export const DatasetDetailPage: React.FC = () => {
               animate={{ opacity: 1 }}
               transition={{ delay: 0.1 }}
             >
-              <h2 className="text-xl font-semibold mb-4 border-b pb-2 flex items-center gap-2">
-                <Database className="w-5 h-5 text-primary" /> Croissant Metadata
-              </h2>
+              <div className="flex items-center justify-between mb-4 border-b pb-2">
+                <h2 className="text-xl font-semibold flex items-center gap-2">
+                  <Database className="w-5 h-5 text-primary" /> Croissant Metadata
+                </h2>
+                {dataset.rawMetadata && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => {
+                      const jsonString = JSON.stringify(dataset.rawMetadata, null, 2);
+                      const blob = new Blob([jsonString], { type: 'application/json' });
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `${dataset.title.replace(/\s+/g, '_').toLowerCase()}_croissant.json`;
+                      document.body.appendChild(a);
+                      a.click();
+                      a.remove();
+                      window.URL.revokeObjectURL(url);
+                    }}
+                  >
+                    <FileJson size={14} /> Download Croissant
+                  </Button>
+                )}
+              </div>
 
               <div className="space-y-6">
                 <div>
@@ -306,8 +384,169 @@ export const DatasetDetailPage: React.FC = () => {
                     </div>
                   </div>
                 )}
+
+                {croissantMetadata.distribution && croissantMetadata.distribution.length > 0 && (
+                  <div>
+                    <h3 className="font-medium text-foreground mb-3 text-sm flex items-center gap-2">
+                      <FileCode className="w-4 h-4 text-muted-foreground" /> Distribution (
+                      {croissantMetadata.distribution.length})
+                    </h3>
+                    <div className="space-y-3">
+                      {croissantMetadata.distribution.map((item, idx) => (
+                        <div key={idx} className="rounded-lg border p-3 text-sm space-y-1">
+                          <p className="font-medium">{item.name || `File ${idx + 1}`}</p>
+                          {item.description && (
+                            <p className="text-muted-foreground">{item.description}</p>
+                          )}
+                          <div className="text-muted-foreground space-y-1">
+                            {item.contentUrl && (
+                              <p className="flex items-center gap-1">
+                                <span className="font-medium text-foreground">URL:</span>
+                                <a
+                                  href={item.contentUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-primary hover:underline flex items-center gap-1"
+                                >
+                                  Link <LinkIcon size={12} />
+                                </a>
+                              </p>
+                            )}
+                            {item.encodingFormat && (
+                              <p>
+                                <span className="font-medium text-foreground">Format:</span>{' '}
+                                {item.encodingFormat}
+                              </p>
+                            )}
+                            {item.contentSize && (
+                              <p>
+                                <span className="font-medium text-foreground">Size:</span>{' '}
+                                {item.contentSize}
+                              </p>
+                            )}
+                            {item.sha256 && (
+                              <p className="break-all">
+                                <span className="font-medium text-foreground">SHA-256:</span>{' '}
+                                {item.sha256}
+                              </p>
+                            )}
+                            {item.md5 && (
+                              <p className="break-all">
+                                <span className="font-medium text-foreground">MD5:</span> {item.md5}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </motion.section>
+          )}
+
+          {dataset.files && dataset.files.length > 0 && (
+            <section>
+              <div className="flex items-center justify-between mb-4 border-b pb-2">
+                <h2 className="text-xl font-semibold flex items-center gap-2">
+                  <FileCode className="w-5 h-5 text-primary" /> Uploaded Files (
+                  {dataset.files.length})
+                </h2>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={async () => {
+                    const { blob, filename } = await DatasetService.downloadDataset(dataset.id);
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(url);
+                  }}
+                >
+                  <Download size={14} /> Download Dataset
+                </Button>
+              </div>
+              <div className="bg-muted/10 rounded-xl border p-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {(showAllFiles ? dataset.files : dataset.files.slice(0, 100)).map((file, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-3 p-2.5 rounded-lg bg-card border border-border/50 text-xs"
+                    >
+                      <div className="w-7 h-7 rounded bg-primary/5 flex items-center justify-center text-primary shrink-0">
+                        <FileText size={14} />
+                      </div>
+                      <span className="truncate font-medium">{file}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {dataset.files.length > 100 && (
+                  <div className="mt-4 flex justify-center">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowAllFiles(!showAllFiles)}
+                      className="text-primary hover:text-primary/80"
+                    >
+                      {showAllFiles ? (
+                        <>
+                          <ChevronUp className="mr-2 h-4 w-4" /> Show Less
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown className="mr-2 h-4 w-4" /> Show All (
+                          {dataset.files.length - 100} more)
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
+          {dataset.contact && (
+            <section>
+              <h2 className="text-xl font-semibold mb-4 border-b pb-2 flex items-center gap-2">
+                <UserIcon className="w-5 h-5 text-primary" /> Submitter Info
+              </h2>
+              <Card className="bg-primary/[0.02] border-primary/10">
+                <CardContent className="pt-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                        <UserIcon size={20} />
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
+                          Name
+                        </p>
+                        <p className="font-medium">
+                          {dataset.contact.first_name} {dataset.contact.last_name}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                        <Mail size={20} />
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
+                          Email
+                        </p>
+                        <p className="font-medium">{dataset.contact.email}</p>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </section>
           )}
         </div>
 

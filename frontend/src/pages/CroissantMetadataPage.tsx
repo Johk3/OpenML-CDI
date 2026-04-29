@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { ArrowLeft, Save, Plus, Trash2, AlertCircle } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { serializeCroissant, CroissantFormData, FieldValue } from '../utils/serializeCroissant';
+import { deserializeCroissant } from '../utils/deserializeCroissant';
 import { DatasetService } from '@/services/datasetService';
 import { AxiosError } from 'axios';
 
@@ -50,27 +51,36 @@ export const CroissantMetadataPage: React.FC = () => {
       setIsLoading(true);
       try {
         const dataset = await DatasetService.getDataset(datasetId);
-        setFormData((prev) => {
-          // Only pre-fill if fields are currently empty
-          const newDataset = { ...prev.dataset };
 
-          if (!newDataset.name && dataset.title) {
-            newDataset.name = dataset.title;
-          }
+        // If we already have croissant metadata in dataset_metadata, deserialize it
+        if (
+          dataset.dataset_metadata &&
+          (dataset.dataset_metadata.distribution || dataset.dataset_metadata['@context'])
+        ) {
+          const existingData = deserializeCroissant(dataset.dataset_metadata);
+          setFormData(existingData);
+        } else {
+          // Fallback to pre-filling just name/description from basic info
+          setFormData((prev) => {
+            const newDataset = { ...prev.dataset };
 
-          if (!newDataset.description && dataset.dataset_metadata?.description) {
-            const desc = dataset.dataset_metadata.description;
-            newDataset.description = typeof desc === 'string' ? desc : desc.text || '';
-          }
+            if (!newDataset.name && dataset.title) {
+              newDataset.name = dataset.title;
+            }
 
-          return {
-            ...prev,
-            dataset: newDataset,
-          };
-        });
+            if (!newDataset.description && dataset.dataset_metadata?.description) {
+              const desc = dataset.dataset_metadata.description;
+              newDataset.description = typeof desc === 'string' ? desc : desc.text || '';
+            }
+
+            return {
+              ...prev,
+              dataset: newDataset,
+            };
+          });
+        }
       } catch (err) {
         console.error('Failed to fetch dataset:', err);
-        // We don't block the user, just log it
       } finally {
         setIsLoading(false);
       }

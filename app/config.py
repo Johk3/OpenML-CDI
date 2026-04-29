@@ -17,6 +17,7 @@ DEFAULT_EMAIL_FROM = "noreply@example.com"
 DEFAULT_APP_BASE_URL = "http://localhost:8000"
 DEFAULT_EMAIL_VERIFICATION_TTL_HOURS = 24
 DEFAULT_QUARANTINE_DIR = ".quarantine"
+DEFAULT_CORS_ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
 
 
 def _get_bool_env(name: str, default: bool) -> bool:
@@ -140,6 +141,7 @@ class Settings:
     storage: StorageSettings
     email: EmailSettings
     upload: UploadURLSettings
+    cors_allowed_origins: list[str]
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -148,4 +150,11 @@ class Settings:
             storage=StorageSettings.from_env(),
             email=EmailSettings.from_env(),
             upload=UploadURLSettings.from_env(),
+            cors_allowed_origins=[
+                origin.strip()
+                for origin in os.getenv(
+                    "CORS_ALLOWED_ORIGINS", DEFAULT_CORS_ALLOWED_ORIGINS
+                ).split(",")
+                if origin.strip()
+            ],
         )

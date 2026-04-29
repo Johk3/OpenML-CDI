@@ -14,9 +14,8 @@ export const publicClient = axios.create({
 });
 
 async function callRefreshEndpoint(): Promise<string> {
-  // We use a plain axios request instead of the apiClient to avoid interceptor loops (i.e. we do not need to check auth with this request)
   const response = await axios.post<TokenResponse>(
-    `${BASE_URL}/api/auth/refresh`,
+    `${BASE_URL}/auth/refresh`,
     {},
     { withCredentials: true },
   );

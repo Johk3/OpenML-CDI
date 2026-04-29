@@ -376,6 +376,15 @@ def auth_github_callback(
     if not saved_state:
         raise HTTPException(status_code=400, detail="State missing or expired.")
 
+    query_params = dict(request.query_params)
+    code = query_params.get("code")
+    state = query_params.get("state")
+
+    if not code:
+        raise HTTPException(status_code=400, detail="Code missing.")
+    if state != saved_state:
+        raise HTTPException(status_code=400, detail="State mismatch.")
+
     github_client_id, github_secret, github_redirect = _resolve_github_oauth_settings()
     github = OAuth2Session(
         github_client_id,
@@ -386,9 +395,10 @@ def auth_github_callback(
         github.fetch_token(
             "https://github.com/login/oauth/access_token",
             client_secret=github_secret,
-            authorization_response=str(request.url),
+            code=code,
         )
-    except Exception:
+    except Exception as e:
+        logger.error(f"GitHub token exchange failed: {e}")
         raise HTTPException(status_code=400, detail="Authentication failed.")
 
     emails_response = github.get("https://api.github.com/user/emails")
