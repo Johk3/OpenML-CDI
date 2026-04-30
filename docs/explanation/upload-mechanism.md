@@ -9,8 +9,9 @@ We designed an upload mechanism that tries to upload to S3, but falls back to lo
 
 ## Safety First: The Malware Scan
 
-As soon as an upload is confirmed, a malware scan is done (Currently signature based).
+As soon as an upload is confirmed, a ClamAV scan is done through a configured `clamd` daemon.
 
 1. It pulls the file from its storage (whether that was S3 or local).
-2. It runs a signature-based malware scan.
-3. If its clean its moved to .local_uploads if its not then its moved to .quanrantine
+2. It scans the quarantined file using `CLAMD_SOCKET` or `CLAMD_HOST`/`CLAMD_PORT`.
+3. If the file is clean, it is moved to `<LOCAL_UPLOAD_DIR>/ready` and the dataset is marked `claimed`.
+4. If the file is infected, or ClamAV is unavailable, the dataset is marked `quarantined` and the quarantine copy is deleted.

@@ -17,3 +17,4 @@ pytest-order
 pytest-xdist
 requests_oauthlib
 smart_open[all]
+clamd

@@ -26,13 +26,13 @@ docker run -d \
   openml-upload
 ```
 
-| Flag                   | Purpose                                                                                                                         |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `-p 8000:8000`         | Maps the container's application port to your host. Change the first number to use a different host port (e.g. `-p 3000:8000`). |
-| `-v openml-data:/data` | Mounts a named Docker volume to `/data` inside the container, where the application persists uploaded files.                    |
-| `-d`                   | Runs the container in the background.                                                                                           |
+| Flag                   | Purpose                                                                                                                        |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `-p 8000:8000`         | Maps the container's application port to your host. Change the first number to use a different host port (e.g.`-p 3000:8000`). |
+| `-v openml-data:/data` | Mounts a named Docker volume to`/data` inside the container, where the application persists uploaded files.                    |
+| `-d`                   | Runs the container in the background.                                                                                          |
 
-Once running, the application is available at **<http://localhost:8000>**.
+Once running, the application is available at **[http://localhost:8000](http://localhost:8000)**.
 
 ## Environment variables
 
@@ -44,14 +44,22 @@ docker run -d \
   -v openml-data:/data \
   -e STORAGE_BACKEND=local \
   -e LOCAL_UPLOAD_DIR=/data/uploads \
+  -e QUARANTINE_DIR=/data/quarantine \
+  -e CLAMD_HOST=clamav \
+  -e CLAMD_PORT=3310 \
   --name openml-upload \
   openml-upload
 ```
 
-| Variable           | Default          | Description                                                                                                                                        |
-| ------------------ | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `STORAGE_BACKEND`  | `local`          | Storage backend to use for uploads.                                                                                                                |
-| `LOCAL_UPLOAD_DIR` | `.local_uploads` | Directory for locally stored uploads. Set this to a path under `/data` (e.g. `/data/uploads`) so that uploads are persisted on the mounted volume. |
+| Variable                | Default          | Description                                                                                                                                       |
+| ----------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `STORAGE_BACKEND`       | `local`          | Storage backend to use for uploads.                                                                                                               |
+| `LOCAL_UPLOAD_DIR`      | `.local_uploads` | Directory for locally stored uploads. Set this to a path under`/data` (e.g. `/data/uploads`) so that uploads are persisted on the mounted volume. |
+| `QUARANTINE_DIR`        | `.quarantine`    | Directory used for temporary scan copies before promotion.                                                                                        |
+|                         |                  |                                                                                                                                                   |
+| `CLAMD_HOST`            | `127.0.0.1`      | Hostname for`clamd` when using TCP.                                                                                                               |
+| `CLAMD_PORT`            | `3310`           | TCP port for`clamd`.                                                                                                                              |
+| `CLAMD_TIMEOUT_SECONDS` | `10`             | Timeout for ClamAV daemon calls.                                                                                                                  |
 
 ## Using the pre-built image from GHCR
 

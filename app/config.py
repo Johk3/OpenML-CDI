@@ -3,6 +3,11 @@ import os
 
 STORAGE_BACKEND_ENV = "STORAGE_BACKEND"
 LOCAL_UPLOAD_DIR_ENV = "LOCAL_UPLOAD_DIR"
+QUARANTINE_DIR_ENV = "QUARANTINE_DIR"
+CLAMD_SOCKET_ENV = "CLAMD_SOCKET"
+CLAMD_HOST_ENV = "CLAMD_HOST"
+CLAMD_PORT_ENV = "CLAMD_PORT"
+CLAMD_TIMEOUT_SECONDS_ENV = "CLAMD_TIMEOUT_SECONDS"
 UPLOAD_TARGET_ENV = "UPLOAD_TARGET"
 UPLOAD_LOCATION_ENV = "UPLOAD_LOCATION"
 UPLOAD_URL_EXPIRES_SECONDS_ENV = "UPLOAD_URL_EXPIRES_SECONDS"
@@ -12,6 +17,9 @@ DEFAULT_UPLOAD_TARGET = "uploads"
 DEFAULT_UPLOAD_LOCATION = "default"
 DEFAULT_UPLOAD_URL_EXPIRES_SECONDS = 3600
 SUPPORTED_STORAGE_BACKENDS = {"local", "smart"}
+DEFAULT_CLAMD_HOST = "127.0.0.1"
+DEFAULT_CLAMD_PORT = 3310
+DEFAULT_CLAMD_TIMEOUT_SECONDS = 10.0
 DEFAULT_EMAIL_BACKEND = "console"
 DEFAULT_EMAIL_FROM = "noreply@example.com"
 DEFAULT_APP_BASE_URL = "http://localhost:8000"
@@ -32,6 +40,10 @@ class StorageSettings:
     backend: str = DEFAULT_STORAGE_BACKEND
     local_upload_dir: str = DEFAULT_LOCAL_UPLOAD_DIR
     quarantine_dir: str = DEFAULT_QUARANTINE_DIR
+    clamd_socket: str = ""
+    clamd_host: str = DEFAULT_CLAMD_HOST
+    clamd_port: int = DEFAULT_CLAMD_PORT
+    clamd_timeout_seconds: float = DEFAULT_CLAMD_TIMEOUT_SECONDS
     s3_bucket: str = ""
     s3_region: str = ""
     s3_endpoint: str = ""
@@ -47,8 +59,33 @@ class StorageSettings:
         raw_upload_dir = os.getenv(LOCAL_UPLOAD_DIR_ENV, DEFAULT_LOCAL_UPLOAD_DIR)
         local_upload_dir = raw_upload_dir.strip()
 
-        raw_quarantine_dir = os.getenv("QUARANTINE_DIR", DEFAULT_QUARANTINE_DIR)
+        raw_quarantine_dir = os.getenv(QUARANTINE_DIR_ENV, DEFAULT_QUARANTINE_DIR)
         quarantine_dir = raw_quarantine_dir.strip()
+
+        raw_clamd_socket = os.getenv(CLAMD_SOCKET_ENV, "")
+        clamd_socket = raw_clamd_socket.strip()
+
+        raw_clamd_host = os.getenv(CLAMD_HOST_ENV, DEFAULT_CLAMD_HOST)
+        clamd_host = raw_clamd_host.strip() or DEFAULT_CLAMD_HOST
+
+        raw_clamd_port = os.getenv(CLAMD_PORT_ENV, str(DEFAULT_CLAMD_PORT))
+        try:
+            clamd_port = int(raw_clamd_port.strip())
+        except ValueError as error:
+            raise ValueError("CLAMD_PORT must be an integer") from error
+        if clamd_port <= 0:
+            raise ValueError("CLAMD_PORT must be > 0")
+
+        raw_clamd_timeout = os.getenv(
+            CLAMD_TIMEOUT_SECONDS_ENV,
+            str(DEFAULT_CLAMD_TIMEOUT_SECONDS),
+        )
+        try:
+            clamd_timeout_seconds = float(raw_clamd_timeout.strip())
+        except ValueError as error:
+            raise ValueError("CLAMD_TIMEOUT_SECONDS must be a number") from error
+        if clamd_timeout_seconds <= 0:
+            raise ValueError("CLAMD_TIMEOUT_SECONDS must be > 0")
 
         if backend not in SUPPORTED_STORAGE_BACKENDS:
             raise ValueError(
@@ -59,6 +96,10 @@ class StorageSettings:
             backend=backend,
             local_upload_dir=local_upload_dir or DEFAULT_LOCAL_UPLOAD_DIR,
             quarantine_dir=quarantine_dir or DEFAULT_QUARANTINE_DIR,
+            clamd_socket=clamd_socket,
+            clamd_host=clamd_host,
+            clamd_port=clamd_port,
+            clamd_timeout_seconds=clamd_timeout_seconds,
             s3_bucket=os.getenv("S3_BUCKET", "").strip(),
             s3_region=os.getenv("S3_REGION", "").strip(),
             s3_endpoint=os.getenv("S3_ENDPOINT", "").strip(),

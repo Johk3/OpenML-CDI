@@ -1,25 +1,39 @@
 import uuid
 from pathlib import Path
 
-import pytest
 from sqlalchemy.orm import Session
 
+import app.services.scan as scan_service
 from app.database.models import Dataset, Statuses
-from app.services.scan import scan_uploaded_files
-
-EICAR_TEST_BYTES = (
-    b"X5O!P%@AP[4\\PZX54(P^)7CC)7}" b"$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
-)
+from app.storage.local import LocalStorageBackend
 
 
-def _create_dataset(db_session, *, filename: str) -> Dataset:
+class _FakeClamDClient:
+    def __init__(self, response=None, error: Exception | None = None):
+        self.response = response
+        self.error = error
+        self.scanned_paths: list[str] = []
+
+    def scan(self, file_path: str):
+        self.scanned_paths.append(file_path)
+        if self.error:
+            raise self.error
+        return self.response
+
+
+def _create_dataset(
+    db_session,
+    *,
+    filename: str,
+    storage_key: str,
+) -> Dataset:
     dataset = Dataset(
         id=uuid.uuid4(),
         title="Dataset under scan",
         owner_id=uuid.uuid4(),
         dataset_metadata={
             "filenames": [filename],
-            "storage_keys": [f"datasets/abcd_{filename}"],
+            "storage_keys": [storage_key],
         },
         status=Statuses.PENDING,
     )
@@ -28,147 +42,248 @@ def _create_dataset(db_session, *, filename: str) -> Dataset:
     return dataset
 
 
-def test_scan_uploaded_clean_csv_moves_file_to_ready_and_marks_clean(
-    db_test_session, tmp_path: Path
-):
-    dataset_id = uuid.uuid4()
-    filename = "clean.csv"
-    storage_key = f"datasets/abcd_{filename}"
+def _patch_clamd_client(monkeypatch, fake_client: _FakeClamDClient):
+    captured = {}
 
-    src_file = tmp_path / "source_file"
-    src_file.write_bytes(b"feature,target\n1,0\n")
+    def fake_get_client(**kwargs):
+        captured.update(kwargs)
+        return fake_client
 
-    class MockStorage:
-        def open(self, key, mode):
-            return open(src_file, mode)
+    monkeypatch.setattr(scan_service, "_get_clamd_client", fake_get_client)
+    return captured
 
-    quarantine_dir = tmp_path / "quarantine"
-    final_dir = tmp_path / "ready"
 
-    dataset = Dataset(
-        id=dataset_id,
-        title="Dataset under scan",
-        owner_id=uuid.uuid4(),
-        dataset_metadata={"filenames": [filename], "storage_keys": [storage_key]},
-        status=Statuses.PENDING,
-    )
-    db_test_session.add(dataset)
-    db_test_session.commit()
-
-    scan_uploaded_files(
+def _run_scan(
+    *,
+    db_test_session,
+    dataset: Dataset,
+    storage: LocalStorageBackend,
+    storage_keys: list[str],
+    quarantine_dir: Path,
+    final_dir: Path,
+) -> None:
+    scan_service.scan_uploaded_files(
         dataset_id=dataset.id,
-        storage_keys=[storage_key],
+        storage_keys=storage_keys,
         quarantine_dir=quarantine_dir,
         final_dir=final_dir,
-        storage=MockStorage(),
+        clamd_socket="",
+        clamd_host="clamd.internal",
+        clamd_port=3322,
+        clamd_timeout_seconds=4.5,
+        storage=storage,
         db_factory=lambda: Session(bind=db_test_session.bind),
     )
 
+
+def test_scan_uploaded_clean_file_moves_to_dataset_ready_dir_and_stays_pending(
+    db_test_session, tmp_path: Path, monkeypatch
+):
+    storage = LocalStorageBackend(tmp_path / "uploads")
+    storage_key = "datasets/batch123/clean.csv"
+    payload = b"feature,target\n1,0\n"
+    storage.write_bytes(storage_key, payload)
+
+    dataset = _create_dataset(
+        db_test_session,
+        filename="clean.csv",
+        storage_key=storage_key,
+    )
+    quarantine_dir = tmp_path / "quarantine"
+    final_dir = tmp_path / "ready"
+
+    fake_client = _FakeClamDClient(response={"ignored": ("OK", None)})
+    clamd_kwargs = _patch_clamd_client(monkeypatch, fake_client)
+
+    _run_scan(
+        db_test_session=db_test_session,
+        dataset=dataset,
+        storage=storage,
+        storage_keys=[storage_key],
+        quarantine_dir=quarantine_dir,
+        final_dir=final_dir,
+    )
+
     db_test_session.refresh(dataset)
-    # The file should be moved from quarantine to ready
-    final_path = final_dir / str(dataset.id) / filename
-    assert final_path.exists()
-    assert final_path.read_bytes() == b"feature,target\n1,0\n"
+    assert clamd_kwargs == {
+        "clamd_socket": "",
+        "clamd_host": "clamd.internal",
+        "clamd_port": 3322,
+        "clamd_timeout_seconds": 4.5,
+    }
+    assert len(fake_client.scanned_paths) == 1
+    assert Path(fake_client.scanned_paths[0]).name.endswith("_clean.csv")
+    assert not list(quarantine_dir.glob("*"))
+    assert (final_dir / str(dataset.id) / "clean.csv").read_bytes() == payload
     assert dataset.status == Statuses.PENDING
-    assert dataset.dataset_metadata["malware_scan"]["files"][0]["status"] == "clean"
+    assert dataset.dataset_metadata["malware_scan"] == {
+        "files": [
+            {
+                "status": "clean",
+                "engine": "clamav",
+                "file": "clean.csv",
+            }
+        ],
+        "engine": "clamav",
+    }
 
 
 def test_scan_uploaded_nested_folder_preserves_structure(
-    db_test_session, tmp_path: Path
+    db_test_session, tmp_path: Path, monkeypatch
 ):
-    dataset_id = uuid.uuid4()
-    batch_uuid = "batch123"
-    rel_path = "folder/sub/data.csv"
-    storage_key = f"datasets/{batch_uuid}/{rel_path}"
+    storage = LocalStorageBackend(tmp_path / "uploads")
+    storage_key = "datasets/batch123/folder/sub/data.csv"
+    payload = b"nested data"
+    storage.write_bytes(storage_key, payload)
 
-    src_file = tmp_path / "source_file"
-    src_file.write_bytes(b"nested data")
-
-    class MockStorage:
-        def open(self, key, mode):
-            return open(src_file, mode)
-
+    dataset = _create_dataset(
+        db_test_session,
+        filename="folder/sub/data.csv",
+        storage_key=storage_key,
+    )
     quarantine_dir = tmp_path / "quarantine"
     final_dir = tmp_path / "ready"
 
-    dataset = Dataset(
-        id=dataset_id,
-        title="Nested Dataset",
-        owner_id=uuid.uuid4(),
-        dataset_metadata={"filenames": [rel_path], "storage_keys": [storage_key]},
-        status=Statuses.PENDING,
+    _patch_clamd_client(
+        monkeypatch, _FakeClamDClient(response={"ignored": ("OK", None)})
     )
-    db_test_session.add(dataset)
-    db_test_session.commit()
 
-    scan_uploaded_files(
-        dataset_id=dataset_id,
+    _run_scan(
+        db_test_session=db_test_session,
+        dataset=dataset,
+        storage=storage,
         storage_keys=[storage_key],
         quarantine_dir=quarantine_dir,
         final_dir=final_dir,
-        storage=MockStorage(),
-        db_factory=lambda: Session(bind=db_test_session.bind),
     )
 
     db_test_session.refresh(dataset)
-    # Check if file exists at ready
-    expected_path = final_dir / str(dataset_id) / rel_path
-    assert expected_path.exists()
-    assert expected_path.read_bytes() == b"nested data"
+    expected_path = final_dir / str(dataset.id) / "folder/sub/data.csv"
+    assert expected_path.read_bytes() == payload
     assert dataset.status == Statuses.PENDING
+    assert dataset.dataset_metadata["malware_scan"]["files"][0]["file"] == (
+        "folder/sub/data.csv"
+    )
 
 
-@pytest.mark.parametrize(
-    ("filename", "payload"),
-    [
-        ("infected.csv", b"col\n" + EICAR_TEST_BYTES + b"\n"),
-        ("infected.h5", b"\x89HDF\r\n\x1a\n" + EICAR_TEST_BYTES),
-    ],
-)
-def test_scan_uploaded_infected_files_stay_quarantined_and_mark_dataset(
+def test_scan_infected_file_quarantines_and_deletes_copy(
     db_test_session,
     tmp_path: Path,
-    filename: str,
-    payload: bytes,
+    monkeypatch,
 ):
-    dataset_id = uuid.uuid4()
-    storage_key = f"datasets/abcd_{filename}"
+    storage = LocalStorageBackend(tmp_path / "uploads")
+    storage_key = "datasets/batch123/infected.csv"
+    payload = b"col\ninfected-content\n"
+    storage.write_bytes(storage_key, payload)
 
-    src_file = tmp_path / "source_file"
-    src_file.write_bytes(payload)
-
-    class MockStorage:
-        def open(self, key, mode):
-            return open(src_file, mode)
-
+    dataset = _create_dataset(
+        db_test_session,
+        filename="infected.csv",
+        storage_key=storage_key,
+    )
     quarantine_dir = tmp_path / "quarantine"
     final_dir = tmp_path / "ready"
 
-    dataset = Dataset(
-        id=dataset_id,
-        title="Infected Dataset",
-        owner_id=uuid.uuid4(),
-        dataset_metadata={"filenames": [filename], "storage_keys": [storage_key]},
-        status=Statuses.PENDING,
+    fake_client = _FakeClamDClient(
+        response={"ignored": ("FOUND", "Eicar-Test-Signature")},
     )
-    db_test_session.add(dataset)
-    db_test_session.commit()
+    _patch_clamd_client(monkeypatch, fake_client)
 
-    scan_uploaded_files(
-        dataset_id=dataset.id,
+    _run_scan(
+        db_test_session=db_test_session,
+        dataset=dataset,
+        storage=storage,
         storage_keys=[storage_key],
         quarantine_dir=quarantine_dir,
         final_dir=final_dir,
-        storage=MockStorage(),
-        db_factory=lambda: Session(bind=db_test_session.bind),
     )
 
     db_test_session.refresh(dataset)
-    # Marked as quarantined
+    assert not list(quarantine_dir.glob("*"))
+    assert not (final_dir / str(dataset.id) / "infected.csv").exists()
     assert dataset.status == Statuses.QUARANTINED
-    # File should stay in quarantine
-    quarantined_files = list(quarantine_dir.glob(f"*{filename}"))
-    assert len(quarantined_files) == 1
-    assert quarantined_files[0].read_bytes() == payload
-    # Should NOT be in ready
-    assert not (final_dir / str(dataset_id) / filename).exists()
+    assert dataset.dataset_metadata["malware_scan"] == {
+        "files": [
+            {
+                "status": "infected",
+                "engine": "clamav",
+                "signature": "Eicar-Test-Signature",
+                "file": "infected.csv",
+            }
+        ],
+        "engine": "clamav",
+    }
+
+
+def test_scan_uploaded_when_clamd_is_unreachable_marks_quarantined_safely(
+    db_test_session, tmp_path: Path, monkeypatch
+):
+    storage = LocalStorageBackend(tmp_path / "uploads")
+    storage_key = "datasets/batch123/unreachable.csv"
+    storage.write_bytes(storage_key, b"feature,target\n2,1\n")
+
+    dataset = _create_dataset(
+        db_test_session,
+        filename="unreachable.csv",
+        storage_key=storage_key,
+    )
+    quarantine_dir = tmp_path / "quarantine"
+    final_dir = tmp_path / "ready"
+
+    connection_error = scan_service.clamd.ConnectionError("offline")
+    fake_client = _FakeClamDClient(error=connection_error)
+    _patch_clamd_client(monkeypatch, fake_client)
+
+    _run_scan(
+        db_test_session=db_test_session,
+        dataset=dataset,
+        storage=storage,
+        storage_keys=[storage_key],
+        quarantine_dir=quarantine_dir,
+        final_dir=final_dir,
+    )
+
+    db_test_session.refresh(dataset)
+    assert not list(quarantine_dir.glob("*"))
+    assert not (final_dir / str(dataset.id) / "unreachable.csv").exists()
+    assert dataset.status == Statuses.QUARANTINED
+    scan_result = dataset.dataset_metadata["malware_scan"]["files"][0]
+    assert scan_result["status"] == "error"
+    assert scan_result["engine"] == "clamav"
+    assert scan_result["file"] == "unreachable.csv"
+    assert "ClamAV unavailable" in scan_result["message"]
+
+
+def test_scan_uploaded_missing_file_marks_quarantined(
+    db_test_session, tmp_path: Path, monkeypatch
+):
+    storage = LocalStorageBackend(tmp_path / "uploads")
+    storage_key = "datasets/batch123/missing.csv"
+
+    dataset = _create_dataset(
+        db_test_session,
+        filename="missing.csv",
+        storage_key=storage_key,
+    )
+    quarantine_dir = tmp_path / "quarantine"
+    final_dir = tmp_path / "ready"
+
+    fake_client = _FakeClamDClient(response={"ignored": ("OK", None)})
+    _patch_clamd_client(monkeypatch, fake_client)
+
+    _run_scan(
+        db_test_session=db_test_session,
+        dataset=dataset,
+        storage=storage,
+        storage_keys=[storage_key],
+        quarantine_dir=quarantine_dir,
+        final_dir=final_dir,
+    )
+
+    db_test_session.refresh(dataset)
+    assert fake_client.scanned_paths == []
+    assert dataset.status == Statuses.QUARANTINED
+    scan_result = dataset.dataset_metadata["malware_scan"]["files"][0]
+    assert scan_result["status"] == "missing"
+    assert scan_result["engine"] == "clamav"
+    assert scan_result["file"] == "missing.csv"

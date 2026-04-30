@@ -132,6 +132,10 @@ def confirm_upload(
         storage_keys=storage_keys,
         quarantine_dir=Path(settings.storage.quarantine_dir),
         final_dir=Path(settings.storage.local_upload_dir) / "ready",
+        clamd_socket=settings.storage.clamd_socket,
+        clamd_host=settings.storage.clamd_host,
+        clamd_port=settings.storage.clamd_port,
+        clamd_timeout_seconds=settings.storage.clamd_timeout_seconds,
         storage=request.app.state.storage,
         db_factory=SessionLocal,
     )

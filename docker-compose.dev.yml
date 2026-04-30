@@ -15,6 +15,11 @@ services:
     environment:
       - ENVIRONMENT=development
       - AUTH_DEV_MODE_APPROVE_ALL_LOGINS=true
+      - CLAMD_HOST=clamd
+      - CLAMD_PORT=3310
+      - CLAMD_TIMEOUT_SECONDS=10
+    depends_on:
+      - clamd
     networks:
       - app-network
 
@@ -30,6 +35,12 @@ services:
       - frontend-node-modules:/app/node_modules  # isolate node_modules
     environment:
       - VITE_API_URL=http://localhost:5173
+    networks:
+      - app-network
+
+  clamd:
+    image: clamav/clamav:stable
+    restart: unless-stopped
     networks:
       - app-network
 
