@@ -7,6 +7,9 @@ from sqlalchemy.pool import StaticPool
 from app.database import Base
 
 os.environ.setdefault("JWT_SECRET", "test-jwt-secret")
+os.environ.setdefault("GITHUB_CLIENT_ID", "test-github-client-id")
+os.environ.setdefault("GITHUB_SECRET", "test-github-secret")
+os.environ.setdefault("GITHUB_REDIRECT", "http://localhost:5173/login/callback")
 os.environ.setdefault("AUTH_DEV_MODE_APPROVE_ALL_LOGINS", "true")
 
 

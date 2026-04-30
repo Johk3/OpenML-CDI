@@ -7,7 +7,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from requests_oauthlib import OAuth2Session
 from sqlalchemy.orm import Session
 
@@ -25,6 +25,12 @@ from app.database import get_db
 from app.schemas.users import User
 from app.security import create_tokens, decode_refresh_JWT, get_current_active_user
 from app.services.github_roles import resolve_github_repository_role
+from app.services.github_sync import (
+    GitHubProfile,
+    GitHubProfileSyncConflictError,
+    split_github_name,
+    sync_user_from_github_profile,
+)
 from app.services.registration import (
     RegistrationConflictError,
     RegistrationValidationError,
@@ -401,6 +407,17 @@ def auth_github_callback(
         logger.error(f"GitHub token exchange failed: {e}")
         raise HTTPException(status_code=400, detail="Authentication failed.")
 
+    user_response = github.get("https://api.github.com/user")
+    if user_response.status_code != 200:
+        raise HTTPException(
+            status_code=400, detail="Failed to fetch user profile from github"
+        )
+    user_data = user_response.json()
+    github_account_id = user_data.get("id")
+    github_username = user_data.get("login")
+    if github_account_id is None or not github_username:
+        raise HTTPException(status_code=400, detail="Incomplete github user profile")
+
     emails_response = github.get("https://api.github.com/user/emails")
     if emails_response.status_code != 200:
         raise HTTPException(
@@ -416,39 +433,44 @@ def auth_github_callback(
     if not primary_email:
         raise HTTPException(status_code=400, detail="No verified primary email found")
 
+    first_name, last_name = split_github_name(user_data.get("name"))
+    github_profile = GitHubProfile(
+        github_id=str(github_account_id),
+        email=primary_email,
+        username=github_username,
+        first_name=first_name or DEFAULT_DEV_FIRST_NAME,
+        last_name=last_name or DEFAULT_DEV_LAST_NAME,
+    )
+    try:
+        user = sync_user_from_github_profile(db, github_profile)
+    except GitHubProfileSyncConflictError as exc:
+        conflict_response = JSONResponse(
+            status_code=409,
+            content={
+                "error": {
+                    "code": "github_profile_conflict",
+                    "message": "Unable to sync GitHub profile with local account",
+                    "field": exc.field,
+                }
+            },
+        )
+        conflict_response.delete_cookie(
+            key="oauth_state",
+            httponly=True,
+            secure=False,  # Set to True in production (HTTPS)
+        )
+        return conflict_response
+
     response.delete_cookie(
         key="oauth_state",
         httponly=True,
         secure=False,  # Set to True in production (HTTPS)
     )
 
-    user_response = github.get("https://api.github.com/user")
-    if user_response.status_code != 200:
-        raise HTTPException(
-            status_code=400, detail="Failed to fetch user profile from github"
-        )
-
-    user_data = user_response.json()
-    username = user_data.get("login") or primary_email.split("@", 1)[0]
-    full_name = user_data.get("name") or ""
-    name_parts = full_name.strip().split(" ", 1)
-    first_name = name_parts[0] if name_parts[0] else DEFAULT_DEV_FIRST_NAME
-    last_name = name_parts[1] if len(name_parts) > 1 else DEFAULT_DEV_LAST_NAME
-
-    user = get_user_by_email(db, primary_email)
-    if not user:
-        user = _ensure_oauth_user(
-            db=db,
-            email=primary_email,
-            preferred_username=username,
-            first_name=first_name,
-            last_name=last_name,
-        )
-
     user = _sync_oauth_user_role(
         db=db,
         user=user,
-        github_username=username,
+        github_username=github_username,
         github_session=github,
     )
 

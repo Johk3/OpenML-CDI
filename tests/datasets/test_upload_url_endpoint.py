@@ -292,12 +292,12 @@ def test_upload_url_handles_folder_structure(
 ):
     uploader_id = uuid.uuid4()
     access_token = _create_access_token_for_user(db_session_factory, uploader_id)
-    
+
     # Simulate a folder upload with nested files
     filenames = ["folder/data.csv", "folder/sub/meta.txt"]
-    
+
     captured_prefixes = []
-    
+
     def fake_create_upload_target(filename: str, prefix: str | None = None):
         captured_prefixes.append(prefix)
         # Verify sanitization happens (handled by backend but mocked here for simplicity)
@@ -324,12 +324,12 @@ def test_upload_url_handles_folder_structure(
 
     assert response.status_code == 201
     body = response.json()
-    
+
     # Verify both files share the same prefix
     assert len(captured_prefixes) == 2
     assert captured_prefixes[0] == captured_prefixes[1]
     assert captured_prefixes[0] is not None
-    
+
     # Verify the presigned URLs have the correct structure
     prefix = captured_prefixes[0]
     assert body["presigned_urls"][0].endswith(f"datasets/{prefix}/folder/data.csv")

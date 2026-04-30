@@ -27,6 +27,10 @@ def get_user_model_by_email(db: Session, email: str) -> models.User | None:
     return db.query(models.User).filter(models.User.email == email).first()
 
 
+def get_user_model_by_github_id(db: Session, github_id: str) -> models.User | None:
+    return db.query(models.User).filter(models.User.github_id == github_id).first()
+
+
 def get_user_model_by_username(db: Session, username: str) -> models.User | None:
     return db.query(models.User).filter(models.User.username == username).first()
 

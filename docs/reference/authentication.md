@@ -136,11 +136,13 @@ Success response:
 
 Exchange a refresh token for a new access token and rotated refresh token.
 
-### `GET /api/auth/github/login?code=...`
+### `GET /api/auth/github/login`
 
-Frontend GitHub callback exchange expected by the current Vite client.
+Starts the GitHub OAuth flow and redirects the browser to GitHub.
 
-This is the active sign-in path used by the frontend.
+### `GET /api/auth/github/callback?code=...&state=...`
+
+Completes GitHub OAuth and returns app tokens.
 
 Success response:
 
@@ -151,17 +153,46 @@ Success response:
 }
 ```
 
+GitHub profile sync behavior:
+
+- backend uses `users.github_id` as the stable account identity for GitHub users
+- on callback, backend resolves users in this order:
+  1. existing user with matching `github_id`
+  2. legacy user with matching email (then backfills `github_id`)
+  3. create new local user
+- on every successful callback, backend syncs the local profile from GitHub:
+  - `email` from the verified primary GitHub email
+  - `username` from GitHub `login`
+  - `first_name` and `last_name` from GitHub `name`
+- this prevents duplicate local users when GitHub profile fields change
+
+Conflict response (`409 Conflict`):
+
+```json
+{
+  "error": {
+    "code": "github_profile_conflict",
+    "message": "Unable to sync GitHub profile with local account",
+    "field": "email"
+  }
+}
+```
+
+`field` is deterministic and indicates which unique identity could not be synced
+(`email`, `username`, `github_id`, or `profile` fallback).
+
 Behavior assumptions used by the frontend:
 
-- the frontend redirects users to GitHub directly using the configured OAuth
-  client id and callback URI
+- frontend redirects users to GitHub directly using the configured OAuth client
+  id and callback URI
 - GitHub redirects back to
-  `http://localhost:5173/login/callback?code=...`
-- the frontend sends that `code` to `GET /api/auth/github/login?code=...`
-- the backend responds with the access token in the JSON body and sets the
-  refresh token in an `HttpOnly` cookie
-- the frontend stores only the access token in memory and never reads, writes,
-  or logs the refresh token
+  `http://localhost:5173/login/callback?code=...&state=...`
+- frontend sends that callback `code` and `state` to
+  `GET /api/auth/github/callback?code=...&state=...`
+- backend responds with the access token in the JSON body and sets the refresh
+  token in an `HttpOnly` cookie
+- frontend stores only the access token in memory and never reads, writes, or
+  logs the refresh token
 
 ### `GET /api/auth/me`
 
