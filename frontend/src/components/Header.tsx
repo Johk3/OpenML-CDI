@@ -67,6 +67,14 @@ export const Header: React.FC = () => {
                 My Datasets
               </NavLink>
             )}
+            {user && (
+              <NavLink
+                to="/account"
+                className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+              >
+                Account
+              </NavLink>
+            )}
             <NavLink
               to="/about"
               className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}

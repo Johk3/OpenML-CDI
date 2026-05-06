@@ -24,6 +24,11 @@ describe('Header component', () => {
       expect(screen.getByText('About')).toBeInTheDocument();
     });
 
+    it('renders the Account nav link when a user is logged in', () => {
+      renderWithRouter(<Header />);
+      expect(screen.getByText('Account')).toBeInTheDocument();
+    });
+
     it('renders the Login button when no user is logged in', () => {
       renderWithRouter(<Header />, {
         userContext: { user: null, isLoading: false, isError: false },

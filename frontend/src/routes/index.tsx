@@ -9,6 +9,7 @@ import { GitHubCallbackPage } from '../pages/GitHubCallbackPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { MainLayout } from '../components/MainLayout';
 import { CroissantMetadataPage } from '../pages/CroissantMetadataPage';
+import { AccountPage } from '../pages/AccountPage';
 import { ProtectedRoute } from '../components/ProtectedRoute';
 import { UserPage } from '../pages/UserPage';
 import { Providers } from '../providers/Providers';
@@ -53,6 +54,14 @@ export const routes: RouteObject[] = [
       {
         path: 'about',
         element: <AboutPage />,
+      },
+      {
+        path: 'account',
+        element: (
+          <ProtectedRoute>
+            <AccountPage />
+          </ProtectedRoute>
+        ),
       },
       {
         path: 'metadata',
