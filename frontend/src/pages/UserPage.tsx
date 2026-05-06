@@ -1,5 +1,5 @@
 import React from 'react';
-import { User as UserIcon, Mail, Shield, Calendar, Edit3 } from 'lucide-react';
+import { User as UserIcon, Mail, Shield, Calendar } from 'lucide-react';
 import { useUserContext } from '@/hooks/useUserContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -61,11 +61,8 @@ export const UserPage: React.FC = () => {
 
       <div className="grid grid-cols-1 gap-6">
         <Card className="border-border/60">
-          <CardHeader className="pb-3 flex flex-row items-center justify-between">
+          <CardHeader className="pb-3">
             <CardTitle className="text-lg font-bold">Account Information</CardTitle>
-            <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs text-muted-foreground">
-              <Edit3 size={14} /> Edit
-            </Button>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">

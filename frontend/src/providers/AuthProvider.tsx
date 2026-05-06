@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { TokenResponse } from '@/types/auth';
 import { useQueryClient } from '@tanstack/react-query';
 import { AuthContext } from '../contexts/AuthContext';
+import { meQueryKey } from '@/hooks/useUser';
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(
@@ -16,7 +17,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const logout = useCallback(() => {
     tokenManager.clearToken();
     setIsAuthenticated(false);
-    queryClient.removeQueries({ queryKey: ['users', 'me'] });
+    queryClient.removeQueries({ queryKey: meQueryKey });
     navigate('/login');
   }, [navigate, queryClient]);
 
@@ -24,9 +25,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     (token: string) => {
       tokenManager.setToken(token);
       setIsAuthenticated(true);
+      void queryClient.invalidateQueries({ queryKey: meQueryKey });
       navigate('/datasets', { replace: true });
     },
-    [navigate],
+    [navigate, queryClient],
   );
 
   const loginWithGithub = useCallback(

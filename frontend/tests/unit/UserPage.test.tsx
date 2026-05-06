@@ -87,4 +87,16 @@ describe('UserPage', () => {
     expect(screen.getByText('john.doe@example.com')).toBeInTheDocument();
     expect(screen.getAllByText(/uploader/i).length).toBeGreaterThan(0);
   });
+
+  it('should not show local profile edit actions', () => {
+    mockUseUserContext.mockReturnValue({
+      user: MOCK_USER,
+      isLoading: false,
+      isError: false,
+    });
+
+    renderWithRouter(<UserPage />);
+
+    expect(screen.queryByRole('button', { name: /edit/i })).not.toBeInTheDocument();
+  });
 });
