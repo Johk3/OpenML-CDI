@@ -9,3 +9,4 @@ if str(ROOT) not in sys.path:
 
 os.environ.setdefault("JWT_SECRET", "test-jwt-secret")
 os.environ.setdefault("AUTH_DEV_MODE_APPROVE_ALL_LOGINS", "true")
+os.environ.setdefault("COOKIE_SECURE", "false")

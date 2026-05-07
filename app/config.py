@@ -17,11 +17,13 @@ S3_FORCE_PATH_STYLE_ENV = "S3_FORCE_PATH_STYLE"
 UPLOAD_TARGET_ENV = "UPLOAD_TARGET"
 UPLOAD_LOCATION_ENV = "UPLOAD_LOCATION"
 UPLOAD_URL_EXPIRES_SECONDS_ENV = "UPLOAD_URL_EXPIRES_SECONDS"
+COOKIE_SECURE_ENV = "COOKIE_SECURE"
 DEFAULT_STORAGE_BACKEND = "local"
 DEFAULT_LOCAL_UPLOAD_DIR = ".local_uploads"
 DEFAULT_UPLOAD_TARGET = "uploads"
 DEFAULT_UPLOAD_LOCATION = "default"
 DEFAULT_UPLOAD_URL_EXPIRES_SECONDS = 3600
+DEFAULT_COOKIE_SECURE = True
 SUPPORTED_STORAGE_BACKENDS = {"local", "smart", "s3"}
 DEFAULT_CLAMD_HOST = "127.0.0.1"
 DEFAULT_CLAMD_PORT = 3310
@@ -191,11 +193,23 @@ class UploadURLSettings:
 
 
 @dataclass(frozen=True)
+class AuthSettings:
+    cookie_secure: bool = DEFAULT_COOKIE_SECURE
+
+    @classmethod
+    def from_env(cls) -> "AuthSettings":
+        return cls(
+            cookie_secure=_get_bool_env(COOKIE_SECURE_ENV, DEFAULT_COOKIE_SECURE),
+        )
+
+
+@dataclass(frozen=True)
 class Settings:
     # Group settings by domain so config stays centralized and maintainable.
     storage: StorageSettings
     email: EmailSettings
     upload: UploadURLSettings
+    auth: AuthSettings
     cors_allowed_origins: list[str]
 
     @classmethod
@@ -205,6 +219,7 @@ class Settings:
             storage=StorageSettings.from_env(),
             email=EmailSettings.from_env(),
             upload=UploadURLSettings.from_env(),
+            auth=AuthSettings.from_env(),
             cors_allowed_origins=[
                 origin.strip()
                 for origin in os.getenv(

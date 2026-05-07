@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from requests_oauthlib import OAuth2Session
 from sqlalchemy.orm import Session
 
+from app.config import Settings
 from app.crud.users import (
     TokenReuseDetectedError,
     get_families,
@@ -64,22 +65,59 @@ def _is_dev_login_bypass_enabled() -> bool:
     return os.getenv("ENVIRONMENT", "").strip().lower() in {"dev", "development"}
 
 
-def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
+def _cookie_secure(request: Request) -> bool:
+    settings = getattr(request.app.state, "settings", None)
+    if settings is None:
+        settings = Settings.from_env()
+    return settings.auth.cookie_secure
+
+
+def _set_refresh_cookie(
+    response: Response, refresh_token: str, *, secure: bool
+) -> None:
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=False,  # SET TO True FOR PRODUCTION, FALSE FOR TESTING FIXME
+        secure=secure,
         samesite="strict",
         path="/auth/refresh",
     )
 
 
+def _delete_refresh_cookie(response: Response, *, secure: bool) -> None:
+    response.delete_cookie(
+        key="refresh_token",
+        path="/auth/refresh",
+        httponly=True,
+        secure=secure,
+        samesite="strict",
+    )
+
+
+def _set_oauth_state_cookie(response: Response, state: str, *, secure: bool) -> None:
+    response.set_cookie(
+        key="oauth_state",
+        value=state,
+        httponly=True,
+        secure=secure,
+        max_age=600,
+    )
+
+
+def _delete_oauth_state_cookie(response: Response, *, secure: bool) -> None:
+    response.delete_cookie(
+        key="oauth_state",
+        httponly=True,
+        secure=secure,
+    )
+
+
 def _issue_tokens(
-    response: Response, user_id: uuid.UUID, db: Session
+    response: Response, user_id: uuid.UUID, db: Session, *, secure: bool
 ) -> dict[str, str]:
     access_token, refresh_token = create_tokens(user_id, db)
-    _set_refresh_cookie(response, refresh_token)
+    _set_refresh_cookie(response, refresh_token, secure=secure)
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -224,6 +262,7 @@ def _sync_oauth_user_role(
 
 @router.post("/auth/refresh")
 def refresh_access(
+    request: Request,
     response: Response,
     refresh_token: str | None = Cookie(None),
     db: Session = Depends(get_db),
@@ -245,7 +284,7 @@ def refresh_access(
         raise HTTPException(status_code=401, detail="Invalid JTI")
 
     access_token, new_refresh_token = create_tokens(user.id, db, family_id)
-    _set_refresh_cookie(response, new_refresh_token)
+    _set_refresh_cookie(response, new_refresh_token, secure=_cookie_secure(request))
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -254,6 +293,7 @@ def refresh_access(
 
 @router.post("/auth/refresh/logout")
 def logout(
+    request: Request,
     current_user: Annotated[User, Depends(get_current_active_user)],
     response: Response,
     refresh_token: str | None = Cookie(None),
@@ -268,13 +308,7 @@ def logout(
         raise HTTPException(status_code=401, detail="Invalid family ID")
     revoke_family_crud(db, family_id)
     db.commit()
-    response.delete_cookie(
-        key="refresh_token",
-        path="/auth/refresh",
-        httponly=True,
-        secure=False,  # SET TO True FOR PRODUCTION, FALSE FOR TESTING FIXME
-        samesite="strict",
-    )
+    _delete_refresh_cookie(response, secure=_cookie_secure(request))
     return {"status_code": 200, "message": "Succesfully logged out."}
 
 
@@ -300,7 +334,8 @@ def revoke_family(
 
 
 @router.get("/auth/github/login")
-def github_login():
+def github_login(request: Request):
+    cookie_secure = _cookie_secure(request)
     if _is_dev_login_bypass_enabled():
         callback_url = (
             os.getenv("GITHUB_REDIRECT", "").strip() or DEFAULT_DEV_CALLBACK_URL
@@ -312,13 +347,7 @@ def github_login():
             {"code": "dev-mode", "state": state},
         )
         response = RedirectResponse(redirect_url)
-        response.set_cookie(
-            key="oauth_state",
-            value=state,
-            httponly=True,
-            secure=False,
-            max_age=600,
-        )
+        _set_oauth_state_cookie(response, state, secure=cookie_secure)
         return response
 
     github_client_id, _github_secret, github_redirect = _resolve_github_oauth_settings()
@@ -331,13 +360,7 @@ def github_login():
         "https://github.com/login/oauth/authorize"
     )
     response = RedirectResponse(authorization_url)
-    response.set_cookie(
-        key="oauth_state",
-        value=state,
-        httponly=True,
-        secure=False,  # Set to True in production (HTTPS)
-        max_age=600,
-    )
+    _set_oauth_state_cookie(response, state, secure=cookie_secure)
     return response
 
 
@@ -354,6 +377,7 @@ def auth_github_callback(
     response: Response,
     db: Session = Depends(get_db),
 ):
+    cookie_secure = _cookie_secure(request)
     if _is_dev_login_bypass_enabled():
         email = os.getenv("AUTH_DEV_LOGIN_EMAIL", DEFAULT_DEV_EMAIL)
         username = os.getenv("AUTH_DEV_LOGIN_USERNAME", DEFAULT_DEV_USERNAME)
@@ -371,12 +395,8 @@ def auth_github_callback(
             user=user,
             github_username=username,
         )
-        response.delete_cookie(
-            key="oauth_state",
-            httponly=True,
-            secure=False,
-        )
-        return _issue_tokens(response, user.id, db)
+        _delete_oauth_state_cookie(response, secure=cookie_secure)
+        return _issue_tokens(response, user.id, db, secure=cookie_secure)
 
     saved_state = request.cookies.get("oauth_state")
     if not saved_state:
@@ -454,18 +474,10 @@ def auth_github_callback(
                 }
             },
         )
-        conflict_response.delete_cookie(
-            key="oauth_state",
-            httponly=True,
-            secure=False,  # Set to True in production (HTTPS)
-        )
+        _delete_oauth_state_cookie(conflict_response, secure=cookie_secure)
         return conflict_response
 
-    response.delete_cookie(
-        key="oauth_state",
-        httponly=True,
-        secure=False,  # Set to True in production (HTTPS)
-    )
+    _delete_oauth_state_cookie(response, secure=cookie_secure)
 
     user = _sync_oauth_user_role(
         db=db,
@@ -474,4 +486,4 @@ def auth_github_callback(
         github_session=github,
     )
 
-    return _issue_tokens(response, user.id, db)
+    return _issue_tokens(response, user.id, db, secure=cookie_secure)

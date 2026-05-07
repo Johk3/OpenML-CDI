@@ -1,8 +1,10 @@
+from dataclasses import replace
 import uuid
 from urllib.parse import parse_qs, urlparse
 
 from fastapi.testclient import TestClient
 
+from app.config import AuthSettings
 from app.database import models
 from app.database.models import Roles
 from app.security import decode_refresh_JWT
@@ -73,6 +75,63 @@ def test_dev_mode_login_creates_user_and_sets_refresh_cookie(
     assert stored_user.first_name == "New"
     assert stored_user.last_name == "User"
     assert stored_user.role == Roles.USER
+
+
+def test_auth_cookies_are_secure_when_configured(client, monkeypatch):
+    client.app.state.settings = replace(
+        client.app.state.settings,
+        auth=AuthSettings(cookie_secure=True),
+    )
+
+    monkeypatch.setattr(
+        "app.routers.auth.resolve_github_repository_role", lambda _: Roles.USER
+    )
+
+    login_redirect = client.get("/api/auth/github/login", follow_redirects=False)
+    assert "Secure" in login_redirect.headers["set-cookie"]
+
+    callback_url = login_redirect.headers["location"]
+    query = parse_qs(urlparse(callback_url).query)
+    callback_response = client.get(
+        "/api/auth/github/callback",
+        params={
+            "code": query["code"][0],
+            "state": query["state"][0],
+        },
+        cookies={"oauth_state": query["state"][0]},
+    )
+
+    set_cookie_headers = callback_response.headers.get_list("set-cookie")
+    assert any(
+        header.startswith("oauth_state=") and "Secure" in header
+        for header in set_cookie_headers
+    )
+    assert any(
+        header.startswith("refresh_token=") and "Secure" in header
+        for header in set_cookie_headers
+    )
+
+
+def test_auth_cookies_can_disable_secure_for_local_http(client, monkeypatch):
+    client.app.state.settings = replace(
+        client.app.state.settings,
+        auth=AuthSettings(cookie_secure=False),
+    )
+
+    monkeypatch.setattr(
+        "app.routers.auth.resolve_github_repository_role", lambda _: Roles.USER
+    )
+
+    login_redirect = client.get("/api/auth/github/login", follow_redirects=False)
+    assert "Secure" not in login_redirect.headers["set-cookie"]
+
+    callback_response = _login_user(
+        client,
+        monkeypatch,
+        email="local-cookie@example.com",
+        username="local-cookie",
+    )
+    assert "Secure" not in callback_response.headers["set-cookie"]
 
 
 def test_login_assigns_expert_for_github_maintainer(

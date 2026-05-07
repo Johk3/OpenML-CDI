@@ -15,6 +15,7 @@ services:
     environment:
       - ENVIRONMENT=development
       - AUTH_DEV_MODE_APPROVE_ALL_LOGINS=true
+      - COOKIE_SECURE=false
       - CLAMD_HOST=clamd
       - CLAMD_PORT=3310
       - CLAMD_TIMEOUT_SECONDS=10

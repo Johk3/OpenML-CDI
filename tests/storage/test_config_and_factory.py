@@ -15,9 +15,11 @@ def test_settings_defaults(monkeypatch):
     monkeypatch.delenv("UPLOAD_TARGET", raising=False)
     monkeypatch.delenv("UPLOAD_LOCATION", raising=False)
     monkeypatch.delenv("UPLOAD_URL_EXPIRES_SECONDS", raising=False)
+    monkeypatch.delenv("COOKIE_SECURE", raising=False)
 
     settings = Settings.from_env()
 
+    assert settings.auth.cookie_secure is True
     assert settings.storage.backend == "local"
     assert settings.storage.local_upload_dir == ".local_uploads"
     assert settings.storage.quarantine_dir == ".quarantine"
@@ -29,6 +31,14 @@ def test_settings_defaults(monkeypatch):
     assert settings.upload.target == "uploads"
     assert settings.upload.location == "default"
     assert settings.upload.expires_seconds == 3600
+
+
+def test_cookie_secure_can_be_disabled_for_local_http(monkeypatch):
+    monkeypatch.setenv("COOKIE_SECURE", "false")
+
+    settings = Settings.from_env()
+
+    assert settings.auth.cookie_secure is False
 
 
 def test_upload_settings_can_be_overridden(monkeypatch):

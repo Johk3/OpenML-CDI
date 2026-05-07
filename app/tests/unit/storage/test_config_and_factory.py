@@ -12,9 +12,11 @@ def test_settings_defaults(monkeypatch):
     monkeypatch.delenv("CLAMD_HOST", raising=False)
     monkeypatch.delenv("CLAMD_PORT", raising=False)
     monkeypatch.delenv("CLAMD_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("COOKIE_SECURE", raising=False)
 
     settings = Settings.from_env()
 
+    assert settings.auth.cookie_secure is True
     assert settings.storage.backend == "local"
     assert settings.storage.local_upload_dir == ".local_uploads"
     assert settings.storage.quarantine_dir == ".quarantine"
@@ -22,6 +24,14 @@ def test_settings_defaults(monkeypatch):
     assert settings.storage.clamd_host == "127.0.0.1"
     assert settings.storage.clamd_port == 3310
     assert settings.storage.clamd_timeout_seconds == 10.0
+
+
+def test_cookie_secure_can_be_disabled_for_local_http(monkeypatch):
+    monkeypatch.setenv("COOKIE_SECURE", "false")
+
+    settings = Settings.from_env()
+
+    assert settings.auth.cookie_secure is False
 
 
 def test_invalid_backend_raises(monkeypatch):

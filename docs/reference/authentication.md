@@ -253,6 +253,8 @@ contract:
 - backend CORS must allow the exact frontend origin and `allow_credentials=true`
 - refresh cookie must be scoped server-side to the refresh path and kept
   `HttpOnly`
+- `COOKIE_SECURE=false` is required for local HTTP development; omit it or set
+  `COOKIE_SECURE=true` when serving auth over HTTPS
 
 Frontend env vars:
 
