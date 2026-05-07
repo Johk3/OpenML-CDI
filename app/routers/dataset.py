@@ -13,7 +13,9 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas.datasets import (
     Dataset,
+    DatasetConfirmUploadRequest,
     DatasetCreate,
+    DatasetUploadContract,
     DatasetUploadURLRequest,
     DatasetUploadURLResponse,
     Statuses,
@@ -28,6 +30,15 @@ from uuid import uuid4
 from typing import Annotated
 from pathlib import Path
 from app.services.scan import scan_uploaded_files
+from app.services.dataset_objects import (
+    DatasetObjectValidationError,
+    attach_dataset_objects,
+    build_dataset_objects,
+    get_dataset_objects,
+    mark_objects_uploaded,
+    storage_keys_from_metadata,
+)
+from app.storage.errors import StorageError
 from app.database import SessionLocal
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
@@ -46,14 +57,35 @@ def create_upload_url(
 ) -> DatasetUploadURLResponse:
     storage_keys = []
     presigned_urls = []
+    upload_contracts = []
+    upload_targets = []
     batch_uuid = uuid4().hex
-    for i, filename in enumerate(payload.filenames):
+    expires_seconds = request.app.state.settings.upload.expires_seconds
+    for index, filename in enumerate(payload.filenames):
         upload_target = request.app.state.storage.create_upload_target(
             filename, prefix=batch_uuid
         )
+        upload_targets.append(upload_target)
         storage_keys.append(upload_target.storage_key)
-        url = f"{request.url_for('upload_file', storage_key=upload_target.storage_key)}"
+        content_type = payload.content_types[index] if payload.content_types else None
+        url = _create_upload_contract_url(
+            request=request,
+            storage_key=upload_target.storage_key,
+            content_type=content_type,
+            expires_seconds=expires_seconds,
+        )
         presigned_urls.append(url)
+        upload_contracts.append(
+            DatasetUploadContract(
+                original_path=filename,
+                object_key=upload_target.storage_key,
+                url=url,
+                method="PUT",
+                headers=({"Content-Type": content_type} if content_type else {}),
+                content_type=content_type,
+                expires_seconds=expires_seconds,
+            )
+        )
 
     if payload.description is None:
         dataset_metadata = {"description": ""}
@@ -65,7 +97,27 @@ def create_upload_url(
     dataset_metadata["filenames"] = payload.filenames
     if payload.content_types:
         dataset_metadata["content_types"] = payload.content_types
+    if payload.byte_sizes:
+        dataset_metadata["byte_sizes"] = payload.byte_sizes
+    if payload.checksums:
+        dataset_metadata["checksums"] = payload.checksums
     dataset_metadata["storage_keys"] = storage_keys
+
+    try:
+        dataset_objects = build_dataset_objects(
+            storage=request.app.state.storage,
+            upload_targets=upload_targets,
+            original_paths=payload.filenames,
+            content_types=payload.content_types,
+            byte_sizes=payload.byte_sizes,
+            checksums=payload.checksums,
+        )
+        dataset_metadata = attach_dataset_objects(dataset_metadata, dataset_objects)
+    except DatasetObjectValidationError as error:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
 
     dataset = DatasetModel(
         title=payload.name,
@@ -85,8 +137,28 @@ def create_upload_url(
         ) from error
     dataset_url = f"/datasets/{dataset.id}"
     return DatasetUploadURLResponse(
-        id=dataset.id, presigned_urls=presigned_urls, dataset_url=dataset_url
+        id=dataset.id,
+        presigned_urls=presigned_urls,
+        upload_contracts=upload_contracts,
+        dataset_url=dataset_url,
     )
+
+
+def _create_upload_contract_url(
+    *,
+    request: Request,
+    storage_key: str,
+    content_type: str | None,
+    expires_seconds: int,
+) -> str:
+    storage = request.app.state.storage
+    if storage.backend_name() == "s3":
+        return storage.create_upload_url(
+            storage_key,
+            content_type=content_type,
+            expires_seconds=expires_seconds,
+        )
+    return f"{request.url_for('upload_file', storage_key=storage_key)}"
 
 
 @router.put("/upload/{storage_key:path}")
@@ -107,17 +179,19 @@ def confirm_upload(
     request: Request,
     background_tasks: BackgroundTasks,
     current_user: Annotated[User, Depends(get_current_active_user)],
+    payload: DatasetConfirmUploadRequest | None = None,
     db: Session = Depends(get_db),
 ):
     settings = request.app.state.settings
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
     expert_or_owner(current_user, dataset)
 
-    storage_keys = dataset.dataset_metadata.get("storage_keys", [])
+    metadata = dict(dataset.dataset_metadata or {})
+    storage_keys = storage_keys_from_metadata(metadata)
     if not storage_keys:
         # Fallback for single-file datasets
-        storage_key = dataset.dataset_metadata.get("storage_key")
-        filename = dataset.dataset_metadata.get("filename")
+        storage_key = metadata.get("storage_key")
+        filename = metadata.get("filename")
         if storage_key or filename:
             storage_keys = [storage_key or filename]
 
@@ -126,6 +200,34 @@ def confirm_upload(
             status_code=http_status.HTTP_400_BAD_REQUEST,
             detail="Dataset file references missing",
         )
+
+    try:
+        objects = get_dataset_objects(metadata)
+        etags = payload.etags if payload and payload.etags else []
+        verified_objects = []
+        for index, obj in enumerate(objects):
+            expected_etag = etags[index] if index < len(etags) else obj.get("etag")
+            verified_objects.append(
+                request.app.state.storage.verify_object(
+                    obj["object_key"],
+                    expected_size=obj.get("byte_size"),
+                    expected_content_type=obj.get("content_type"),
+                    expected_etag=expected_etag,
+                )
+            )
+        metadata = attach_dataset_objects(
+            metadata,
+            mark_objects_uploaded(objects, verified_objects),
+        )
+        dataset_crud.update_dataset_metadata(
+            db=db, dataset_id=dataset_id, metadata=metadata
+        )
+    except (DatasetObjectValidationError, StorageError, ValueError) as error:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
+
     background_tasks.add_task(
         scan_uploaded_files,
         dataset_id=dataset_id,

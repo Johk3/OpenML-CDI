@@ -17,6 +17,15 @@ class StorageBackend(Protocol):
         """Persist raw bytes for a storage key."""
         ...
 
+    def create_upload_url(
+        self,
+        storage_key: str,
+        content_type: str | None = None,
+        expires_seconds: int = 3600,
+    ) -> str:
+        """Create a short-lived direct upload URL."""
+        ...
+
     def read_bytes(self, storage_key: str) -> bytes:
         """Read raw bytes previously stored for a storage key."""
         ...

@@ -128,6 +128,65 @@ def test_scan_uploaded_clean_file_moves_to_dataset_ready_dir_and_stays_pending(
     }
 
 
+def test_scan_uploaded_clean_file_marks_object_downloadable(
+    db_test_session, tmp_path: Path, monkeypatch
+):
+    storage = LocalStorageBackend(tmp_path / "uploads")
+    storage_key = "datasets/batch123/clean.csv"
+    storage.write_bytes(storage_key, b"feature,target\n1,0\n")
+
+    dataset = Dataset(
+        id=uuid.uuid4(),
+        title="Dataset under scan",
+        owner_id=uuid.uuid4(),
+        dataset_metadata={
+            "filenames": ["clean.csv"],
+            "storage_keys": [storage_key],
+            "storage_schema_version": 1,
+            "objects": [
+                {
+                    "backend": "local",
+                    "provider": "local",
+                    "bucket": "uploads",
+                    "object_key": storage_key,
+                    "quarantine_key": storage_key,
+                    "final_object_key": None,
+                    "original_path": "clean.csv",
+                    "content_type": "text/csv",
+                    "byte_size": 19,
+                    "checksum": None,
+                    "etag": None,
+                    "upload_state": "uploaded",
+                    "scan_state": "pending",
+                    "download_state": "unavailable",
+                }
+            ],
+        },
+        status=Statuses.PENDING,
+    )
+    db_test_session.add(dataset)
+    db_test_session.commit()
+    _patch_clamd_client(
+        monkeypatch, _FakeClamDClient(response={"ignored": ("OK", None)})
+    )
+
+    _run_scan(
+        db_test_session=db_test_session,
+        dataset=dataset,
+        storage=storage,
+        storage_keys=[storage_key],
+        quarantine_dir=tmp_path / "quarantine",
+        final_dir=tmp_path / "ready",
+    )
+
+    db_test_session.refresh(dataset)
+    obj = dataset.dataset_metadata["objects"][0]
+    assert obj["upload_state"] == "promoted"
+    assert obj["scan_state"] == "clean"
+    assert obj["final_object_key"] == f"ready/{dataset.id}/clean.csv"
+    assert obj["download_state"] == "downloadable"
+
+
 def test_scan_uploaded_nested_folder_preserves_structure(
     db_test_session, tmp_path: Path, monkeypatch
 ):

@@ -33,9 +33,26 @@ class DatasetUploadURLRequest(BaseModel):
     description: str | dict[str, Any] | None = None
     filenames: list[str] = Field(..., min_items=1)
     content_types: list[str | None] | None = None
+    byte_sizes: list[int | None] | None = None
+    checksums: list[str | None] | None = None
+
+
+class DatasetUploadContract(BaseModel):
+    original_path: str
+    object_key: str
+    url: str
+    method: str = "PUT"
+    headers: dict[str, str] = Field(default_factory=dict)
+    content_type: str | None = None
+    expires_seconds: int
 
 
 class DatasetUploadURLResponse(BaseModel):
     id: UUID
     presigned_urls: list[str]
+    upload_contracts: list[DatasetUploadContract] = Field(default_factory=list)
     dataset_url: str | None = None
+
+
+class DatasetConfirmUploadRequest(BaseModel):
+    etags: list[str | None] | None = None

@@ -9,6 +9,11 @@ import clamd
 from sqlalchemy.orm import Session
 
 from app.database.models import Dataset, Statuses
+from app.services.dataset_objects import (
+    attach_dataset_objects,
+    get_dataset_objects,
+    mark_objects_scan_results,
+)
 
 SCAN_ENGINE = "clamav"
 logger = logging.getLogger(__name__)
@@ -86,6 +91,16 @@ def _delete_quarantine_file(quarantine_path: Path) -> None:
 def _set_scan_metadata(dataset: Dataset, scan_result: dict[str, Any]) -> None:
     metadata = dict(dataset.dataset_metadata or {})
     metadata["malware_scan"] = scan_result
+    objects = get_dataset_objects(metadata)
+    if objects:
+        metadata = attach_dataset_objects(
+            metadata,
+            mark_objects_scan_results(
+                objects,
+                dataset_id=str(dataset.id),
+                scan_results=scan_result.get("files", []),
+            ),
+        )
     dataset.dataset_metadata = metadata
 
 

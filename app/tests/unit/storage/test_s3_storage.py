@@ -123,6 +123,31 @@ def test_metadata_exists_download_and_delete_use_configured_bucket():
     ) in client.calls
 
 
+def test_create_upload_url_presigns_put_with_content_type_and_expiry():
+    client = RecordingS3Client()
+    backend = S3StorageBackend(_settings(), client=client)
+
+    url = backend.create_upload_url(
+        "quarantine/batch/data.csv",
+        content_type="text/csv",
+        expires_seconds=120,
+    )
+
+    assert url == "https://signed.example/put_object"
+    assert (
+        "generate_presigned_url",
+        {
+            "ClientMethod": "put_object",
+            "Params": {
+                "Bucket": "datasets",
+                "Key": "quarantine/batch/data.csv",
+                "ContentType": "text/csv",
+            },
+            "ExpiresIn": 120,
+        },
+    ) in client.calls
+
+
 def test_promote_from_quarantine_copies_then_deletes_source():
     client = RecordingS3Client()
     backend = S3StorageBackend(_settings(), client=client)
