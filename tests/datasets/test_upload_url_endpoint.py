@@ -95,6 +95,31 @@ def _assert_dataset_object(
     assert obj["download_state"] == "unavailable"
 
 
+def _assert_dataset_object(
+    metadata: dict,
+    *,
+    original_path: str,
+    storage_key: str,
+    content_type: str | None = None,
+):
+    objects = metadata["objects"]
+    matching = [obj for obj in objects if obj["original_path"] == original_path]
+    assert len(matching) == 1
+    obj = matching[0]
+    assert obj["backend"] == "local"
+    assert obj["provider"] == "local"
+    assert obj["object_key"] == storage_key
+    assert obj["quarantine_key"] == storage_key
+    assert obj["final_object_key"] is None
+    assert obj["content_type"] == content_type
+    assert obj["byte_size"] is None
+    assert obj["checksum"] is None
+    assert obj["etag"] is None
+    assert obj["upload_state"] == "pending"
+    assert obj["scan_state"] == "pending"
+    assert obj["download_state"] == "unavailable"
+
+
 @pytest.fixture
 def db_session_factory(tmp_path: Path):
     db_path = tmp_path / "upload_url_test.db"
