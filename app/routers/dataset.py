@@ -3,7 +3,7 @@ from fastapi import (
     Depends,
     HTTPException,
     Request,
-    status,
+    status as http_status,
     BackgroundTasks,
     Query,
 )
@@ -36,7 +36,7 @@ router = APIRouter(prefix="/datasets", tags=["datasets"])
 @router.post(
     "/upload-url",
     response_model=DatasetUploadURLResponse,
-    status_code=status.HTTP_201_CREATED,
+    status_code=http_status.HTTP_201_CREATED,
 )
 def create_upload_url(
     payload: DatasetUploadURLRequest,
@@ -80,7 +80,7 @@ def create_upload_url(
     except SQLAlchemyError as error:
         db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create dataset record",
         ) from error
     dataset_url = f"/datasets/{dataset.id}"
@@ -101,7 +101,7 @@ async def upload_file(
     return {"message": "Upload successful", "storage_key": storage_key}
 
 
-@router.post("/{dataset_id}/confirm-upload", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/{dataset_id}/confirm-upload", status_code=http_status.HTTP_202_ACCEPTED)
 def confirm_upload(
     dataset_id: uuid.UUID,
     request: Request,
@@ -123,7 +123,7 @@ def confirm_upload(
 
     if not storage_keys:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
             detail="Dataset file references missing",
         )
     background_tasks.add_task(
@@ -176,7 +176,7 @@ def expert_or_owner(current_user: User, dataset: Dataset | None) -> None:
 def ensure_status_update_allowed(dataset: Dataset, next_status: Statuses) -> None:
     if dataset.status == Statuses.QUARANTINED and next_status != Statuses.QUARANTINED:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=http_status.HTTP_409_CONFLICT,
             detail="Quarantined datasets cannot be processed",
         )
 
@@ -240,7 +240,7 @@ def update_status_dataset(
     """
     if current_user.role != Roles.EXPERT:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=http_status.HTTP_403_FORBIDDEN,
             detail="Only experts can change dataset status",
         )
 

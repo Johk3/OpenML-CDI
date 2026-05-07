@@ -25,7 +25,15 @@ def test_settings_defaults(monkeypatch):
 
 
 def test_invalid_backend_raises(monkeypatch):
+    monkeypatch.setenv("STORAGE_BACKEND", "dropbox")
+
+    with pytest.raises(ValueError):
+        Settings.from_env()
+
+
+def test_s3_backend_requires_bucket(monkeypatch):
     monkeypatch.setenv("STORAGE_BACKEND", "s3")
+    monkeypatch.delenv("S3_BUCKET", raising=False)
 
     with pytest.raises(ValueError):
         Settings.from_env()
@@ -38,6 +46,25 @@ def test_factory_returns_local_backend(monkeypatch):
     backend = get_storage_backend(settings)
 
     assert backend.backend_name() == "local"
+
+
+def test_factory_returns_explicit_s3_backend(monkeypatch):
+    monkeypatch.setenv("STORAGE_BACKEND", "s3")
+    monkeypatch.setenv("S3_BUCKET", "datasets")
+    monkeypatch.setenv("S3_REGION", "eu-west-1")
+    monkeypatch.setenv("S3_ENDPOINT", "http://localhost:9000")
+    monkeypatch.setenv("S3_ACCESS_KEY", "minio")
+    monkeypatch.setenv("S3_SECRET_KEY", "minio-secret")
+    monkeypatch.setenv("S3_FORCE_PATH_STYLE", "true")
+
+    settings = Settings.from_env()
+    backend = get_storage_backend(settings)
+
+    assert settings.storage.s3_bucket == "datasets"
+    assert settings.storage.s3_region == "eu-west-1"
+    assert settings.storage.s3_endpoint == "http://localhost:9000"
+    assert settings.storage.s3_force_path_style is True
+    assert backend.backend_name() == "s3"
 
 
 def test_clamd_settings_can_be_overridden(monkeypatch):

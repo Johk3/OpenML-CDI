@@ -8,6 +8,12 @@ CLAMD_SOCKET_ENV = "CLAMD_SOCKET"
 CLAMD_HOST_ENV = "CLAMD_HOST"
 CLAMD_PORT_ENV = "CLAMD_PORT"
 CLAMD_TIMEOUT_SECONDS_ENV = "CLAMD_TIMEOUT_SECONDS"
+S3_BUCKET_ENV = "S3_BUCKET"
+S3_REGION_ENV = "S3_REGION"
+S3_ENDPOINT_ENV = "S3_ENDPOINT"
+S3_ACCESS_KEY_ENV = "S3_ACCESS_KEY"
+S3_SECRET_KEY_ENV = "S3_SECRET_KEY"
+S3_FORCE_PATH_STYLE_ENV = "S3_FORCE_PATH_STYLE"
 UPLOAD_TARGET_ENV = "UPLOAD_TARGET"
 UPLOAD_LOCATION_ENV = "UPLOAD_LOCATION"
 UPLOAD_URL_EXPIRES_SECONDS_ENV = "UPLOAD_URL_EXPIRES_SECONDS"
@@ -16,7 +22,7 @@ DEFAULT_LOCAL_UPLOAD_DIR = ".local_uploads"
 DEFAULT_UPLOAD_TARGET = "uploads"
 DEFAULT_UPLOAD_LOCATION = "default"
 DEFAULT_UPLOAD_URL_EXPIRES_SECONDS = 3600
-SUPPORTED_STORAGE_BACKENDS = {"local", "smart"}
+SUPPORTED_STORAGE_BACKENDS = {"local", "smart", "s3"}
 DEFAULT_CLAMD_HOST = "127.0.0.1"
 DEFAULT_CLAMD_PORT = 3310
 DEFAULT_CLAMD_TIMEOUT_SECONDS = 10.0
@@ -49,6 +55,7 @@ class StorageSettings:
     s3_endpoint: str = ""
     s3_access_key: str = ""
     s3_secret_key: str = ""
+    s3_force_path_style: bool = False
 
     @classmethod
     def from_env(cls) -> "StorageSettings":
@@ -89,8 +96,14 @@ class StorageSettings:
 
         if backend not in SUPPORTED_STORAGE_BACKENDS:
             raise ValueError(
-                "Unsupported STORAGE_BACKEND " f"'{backend}'. " "Supported: local"
+                "Unsupported STORAGE_BACKEND "
+                f"'{backend}'. "
+                f"Supported: {', '.join(sorted(SUPPORTED_STORAGE_BACKENDS))}"
             )
+
+        s3_bucket = os.getenv(S3_BUCKET_ENV, "").strip()
+        if backend == "s3" and not s3_bucket:
+            raise ValueError("S3_BUCKET is required when STORAGE_BACKEND=s3")
 
         return cls(
             backend=backend,
@@ -100,11 +113,12 @@ class StorageSettings:
             clamd_host=clamd_host,
             clamd_port=clamd_port,
             clamd_timeout_seconds=clamd_timeout_seconds,
-            s3_bucket=os.getenv("S3_BUCKET", "").strip(),
-            s3_region=os.getenv("S3_REGION", "").strip(),
-            s3_endpoint=os.getenv("S3_ENDPOINT", "").strip(),
-            s3_access_key=os.getenv("S3_ACCESS_KEY", "").strip(),
-            s3_secret_key=os.getenv("S3_SECRET_KEY", "").strip(),
+            s3_bucket=s3_bucket,
+            s3_region=os.getenv(S3_REGION_ENV, "").strip(),
+            s3_endpoint=os.getenv(S3_ENDPOINT_ENV, "").strip(),
+            s3_access_key=os.getenv(S3_ACCESS_KEY_ENV, "").strip(),
+            s3_secret_key=os.getenv(S3_SECRET_KEY_ENV, "").strip(),
+            s3_force_path_style=_get_bool_env(S3_FORCE_PATH_STYLE_ENV, False),
         )
 
 

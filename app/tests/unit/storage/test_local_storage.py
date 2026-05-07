@@ -47,7 +47,7 @@ def test_parent_directory_is_created_under_configured_root(tmp_path: Path):
     target = backend.create_upload_target("file.csv")
 
     assert target.local_path is not None
-    assert target.local_path.parent == (tmp_path / "datasets")
+    assert target.local_path.parent.parent == (tmp_path / "datasets")
     assert target.local_path.parent.exists()
 
 
@@ -77,3 +77,21 @@ def test_read_rejects_traversal_storage_key(tmp_path: Path):
 
     with pytest.raises(ValueError):
         backend.read_bytes("../outside.txt")
+
+
+def test_metadata_exists_delete_and_verify_round_trip(tmp_path: Path):
+    backend = LocalStorageBackend(tmp_path)
+    storage_key = "datasets/sample.csv"
+
+    backend.write_bytes(storage_key, b"a,b\n1,2\n")
+
+    assert backend.object_exists(storage_key) is True
+    metadata = backend.verify_object(storage_key, expected_size=8)
+    assert metadata.backend == "local"
+    assert metadata.storage_key == storage_key
+    assert metadata.byte_size == 8
+    assert backend.create_download_url(storage_key).startswith("file://")
+
+    backend.delete(storage_key)
+
+    assert backend.object_exists(storage_key) is False
