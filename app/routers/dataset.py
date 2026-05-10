@@ -10,6 +10,8 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from io import BytesIO
+from zipfile import ZIP_DEFLATED, ZipFile
 from app.database import get_db
 from app.schemas.datasets import (
     Dataset,
@@ -36,6 +38,7 @@ from app.services.dataset_objects import (
     build_dataset_objects,
     get_dataset_objects,
     mark_objects_uploaded,
+    normalize_directory_structure,
     storage_keys_from_metadata,
 )
 from app.storage.errors import StorageError
@@ -94,6 +97,12 @@ def create_upload_url(
     else:
         dataset_metadata = {"description": payload.description}
 
+    requested_directory_structure = payload.directory_structure
+    if requested_directory_structure is None and isinstance(payload.description, dict):
+        maybe_directory_structure = payload.description.get("directory_structure")
+        if isinstance(maybe_directory_structure, dict):
+            requested_directory_structure = maybe_directory_structure
+
     dataset_metadata["filenames"] = payload.filenames
     if payload.content_types:
         dataset_metadata["content_types"] = payload.content_types
@@ -113,6 +122,12 @@ def create_upload_url(
             checksums=payload.checksums,
         )
         dataset_metadata = attach_dataset_objects(dataset_metadata, dataset_objects)
+        directory_structure = normalize_directory_structure(
+            requested_directory_structure,
+            original_paths=payload.filenames,
+        )
+        if directory_structure:
+            dataset_metadata["directory_structure"] = directory_structure
     except DatasetObjectValidationError as error:
         raise HTTPException(
             status_code=http_status.HTTP_400_BAD_REQUEST,
@@ -442,23 +457,30 @@ def download_dataset(
     Download the dataset file(s).
     """
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expert_or_owner(current_user, dataset, db)
+    expert_or_owner(current_user, dataset)
 
-    storage_keys = dataset.dataset_metadata.get("storage_keys", [])
-    if not storage_keys:
-        storage_key = dataset.dataset_metadata.get("storage_key")
-        if storage_key:
-            storage_keys = [storage_key]
+    objects = get_dataset_objects(dataset.dataset_metadata or {})
+    storage_keys = [obj["object_key"] for obj in objects]
 
     if not storage_keys:
         raise HTTPException(status_code=404, detail="No files found for this dataset")
 
-    # For now, we only support downloading the
-    # first file (which is the ZIP if > 1 files were uploaded)
-    storage_key = storage_keys[0]
-    filename = dataset.dataset_metadata.get("filenames", [f"dataset_{dataset_id}.bin"])[
-        0
-    ]
+    if len(objects) > 1:
+        archive = BytesIO()
+        with ZipFile(archive, "w", compression=ZIP_DEFLATED) as zip_file:
+            for obj in objects:
+                with request.app.state.storage.open(obj["object_key"], "rb") as f:
+                    zip_file.writestr(obj["original_path"], f.read())
+        archive.seek(0)
+        filename = f"dataset_{dataset_id}.zip"
+        return StreamingResponse(
+            archive,
+            media_type="application/zip",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+
+    storage_key = objects[0]["object_key"]
+    filename = Path(objects[0]["original_path"]).name
 
     def iter_file():
         with request.app.state.storage.open(storage_key, "rb") as f:

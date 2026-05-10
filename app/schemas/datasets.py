@@ -35,6 +35,7 @@ class DatasetUploadURLRequest(BaseModel):
     content_types: list[str | None] | None = None
     byte_sizes: list[int | None] | None = None
     checksums: list[str | None] | None = None
+    directory_structure: dict[str, Any] | None = None
 
 
 class DatasetUploadContract(BaseModel):

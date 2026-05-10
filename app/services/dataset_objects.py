@@ -4,6 +4,7 @@ from typing import Any
 from app.storage.types import ObjectMetadata, UploadTarget
 
 DATASET_OBJECTS_KEY = "objects"
+DIRECTORY_STRUCTURE_KEY = "directory_structure"
 STORAGE_SCHEMA_VERSION_KEY = "storage_schema_version"
 STORAGE_SCHEMA_VERSION = 1
 
@@ -105,6 +106,65 @@ def get_dataset_objects(metadata: dict[str, Any]) -> list[dict[str, Any]]:
 
 def storage_keys_from_metadata(metadata: dict[str, Any]) -> list[str]:
     return [obj["object_key"] for obj in get_dataset_objects(metadata)]
+
+
+def normalize_directory_structure(
+    directory_structure: dict[str, Any] | None,
+    *,
+    original_paths: list[str],
+) -> dict[str, Any] | None:
+    if directory_structure is None:
+        normalized_paths = [_normalize_original_path(path) for path in original_paths]
+        if not any("/" in path for path in normalized_paths):
+            return None
+        return {
+            "compressed": False,
+            "root": _common_root(normalized_paths),
+            "paths": normalized_paths,
+        }
+
+    if not isinstance(directory_structure, dict):
+        raise DatasetObjectValidationError("directory_structure must be an object")
+
+    raw_paths = directory_structure.get("paths")
+    if not isinstance(raw_paths, list) or not raw_paths:
+        raise DatasetObjectValidationError("directory_structure paths must be a list")
+
+    try:
+        paths = [_normalize_original_path(str(path)) for path in raw_paths]
+    except DatasetObjectValidationError as error:
+        message = str(error).replace("original path", "directory_structure paths")
+        raise DatasetObjectValidationError(message) from error
+
+    _reject_duplicates(paths, "directory structure paths")
+
+    root = directory_structure.get("root")
+    if root is None or str(root).strip() == "":
+        normalized_root = _common_root(paths)
+    else:
+        try:
+            normalized_root = _normalize_original_path(str(root))
+        except DatasetObjectValidationError as error:
+            message = str(error).replace("original path", "directory_structure root")
+            raise DatasetObjectValidationError(message) from error
+
+    if normalized_root and "/" in normalized_root:
+        raise DatasetObjectValidationError(
+            "directory_structure root must be a single path segment"
+        )
+    if normalized_root and not all(
+        path == normalized_root or path.startswith(f"{normalized_root}/")
+        for path in paths
+    ):
+        raise DatasetObjectValidationError(
+            "directory_structure root must contain every path"
+        )
+
+    return {
+        "compressed": bool(directory_structure.get("compressed", False)),
+        "root": normalized_root,
+        "paths": paths,
+    }
 
 
 def mark_objects_uploaded(
@@ -312,6 +372,13 @@ def _normalize_posix_path(path: str, *, label: str) -> str:
 def _reject_duplicates(values: list[str], label: str) -> None:
     if len(values) != len(set(values)):
         raise DatasetObjectValidationError(f"Duplicate {label} are not allowed")
+
+
+def _common_root(paths: list[str]) -> str | None:
+    roots = {PurePosixPath(path).parts[0] for path in paths if "/" in path}
+    if len(roots) == 1:
+        return next(iter(roots))
+    return None
 
 
 def _storage_bucket(storage: Any) -> str:

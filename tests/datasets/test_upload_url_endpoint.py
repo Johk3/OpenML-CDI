@@ -1,6 +1,8 @@
 import uuid
+import zipfile
 from dataclasses import replace
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -346,6 +348,46 @@ def test_confirm_upload_marks_dataset_objects_uploaded(
         assert obj["byte_size"] == 8
 
 
+def test_download_multiple_dataset_objects_preserves_directory_structure(
+    client: TestClient, db_session_factory
+):
+    uploader_id = uuid.uuid4()
+    access_token = _create_access_token_for_user(db_session_factory, uploader_id)
+    dataset_id = uuid.uuid4()
+    storage_keys = ["datasets/batch/train/data.csv", "datasets/batch/test/data.csv"]
+    filenames = ["dataset/train/data.csv", "dataset/test/data.csv"]
+
+    with db_session_factory() as db:
+        db.add(
+            Dataset(
+                id=dataset_id,
+                title="Folder Dataset",
+                owner_id=uploader_id,
+                dataset_metadata={
+                    "filenames": filenames,
+                    "storage_keys": storage_keys,
+                },
+                status=Statuses.PENDING,
+            )
+        )
+        db.commit()
+
+    client.app.state.storage.write_bytes(storage_keys[0], b"split,value\ntrain,1\n")
+    client.app.state.storage.write_bytes(storage_keys[1], b"split,value\ntest,2\n")
+
+    response = client.get(
+        f"/api/datasets/{dataset_id}/download",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    with zipfile.ZipFile(BytesIO(response.content)) as archive:
+        assert archive.namelist() == filenames
+        assert archive.read("dataset/train/data.csv") == b"split,value\ntrain,1\n"
+        assert archive.read("dataset/test/data.csv") == b"split,value\ntest,2\n"
+
+
 def test_upload_url_returns_direct_s3_upload_contract(
     client: TestClient, db_session_factory, monkeypatch
 ):
@@ -401,6 +443,84 @@ def test_upload_url_returns_direct_s3_upload_contract(
         assert obj["original_path"] == "folder/data.csv"
         assert obj["byte_size"] == 8
         assert obj["upload_state"] == "pending"
+
+
+def test_upload_url_persists_directory_structure_metadata_from_description(
+    client: TestClient, db_session_factory, monkeypatch
+):
+    uploader_id = uuid.uuid4()
+    access_token = _create_access_token_for_user(db_session_factory, uploader_id)
+
+    monkeypatch.setattr(
+        client.app.state.storage,
+        "create_upload_target",
+        lambda filename, **kwargs: UploadTarget(
+            storage_key=f"datasets/batch/{Path(filename).name}",
+            local_path=Path(f"/tmp/{Path(filename).name}"),
+        ),
+    )
+
+    response = client.post(
+        "/api/datasets/upload-url",
+        json={
+            "name": "Folder dataset",
+            "description": {
+                "text": "Folder upload",
+                "directory_structure": {
+                    "compressed": True,
+                    "root": "dataset",
+                    "paths": [
+                        "dataset/train/data.csv",
+                        "dataset/test/data.csv",
+                    ],
+                },
+            },
+            "filenames": ["Folder_Dataset_files.zip"],
+            "content_types": ["application/zip"],
+        },
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 201
+    dataset_id = uuid.UUID(response.json()["id"])
+    with db_session_factory() as db:
+        dataset = db.get(Dataset, dataset_id)
+        metadata = dataset.dataset_metadata
+        assert metadata["directory_structure"] == {
+            "compressed": True,
+            "root": "dataset",
+            "paths": [
+                "dataset/train/data.csv",
+                "dataset/test/data.csv",
+            ],
+        }
+
+
+def test_upload_url_rejects_unsafe_directory_structure_paths(
+    client: TestClient, db_session_factory
+):
+    access_token = _create_access_token_for_user(db_session_factory, uuid.uuid4())
+
+    response = client.post(
+        "/api/datasets/upload-url",
+        json={
+            "name": "Unsafe folder dataset",
+            "description": {
+                "directory_structure": {
+                    "compressed": True,
+                    "root": "dataset",
+                    "paths": ["dataset/train/data.csv", "../secrets.csv"],
+                }
+            },
+            "filenames": ["dataset.zip"],
+        },
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "directory_structure paths cannot be absolute or contain '..'"
+    }
 
 
 def test_confirm_upload_verifies_s3_object_and_blocks_scan_on_failure(
