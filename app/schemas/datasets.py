@@ -28,6 +28,12 @@ class Dataset(DatasetBase):
         frozen = True  # no changes
 
 
+class DatasetDetail(Dataset):
+    dataset_url: str
+    download_url: str | None = None
+    storage_objects: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class DatasetUploadURLRequest(BaseModel):
     name: str = Field(..., min_length=1)
     description: str | dict[str, Any] | None = None

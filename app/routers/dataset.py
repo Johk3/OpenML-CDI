@@ -17,6 +17,7 @@ from app.schemas.datasets import (
     Dataset,
     DatasetConfirmUploadRequest,
     DatasetCreate,
+    DatasetDetail,
     DatasetUploadContract,
     DatasetUploadURLRequest,
     DatasetUploadURLResponse,
@@ -298,6 +299,26 @@ def ensure_status_update_allowed(dataset: Dataset, next_status: Statuses) -> Non
         )
 
 
+def _dataset_detail_response(dataset: DatasetModel) -> DatasetDetail:
+    metadata = dict(dataset.dataset_metadata or {})
+    storage_objects = get_dataset_objects(metadata)
+    has_downloadable_files = bool(storage_keys_from_metadata(metadata))
+    return DatasetDetail(
+        id=dataset.id,
+        title=dataset.title,
+        dataset_metadata=metadata,
+        owner_id=dataset.owner_id,
+        issue_url=dataset.issue_url or "",
+        created_at=dataset.created_at,
+        status=dataset.status,
+        dataset_url=f"/datasets/{dataset.id}",
+        download_url=(
+            f"/api/datasets/{dataset.id}/download" if has_downloadable_files else None
+        ),
+        storage_objects=storage_objects,
+    )
+
+
 @router.get("/list", response_model=list[Dataset])
 def list_datasets(
     current_user: Annotated[User, Depends(get_current_active_user)],
@@ -327,6 +348,22 @@ def get_dataset(
     expert_or_owner(current_user, dataset)
     if dataset:
         return dataset
+    raise HTTPException(status_code=404, detail="Dataset not found")
+
+
+@router.get("/{dataset_id}", response_model=DatasetDetail)
+def get_dataset_detail(
+    dataset_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Session = Depends(get_db),
+):
+    """
+    Retrieve a dataset detail view with stable UI links and storage object metadata.
+    """
+    dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
+    expert_or_owner(current_user, dataset)
+    if dataset:
+        return _dataset_detail_response(dataset)
     raise HTTPException(status_code=404, detail="Dataset not found")
 
 

@@ -153,13 +153,19 @@ def client(db_session_factory):
         app.dependency_overrides.clear()
 
 
-def _create_access_token_for_user(db_session_factory, user_id: uuid.UUID) -> str:
+def _create_access_token_for_user(
+    db_session_factory,
+    user_id: uuid.UUID,
+    *,
+    email: str = "uploader@example.com",
+    username: str = "uploader",
+) -> str:
     with db_session_factory() as db:
         db.add(
             User(
                 id=user_id,
-                email="uploader@example.com",
-                username="uploader",
+                email=email,
+                username=username,
                 first_name="Upload",
                 last_name="User",
                 role=Roles.USER,
@@ -346,6 +352,121 @@ def test_confirm_upload_marks_dataset_objects_uploaded(
         obj = dataset.dataset_metadata["objects"][0]
         assert obj["upload_state"] == "uploaded"
         assert obj["byte_size"] == 8
+
+
+def test_dataset_detail_endpoint_returns_owner_view(
+    client: TestClient, db_session_factory
+):
+    uploader_id = uuid.uuid4()
+    access_token = _create_access_token_for_user(db_session_factory, uploader_id)
+    dataset_id = uuid.uuid4()
+    storage_key = "datasets/batch/detail.csv"
+    created_at = datetime(2026, 5, 10, 12, 0, tzinfo=timezone.utc)
+
+    with db_session_factory() as db:
+        db.add(
+            Dataset(
+                id=dataset_id,
+                title="Detail dataset",
+                owner_id=uploader_id,
+                issue_url="https://github.com/example/repo/issues/1",
+                dataset_metadata={
+                    "description": "Detail description",
+                    "filenames": ["folder/detail.csv"],
+                    "storage_keys": [storage_key],
+                },
+                status=Statuses.PENDING,
+                created_at=created_at,
+            )
+        )
+        db.commit()
+
+    response = client.get(
+        f"/api/datasets/{dataset_id}",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == str(dataset_id)
+    assert body["title"] == "Detail dataset"
+    assert body["dataset_url"] == f"/datasets/{dataset_id}"
+    assert body["download_url"] == f"/api/datasets/{dataset_id}/download"
+    assert body["dataset_metadata"]["filenames"] == ["folder/detail.csv"]
+    assert body["storage_objects"][0]["original_path"] == "folder/detail.csv"
+    assert body["storage_objects"][0]["object_key"] == storage_key
+
+
+def test_dataset_detail_endpoint_allows_experts(client: TestClient, db_session_factory):
+    owner_id = uuid.uuid4()
+    expert_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    _create_access_token_for_user(db_session_factory, owner_id)
+    expert_token = create_access_token({"sub": str(expert_id), "type": "access"})
+
+    with db_session_factory() as db:
+        db.add(
+            User(
+                id=expert_id,
+                email="expert@example.com",
+                username="expert",
+                first_name="Expert",
+                last_name="User",
+                role=Roles.EXPERT,
+            )
+        )
+        db.add(
+            Dataset(
+                id=dataset_id,
+                title="Expert visible dataset",
+                owner_id=owner_id,
+                dataset_metadata={"filenames": ["data.csv"]},
+                status=Statuses.PENDING,
+            )
+        )
+        db.commit()
+
+    response = client.get(
+        f"/api/datasets/{dataset_id}",
+        headers={"Authorization": f"Bearer {expert_token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == str(dataset_id)
+
+
+def test_dataset_detail_endpoint_rejects_other_users(
+    client: TestClient, db_session_factory
+):
+    owner_id = uuid.uuid4()
+    other_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    _create_access_token_for_user(db_session_factory, owner_id)
+    other_token = _create_access_token_for_user(
+        db_session_factory,
+        other_id,
+        email="other@example.com",
+        username="other",
+    )
+
+    with db_session_factory() as db:
+        db.add(
+            Dataset(
+                id=dataset_id,
+                title="Private dataset",
+                owner_id=owner_id,
+                dataset_metadata={"filenames": ["data.csv"]},
+                status=Statuses.PENDING,
+            )
+        )
+        db.commit()
+
+    response = client.get(
+        f"/api/datasets/{dataset_id}",
+        headers={"Authorization": f"Bearer {other_token}"},
+    )
+
+    assert response.status_code == 403
 
 
 def test_download_multiple_dataset_objects_preserves_directory_structure(
