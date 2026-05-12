@@ -116,6 +116,25 @@ class S3StorageBackend:
         except Exception as error:
             raise self._to_storage_error("delete object", error) from error
 
+    def create_upload_url(
+        self,
+        storage_key: str,
+        content_type: str | None = None,
+        expires_seconds: int = 3600,
+    ) -> str:
+        key = self._validate_storage_key(storage_key)
+        params = {"Bucket": self.bucket, "Key": key}
+        if content_type:
+            params["ContentType"] = content_type
+        try:
+            return self._client.generate_presigned_url(
+                "put_object",
+                Params=params,
+                ExpiresIn=expires_seconds,
+            )
+        except Exception as error:
+            raise self._to_storage_error("create upload URL", error) from error
+
     def create_download_url(self, storage_key: str, expires_seconds: int = 3600) -> str:
         key = self._validate_storage_key(storage_key)
         try:

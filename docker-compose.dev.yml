@@ -7,7 +7,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./app:/backend/app          # bind mount — edits reflect immediately
+      - ./app:/backend/app # bind mount — edits reflect immediately
       - ./.env:/backend/.env
       - ./app/data:/backend/app/data
       - ./alembic.ini:/backend/alembic.ini
@@ -16,11 +16,22 @@ services:
       - ENVIRONMENT=development
       - AUTH_DEV_MODE_APPROVE_ALL_LOGINS=true
       - COOKIE_SECURE=false
+      - STORAGE_BACKEND=s3
+      - S3_BUCKET=openml-upload-local
+      - S3_REGION=eu-west-1
+      - S3_ENDPOINT=http://minio:9000
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadmin123
+      - S3_FORCE_PATH_STYLE=true
+      - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
       - CLAMD_HOST=clamd
       - CLAMD_PORT=3310
       - CLAMD_TIMEOUT_SECONDS=10
     depends_on:
-      - clamd
+      clamd:
+        condition: service_started
+      minio-init:
+        condition: service_completed_successfully
     networks:
       - app-network
 
@@ -30,10 +41,10 @@ services:
       dockerfile: Dockerfile.dev
     ports:
       - "5173:5173"
-      - "24678:24678"           # Vite HMR websocket port
+      - "24678:24678" # Vite HMR websocket port
     volumes:
-      - ./frontend:/app                      # bind mount source code
-      - frontend-node-modules:/app/node_modules  # isolate node_modules
+      - ./frontend:/app # bind mount source code
+      - frontend-node-modules:/app/node_modules # isolate node_modules
     environment:
       - VITE_API_URL=http://localhost:5173
     networks:
@@ -45,8 +56,43 @@ services:
     networks:
       - app-network
 
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin123
+      - MINIO_API_CORS_ALLOW_ORIGIN=http://localhost:5173,http://127.0.0.1:5173
+    volumes:
+      - minio-data:/data
+    networks:
+      - app-network
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    volumes:
+      - ./infra/minio:/etc/minio:ro
+    entrypoint: >
+      /bin/sh -c "
+      set -eu;
+      until mc alias set local http://minio:9000 minioadmin minioadmin123; do
+        sleep 2;
+      done;
+      mc mb --ignore-existing local/openml-upload-local;
+      mc anonymous set none local/openml-upload-local;
+      mc ilm import local/openml-upload-local < /etc/minio/lifecycle.json;
+      "
+    networks:
+      - app-network
+
 volumes:
-  frontend-node-modules:        # named volume prevents host/container conflicts
+  frontend-node-modules: # named volume prevents host/container conflicts
+  minio-data: # local S3-compatible object storage
 
 networks:
   app-network:

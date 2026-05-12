@@ -3,14 +3,63 @@ name: Docker Build Check
 on:
   pull_request:
     branches: [main]
-  workflow_call: 
+  workflow_call:
 
 jobs:
   test-frontend:
     uses: ./.github/workflows/frontend-test.yaml
 
+  s3-local-storage-check:
+    runs-on: ubuntu-latest
+    env:
+      STORAGE_BACKEND: s3
+      S3_BUCKET: openml-upload-local
+      S3_REGION: eu-west-1
+      S3_ENDPOINT: http://127.0.0.1:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin123
+      S3_FORCE_PATH_STYLE: "true"
+      CORS_ALLOWED_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+      JWT_SECRET: test-jwt-secret
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Start local MinIO
+        run: |
+          docker run -d \
+            --name minio \
+            -p 9000:9000 \
+            -p 9001:9001 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin123 \
+            -e MINIO_API_CORS_ALLOW_ORIGIN=http://localhost:5173,http://127.0.0.1:5173 \
+            minio/minio:latest server /data --console-address ":9001"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt
+
+      - name: Configure local S3 bucket
+        run: python scripts/setup_local_s3.py
+
+      - name: Run backend S3 checks
+        run: |
+          pytest \
+            app/tests/unit/storage/test_config_and_factory.py \
+            app/tests/unit/storage/test_s3_storage.py \
+            app/tests/integration/test_app_storage_wiring.py \
+            --no-cov
+
   build-check:
-    needs: test-frontend
+    needs:
+      - test-frontend
+      - s3-local-storage-check
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
