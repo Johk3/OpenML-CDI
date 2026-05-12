@@ -132,7 +132,14 @@ def test_confirm_upload_promotes_clean_file_and_keeps_dataset_pending(
     dataset = db_test_session.get(Dataset, dataset_id)
     assert dataset.status == Statuses.PENDING
     assert dataset.dataset_metadata["malware_scan"] == {
-        "files": [{"status": "clean", "engine": "clamav", "file": "clean.csv"}],
+        "files": [
+            {
+                "status": "clean",
+                "engine": "clamav",
+                "file": "clean.csv",
+                "final_object_key": f"ready/{dataset_id}/clean.csv",
+            }
+        ],
         "engine": "clamav",
     }
     final_path = (

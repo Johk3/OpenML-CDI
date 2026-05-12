@@ -331,7 +331,8 @@ def list_datasets(
     Experts receive every dataset in the system.
     """
     if current_user.role == Roles.EXPERT:
-        return dataset_crud.get_all_datasets(db=db, offset=offset, limit=limit)
+        datasets = dataset_crud.get_all_datasets(db=db, offset=offset, limit=limit)
+        return [dataset for dataset in datasets if _is_ready_for_expert_review(dataset)]
     return dataset_crud.get_datasets_for_user(db=db, user_id=current_user.id)
 
 
@@ -495,19 +496,17 @@ def download_dataset(
     """
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
     expert_or_owner(current_user, dataset)
+    if dataset is None:
+        raise HTTPException(status_code=404, detail="Dataset not found")
 
-    objects = get_dataset_objects(dataset.dataset_metadata or {})
-    storage_keys = [obj["object_key"] for obj in objects]
+    downloadable_objects = _downloadable_objects(dataset)
 
-    if not storage_keys:
-        raise HTTPException(status_code=404, detail="No files found for this dataset")
-
-    if len(objects) > 1:
+    if len(downloadable_objects) > 1:
         archive = BytesIO()
         with ZipFile(archive, "w", compression=ZIP_DEFLATED) as zip_file:
-            for obj in objects:
-                with request.app.state.storage.open(obj["object_key"], "rb") as f:
-                    zip_file.writestr(obj["original_path"], f.read())
+            for storage_key, original_path in downloadable_objects:
+                with request.app.state.storage.open(storage_key, "rb") as f:
+                    zip_file.writestr(original_path, f.read())
         archive.seek(0)
         filename = f"dataset_{dataset_id}.zip"
         return StreamingResponse(
@@ -516,8 +515,8 @@ def download_dataset(
             headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
 
-    storage_key = objects[0]["object_key"]
-    filename = Path(objects[0]["original_path"]).name
+    storage_key, original_path = downloadable_objects[0]
+    filename = Path(original_path).name
 
     def iter_file():
         with request.app.state.storage.open(storage_key, "rb") as f:
@@ -529,4 +528,53 @@ def download_dataset(
         iter_file(),
         media_type="application/octet-stream",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+def _is_ready_for_expert_review(dataset: Dataset) -> bool:
+    if dataset.status != Statuses.PENDING:
+        return False
+
+    metadata = dataset.dataset_metadata or {}
+    objects = get_dataset_objects(metadata)
+    if objects:
+        return all(
+            obj["scan_state"] == "clean"
+            and obj["download_state"] == "downloadable"
+            and obj["final_object_key"]
+            for obj in objects
+        )
+
+    scan_files = (metadata.get("malware_scan") or {}).get("files") or []
+    return bool(scan_files) and all(
+        result.get("status") == "clean" for result in scan_files
+    )
+
+
+def _downloadable_objects(dataset: Dataset) -> list[tuple[str, str]]:
+    if dataset.status == Statuses.QUARANTINED:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail="Dataset files are not available for download",
+        )
+
+    metadata = dataset.dataset_metadata or {}
+    objects = get_dataset_objects(metadata)
+    if not objects:
+        raise HTTPException(status_code=404, detail="No files found for this dataset")
+
+    if "objects" not in metadata:
+        return [(obj["object_key"], obj["original_path"]) for obj in objects]
+
+    downloadable_objects = [
+        (obj["final_object_key"], obj["original_path"])
+        for obj in objects
+        if obj["download_state"] == "downloadable" and obj["final_object_key"]
+    ]
+    if downloadable_objects:
+        return downloadable_objects
+
+    raise HTTPException(
+        status_code=http_status.HTTP_409_CONFLICT,
+        detail="Dataset files are not available for download",
     )

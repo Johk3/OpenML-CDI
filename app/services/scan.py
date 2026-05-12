@@ -110,12 +110,12 @@ def _get_relative_path(storage_key: str) -> Path:
     if not parts:
         return Path("unknown.bin")
 
-    # Handles many files uploaded: datasets/{batch_uuid}/{path}
-    if parts[0] == "datasets" and len(parts) > 2:
+    # Handles many files uploaded: {datasets|quarantine}/{batch_uuid}/{path}
+    if parts[0] in {"datasets", "quarantine"} and len(parts) > 2:
         return Path(*parts[2:])
 
-    # Handles single file uploaded: datasets/{uuid}_{filename}
-    if parts[0] == "datasets" and len(parts) == 2:
+    # Handles single file uploaded: {datasets|quarantine}/{uuid}_{filename}
+    if parts[0] in {"datasets", "quarantine"} and len(parts) == 2:
         name = parts[1]
         if "_" in name:
             return Path(name.split("_", 1)[1])
@@ -140,6 +140,11 @@ def _scan_error_result(*, rel_path: Path, message: str) -> dict[str, str]:
     }
 
 
+def _final_storage_key(*, dataset_id: Any, rel_path: Path, final_dir: Path) -> str:
+    final_prefix = final_dir.name or "ready"
+    return str(Path(final_prefix) / str(dataset_id) / rel_path)
+
+
 def scan_uploaded_files(
     dataset_id,
     storage_keys: list[str],
@@ -153,10 +158,6 @@ def scan_uploaded_files(
     db_factory: Callable[[], Session],
 ) -> None:
     quarantine_dir.mkdir(parents=True, exist_ok=True)
-
-    # Create a dataset-specific final directory to avoid collisions.
-    dataset_final_dir = final_dir / str(dataset_id)
-    dataset_final_dir.mkdir(parents=True, exist_ok=True)
 
     with db_factory() as db:
         dataset = db.get(Dataset, dataset_id)
@@ -220,10 +221,14 @@ def scan_uploaded_files(
 
             scan_result["file"] = str(rel_path)
             if scan_result["status"] == "clean":
-                final_path = dataset_final_dir / rel_path
+                final_key = _final_storage_key(
+                    dataset_id=dataset.id,
+                    rel_path=rel_path,
+                    final_dir=final_dir,
+                )
                 try:
-                    final_path.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.move(str(quarantine_path), final_path)
+                    storage.promote_from_quarantine(storage_key, final_key)
+                    scan_result["final_object_key"] = final_key
                 except Exception as error:
                     logger.exception(
                         "Failed to move clean file for dataset %s", dataset.id
@@ -233,6 +238,8 @@ def scan_uploaded_files(
                         rel_path=rel_path,
                         message=f"Failed to promote clean file: {str(error)}",
                     )
+                    _delete_quarantine_file(quarantine_path)
+                else:
                     _delete_quarantine_file(quarantine_path)
             else:
                 all_clean = False
