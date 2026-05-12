@@ -6,6 +6,15 @@ export const mockDatasetService = {
     presigned_urls: ['http://example.com/presigned'],
   }),
   uploadFileToPresignedUrl: vi.fn().mockResolvedValue(undefined),
+  uploadFileInChunks: vi.fn().mockImplementation(async (_url, file, options) => {
+    options?.onProgress?.({
+      loadedBytes: file.size,
+      totalBytes: file.size,
+      chunkIndex: 0,
+      totalChunks: 1,
+      status: 'completed',
+    });
+  }),
   confirmUpload: vi.fn().mockResolvedValue(undefined),
   listDatasets: vi.fn().mockResolvedValue([
     {

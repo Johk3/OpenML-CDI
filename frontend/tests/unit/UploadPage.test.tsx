@@ -2,11 +2,27 @@ import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { UploadPage } from '../../src/pages/UploadPage';
 import { renderWithRouter, mockNavigate } from '../utils';
+import { mockDatasetService } from '../mocks/datasetService';
 
 describe('UploadPage', () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.clearAllMocks();
     mockNavigate.mockClear();
+    mockDatasetService.requestUploadUrl.mockResolvedValue({
+      id: 'test-dataset-id',
+      presigned_urls: ['http://example.com/presigned'],
+    });
+    mockDatasetService.uploadFileInChunks.mockImplementation(async (_url, file, options) => {
+      options?.onProgress?.({
+        loadedBytes: file.size,
+        totalBytes: file.size,
+        chunkIndex: 0,
+        totalChunks: 1,
+        status: 'completed',
+      });
+    });
+    mockDatasetService.confirmUpload.mockResolvedValue(undefined);
     renderWithRouter(<UploadPage />);
   });
 
@@ -78,6 +94,23 @@ describe('UploadPage', () => {
       });
 
       expect(screen.getByText('John')).toBeInTheDocument();
+    });
+
+    it('uses resumable chunked upload controls while a file is uploading', async () => {
+      mockDatasetService.uploadFileInChunks.mockImplementation(() => new Promise(() => undefined));
+
+      fireEvent.click(screen.getByText(/Upload Dataset/i));
+
+      await waitFor(() => {
+        expect(screen.getByText('Chunk 0 of 1')).toBeInTheDocument();
+      });
+
+      expect(screen.getByRole('button', { name: /pause upload/i })).toBeInTheDocument();
+      expect(mockDatasetService.uploadFileInChunks).toHaveBeenCalled();
+      expect(mockDatasetService.uploadFileToPresignedUrl).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole('button', { name: /pause upload/i }));
+      expect(await screen.findByRole('button', { name: /resume upload/i })).toBeInTheDocument();
     });
   });
 });

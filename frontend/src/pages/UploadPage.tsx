@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { FileUploadZone } from '../components/FileUploadZone';
 import { Input } from '../components/Input';
@@ -11,6 +11,8 @@ import {
   Clock,
   XCircle,
   Package,
+  PauseCircle,
+  PlayCircle,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
@@ -22,8 +24,10 @@ import { AxiosError } from 'axios';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { compressFilesToZip } from '@/utils/compress';
+import { ChunkedUploadController, ChunkedUploadProgress } from '@/types/dataset';
 
 type UploadState = 'idle' | 'contact' | 'compressing' | 'uploading' | 'success' | 'error';
+type UploadSessionState = 'idle' | 'uploading' | 'paused' | 'resumed' | 'completed';
 
 const TIPS = [
   'Multiple files are automatically compressed into a single ZIP archive before uploading, making the transfer faster and giving you a single file to share with your expert.',
@@ -73,6 +77,11 @@ export const UploadPage: React.FC = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [compressionProgress, setCompressionProgress] = useState(0);
   const [originalFileCount, setOriginalFileCount] = useState(0);
+  const [uploadSessionState, setUploadSessionState] = useState<UploadSessionState>('idle');
+  const [currentChunk, setCurrentChunk] = useState(0);
+  const [totalChunks, setTotalChunks] = useState(1);
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const uploadControllerRef = useRef<ChunkedUploadController | null>(null);
 
   // Prevention of accidental page closure during compression or upload
   React.useEffect(() => {
@@ -124,6 +133,10 @@ export const UploadPage: React.FC = () => {
     setErrorMessage(null);
     setUploadProgress(0);
     setCompressionProgress(0);
+    setUploadSessionState('idle');
+    setCurrentChunk(0);
+    setTotalChunks(1);
+    setUploadedFileName(null);
     setOriginalFileCount(selectedFiles.length);
 
     try {
@@ -162,6 +175,22 @@ export const UploadPage: React.FC = () => {
       const uploadTotalSize = filesToUpload.reduce((acc, f) => acc + f.size, 0);
       const loadedBytesByFile = new Array(filesToUpload.length).fill(0);
       let lastUpdate = 0;
+      let paused = false;
+      const uploadController: ChunkedUploadController = {
+        pause: () => {
+          paused = true;
+          setUploadSessionState('paused');
+        },
+        resume: () => {
+          paused = false;
+          setUploadSessionState('resumed');
+        },
+        abort: () => {
+          paused = false;
+        },
+        isPaused: () => paused,
+      };
+      uploadControllerRef.current = uploadController;
 
       const updateProgress = (index: number, loaded: number) => {
         loadedBytesByFile[index] = loaded;
@@ -175,11 +204,22 @@ export const UploadPage: React.FC = () => {
         }
       };
 
+      const updateChunkProgress = (index: number, file: File, progress: ChunkedUploadProgress) => {
+        setUploadedFileName(file.name);
+        setCurrentChunk(
+          progress.status === 'completed' ? progress.totalChunks : progress.chunkIndex,
+        );
+        setTotalChunks(progress.totalChunks);
+        setUploadSessionState(progress.status);
+        updateProgress(index, progress.loadedBytes);
+      };
+
       const tasks = filesToUpload.map((file, index) => async () => {
         try {
-          await DatasetService.uploadFileToPresignedUrl(presigned_urls[index], file, (event) =>
-            updateProgress(index, event.loaded),
-          );
+          await DatasetService.uploadFileInChunks(presigned_urls[index], file, {
+            controller: uploadController,
+            onProgress: (progress) => updateChunkProgress(index, file, progress),
+          });
           updateProgress(index, file.size);
         } catch (err) {
           console.error(`Failed to upload ${file.name}:`, err);
@@ -194,6 +234,7 @@ export const UploadPage: React.FC = () => {
       await DatasetService.confirmUpload(id);
 
       setDatasetId(id);
+      setUploadSessionState('completed');
       setUploadState('success');
     } catch (err) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
@@ -205,7 +246,17 @@ export const UploadPage: React.FC = () => {
               'An unexpected error occurred during upload. For large folders, check your connection stability and try again.'),
       );
       setUploadState('error');
+    } finally {
+      uploadControllerRef.current = null;
     }
+  };
+
+  const handlePauseUpload = () => {
+    uploadControllerRef.current?.pause();
+  };
+
+  const handleResumeUpload = () => {
+    uploadControllerRef.current?.resume();
   };
 
   return (
@@ -457,6 +508,40 @@ export const UploadPage: React.FC = () => {
                         </>
                       )}
                     </p>
+
+                    <div className="mb-4 flex flex-col items-center gap-3 text-sm">
+                      <div className="rounded-md bg-muted px-3 py-1 text-muted-foreground">
+                        Chunk {currentChunk} of {totalChunks}
+                      </div>
+                      <p className="max-w-xs text-xs text-muted-foreground">
+                        {uploadSessionState === 'paused'
+                          ? 'Upload paused. Resume to continue from the saved chunk.'
+                          : uploadSessionState === 'resumed'
+                            ? 'Upload resumed from saved progress.'
+                            : `Uploading chunks for ${uploadedFileName ?? selectedFiles[0]?.name ?? 'file'}.`}
+                      </p>
+                      {uploadSessionState === 'paused' ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleResumeUpload}
+                        >
+                          <PlayCircle size={16} />
+                          Resume Upload
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handlePauseUpload}
+                        >
+                          <PauseCircle size={16} />
+                          Pause Upload
+                        </Button>
+                      )}
+                    </div>
 
                     <div className="w-full max-w-xs bg-muted rounded-full h-1.5 overflow-hidden">
                       <motion.div
