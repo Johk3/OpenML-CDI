@@ -29,6 +29,13 @@ import { ChunkedUploadController, ChunkedUploadProgress } from '@/types/dataset'
 type UploadState = 'idle' | 'contact' | 'compressing' | 'uploading' | 'success' | 'error';
 type UploadSessionState = 'idle' | 'uploading' | 'paused' | 'resumed' | 'completed';
 
+const getUploadPath = (file: File) => file.webkitRelativePath || file.name;
+
+const getDirectoryRoot = (paths: string[]) => {
+  const firstPath = paths.find((path) => path.includes('/'));
+  return firstPath?.split('/')[0] ?? null;
+};
+
 const TIPS = [
   'Multiple files are automatically compressed into a single ZIP archive before uploading, making the transfer faster and giving you a single file to share with your expert.',
   'If you run into any troubles or have found new ways to describe your dataset, be sure to contact your assigned expert for guidance.',
@@ -140,6 +147,7 @@ export const UploadPage: React.FC = () => {
     setOriginalFileCount(selectedFiles.length);
 
     try {
+      const selectedPaths = selectedFiles.map(getUploadPath);
       // Compress
       let filesToUpload: File[];
 
@@ -166,8 +174,13 @@ export const UploadPage: React.FC = () => {
             last_name: formData.lastName,
             email: formData.email,
           },
+          directory_structure: {
+            compressed: selectedFiles.length > 1,
+            root: getDirectoryRoot(selectedPaths),
+            paths: selectedPaths,
+          },
         },
-        filenames: filesToUpload.map((f) => f.webkitRelativePath || f.name),
+        filenames: filesToUpload.map(getUploadPath),
         content_types: filesToUpload.map((f) => f.type || undefined),
       });
 

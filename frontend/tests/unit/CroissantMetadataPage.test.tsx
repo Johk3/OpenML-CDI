@@ -122,16 +122,12 @@ describe('CroissantMetadataPage', () => {
     renderPage();
 
     fireEvent.click(screen.getByRole('button', { name: /add distribution/i }));
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /file 1/i })).toBeInTheDocument(),
-    );
+    expect(screen.getByRole('button', { name: /file 1/i })).toBeInTheDocument();
 
     // distribution.name field label is "File Name"
     fireEvent.change(screen.getByLabelText(/^file name/i), { target: { value: 'my-archive' } });
 
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /my-archive/i })).toBeInTheDocument();
-    });
+    expect(screen.getByRole('button', { name: /my-archive/i })).toBeInTheDocument();
   });
 
   it('removes a distribution item and returns to empty state', async () => {
@@ -171,16 +167,12 @@ describe('CroissantMetadataPage', () => {
     renderPage();
 
     fireEvent.click(screen.getByRole('button', { name: /add distribution/i }));
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /file 1/i })).toBeInTheDocument(),
-    );
+    expect(screen.getByRole('button', { name: /file 1/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
 
-    await waitFor(() => {
-      const fileButton = screen.getByRole('button', { name: /file 1/i });
-      expect(fileButton.querySelector('svg')).toBeInTheDocument();
-    });
+    const fileButton = screen.getByRole('button', { name: /file 1/i });
+    expect(fileButton.querySelector('svg')).toBeInTheDocument();
   });
 
   it('does not show a hash error when the distribution has an md5 hash', async () => {

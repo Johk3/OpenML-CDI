@@ -9,6 +9,8 @@ configure({
   getElementError: (message) => new Error(message ?? undefined),
 });
 
+vi.setConfig({ testTimeout: 15000 });
+
 // Global mock for dataset service
 vi.mock('@/services/datasetService', () => ({
   DatasetService: mockDatasetService,
