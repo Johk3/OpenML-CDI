@@ -4,7 +4,7 @@ extends:
 rules:
   type-enum: [2, 'always', ['feat', 'fix', 'chore', 'docs', 'test', 'refactor', 'style', 'ci']]
 
-  scope-enum: [2, 'always', ['auth', 'db', 'api', 'frontend', 'github', 'docs', 'tests']]
+  scope-enum: [2, 'always', ['auth', 'db', 'api', 'frontend', 'github', 'docs', 'tests', 'storage']]
 
   scope-empty: [2, 'never']
 
