@@ -70,6 +70,23 @@ describe('UploadPage', () => {
       expect(screen.getByText('1 file selected')).toBeInTheDocument();
     });
 
+    it('displays folder-specific selection feedback when directory paths are present', () => {
+      const changeButton = screen.getByText('Change');
+      fireEvent.click(changeButton);
+
+      const folderInput = document.getElementById('folder-input') as HTMLInputElement;
+      const files = [
+        fileWithRelativePath('one', 'one.csv', 'dataset/train/one.csv', 'text/csv'),
+        fileWithRelativePath('two', 'two.csv', 'dataset/test/two.csv', 'text/csv'),
+      ];
+      fireEvent.change(folderInput, { target: { files } });
+
+      expect(screen.getByText('Folder "dataset" selected')).toBeInTheDocument();
+      expect(screen.getByText(/Directory paths will be preserved/i)).toBeInTheDocument();
+      expect(screen.getByText('dataset/train/one.csv')).toBeInTheDocument();
+      expect(screen.getByText('dataset/test/two.csv')).toBeInTheDocument();
+    });
+
     describe('when the user clicks "Change" file', () => {
       beforeEach(() => {
         const changeButton = screen.getByText('Change');

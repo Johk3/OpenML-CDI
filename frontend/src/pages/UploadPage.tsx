@@ -13,6 +13,7 @@ import {
   Package,
   PauseCircle,
   PlayCircle,
+  FolderOpen,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
@@ -109,6 +110,9 @@ export const UploadPage: React.FC = () => {
     lastName: '',
     email: '',
   });
+  const selectedPaths = selectedFiles.map(getUploadPath);
+  const selectedDirectoryRoot = getDirectoryRoot(selectedPaths);
+  const hasDirectorySelection = selectedDirectoryRoot !== null;
 
   // Concurrency helper for large batches
   const runWithLimit = async <T,>(limit: number, tasks: (() => Promise<T>)[]): Promise<T[]> => {
@@ -147,7 +151,6 @@ export const UploadPage: React.FC = () => {
     setOriginalFileCount(selectedFiles.length);
 
     try {
-      const selectedPaths = selectedFiles.map(getUploadPath);
       // Compress
       let filesToUpload: File[];
 
@@ -337,17 +340,24 @@ export const UploadPage: React.FC = () => {
                 <div className="flex flex-col gap-3 p-3 rounded-xl bg-muted/60 border border-border/50">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                      <Upload size={16} className="text-primary" />
+                      {hasDirectorySelection ? (
+                        <FolderOpen size={16} className="text-primary" />
+                      ) : (
+                        <Upload size={16} className="text-primary" />
+                      )}
                     </div>
                     <div className="flex-1 overflow-hidden">
                       <p className="font-semibold text-sm truncate">
-                        {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} selected
+                        {hasDirectorySelection
+                          ? `Folder "${selectedDirectoryRoot}" selected`
+                          : `${selectedFiles.length} file${selectedFiles.length > 1 ? 's' : ''} selected`}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {(selectedFiles.reduce((acc, f) => acc + f.size, 0) / 1024 / 1024).toFixed(
                           2,
                         )}{' '}
                         MB total
+                        {hasDirectorySelection ? ' - Directory paths will be preserved.' : ''}
                       </p>
                     </div>
                     <Button
@@ -368,9 +378,7 @@ export const UploadPage: React.FC = () => {
                         className="flex items-center gap-2 text-xs text-muted-foreground"
                       >
                         <FileText size={10} />
-                        <span className="truncate max-w-[200px]">
-                          {file.webkitRelativePath || file.name}
-                        </span>
+                        <span className="truncate max-w-[240px]">{getUploadPath(file)}</span>
                       </div>
                     ))}
                     {selectedFiles.length > 5 && (

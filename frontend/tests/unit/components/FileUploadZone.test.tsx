@@ -1,7 +1,58 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { FileUploadZone } from '@/components/FileUploadZone';
 import { CONFIG } from '@/constants/config';
+
+type MockFileEntry = {
+  isFile: true;
+  isDirectory: false;
+  name: string;
+  file: (success: (file: File) => void) => void;
+};
+
+type MockDirectoryEntry = {
+  isFile: false;
+  isDirectory: true;
+  name: string;
+  createReader: () => {
+    readEntries: (success: (entries: MockEntry[]) => void) => void;
+  };
+};
+
+type MockEntry = MockFileEntry | MockDirectoryEntry;
+
+const fileEntry = (file: File): MockFileEntry => ({
+  isFile: true,
+  isDirectory: false,
+  name: file.name,
+  file: (success) => success(file),
+});
+
+const directoryEntry = (name: string, entries: MockEntry[]): MockDirectoryEntry => ({
+  isFile: false,
+  isDirectory: true,
+  name,
+  createReader: () => {
+    let hasRead = false;
+    return {
+      readEntries: (success) => {
+        success(hasRead ? [] : entries);
+        hasRead = true;
+      },
+    };
+  },
+});
+
+const folderDataTransfer = (entry: MockDirectoryEntry) => ({
+  files: [],
+  items: [
+    {
+      kind: 'file',
+      webkitGetAsEntry: () => entry,
+      getAsFile: () => null,
+    },
+  ],
+});
 
 describe('FileUploadZone component', () => {
   const LIMIT_GB = CONFIG.FILE_UPLOAD_LIMIT_BYTES / 1024 / 1024 / 1024;
@@ -38,6 +89,19 @@ describe('FileUploadZone component', () => {
     expect(zone).not.toHaveClass('active');
   });
 
+  it('shows folder-specific feedback while a folder is dragged over', () => {
+    render(<FileUploadZone onFilesSelect={vi.fn()} />);
+    const zone = screen.getByText('Drag & Drop your datasets here').closest('.upload-zone');
+    const entry = directoryEntry('dataset', []);
+
+    fireEvent.dragEnter(zone!, {
+      dataTransfer: folderDataTransfer(entry),
+    });
+
+    expect(screen.getByText('Drop folder to upload')).toBeInTheDocument();
+    expect(screen.getByText(/folder paths will be preserved/i)).toBeInTheDocument();
+  });
+
   it('calls onFilesSelect when a file is dropped', () => {
     const handleFilesSelect = vi.fn();
     render(<FileUploadZone onFilesSelect={handleFilesSelect} />);
@@ -52,6 +116,34 @@ describe('FileUploadZone component', () => {
 
     expect(handleFilesSelect).toHaveBeenCalledWith([file]);
     expect(handleFilesSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it('traverses dropped folders and preserves nested relative paths', async () => {
+    const handleFilesSelect = vi.fn();
+    render(<FileUploadZone onFilesSelect={handleFilesSelect} />);
+    const zone = screen.getByText('Drag & Drop your datasets here').closest('.upload-zone');
+
+    const trainFile = new File(['one'], 'one.csv', { type: 'text/csv' });
+    const testFile = new File(['two'], 'two.csv', { type: 'text/csv' });
+    const entry = directoryEntry('dataset', [
+      directoryEntry('train', [fileEntry(trainFile)]),
+      directoryEntry('test', [fileEntry(testFile)]),
+    ]);
+
+    fireEvent.drop(zone!, {
+      dataTransfer: folderDataTransfer(entry),
+    });
+
+    await waitFor(() => {
+      expect(handleFilesSelect).toHaveBeenCalledTimes(1);
+    });
+
+    const selectedFiles = handleFilesSelect.mock.calls[0][0] as File[];
+    expect(selectedFiles).toHaveLength(2);
+    expect(selectedFiles.map((file) => file.webkitRelativePath)).toEqual([
+      'dataset/train/one.csv',
+      'dataset/test/two.csv',
+    ]);
   });
 
   it('calls onFilesSelect through file input change', () => {
@@ -69,6 +161,21 @@ describe('FileUploadZone component', () => {
     fireEvent.change(input);
     expect(handleFilesSelect).toHaveBeenCalledWith([file]);
     expect(handleFilesSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the file picker when the upload zone is clicked', () => {
+    render(<FileUploadZone onFilesSelect={vi.fn()} />);
+
+    const zone = screen.getByText('Drag & Drop your datasets here').closest('.upload-zone');
+    const fileInput = document.getElementById('file-input') as HTMLInputElement;
+    const folderInput = document.getElementById('folder-input') as HTMLInputElement;
+    const fileClick = vi.spyOn(fileInput, 'click').mockImplementation(() => undefined);
+    const folderClick = vi.spyOn(folderInput, 'click').mockImplementation(() => undefined);
+
+    fireEvent.click(zone!);
+
+    expect(fileClick).toHaveBeenCalledTimes(1);
+    expect(folderClick).not.toHaveBeenCalled();
   });
 
   // --- Multi-format acceptance tests ---
