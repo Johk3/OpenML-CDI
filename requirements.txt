@@ -18,3 +18,4 @@ pytest-xdist
 requests_oauthlib
 smart_open[all]
 clamd
+PyGithub

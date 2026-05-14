@@ -34,6 +34,8 @@ DEFAULT_APP_BASE_URL = "http://localhost:8000"
 DEFAULT_EMAIL_VERIFICATION_TTL_HOURS = 24
 DEFAULT_QUARANTINE_DIR = ".quarantine"
 DEFAULT_CORS_ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
+DEFAULT_GITHUB_ISSUES_OWNER = "openml"
+DEFAULT_GITHUB_ISSUES_REPO = "openmlupload-test"
 
 
 def _get_bool_env(name: str, default: bool) -> bool:
@@ -204,12 +206,43 @@ class AuthSettings:
 
 
 @dataclass(frozen=True)
+class GitHubIssuesSettings:
+    app_id: int | None = None
+    install_id: int | None = None
+    private_key: str = ""
+    owner: str = DEFAULT_GITHUB_ISSUES_OWNER
+    repo: str = DEFAULT_GITHUB_ISSUES_REPO
+
+    @classmethod
+    def from_env(cls) -> "GitHubIssuesSettings":
+        def get_env_val(key_name: str) -> str:
+            # Handle possible trailing spaces in the env keys, e.g. "GH_APP_ID "
+            for k, v in os.environ.items():
+                if k.strip() == key_name:
+                    return v.strip()
+            return os.getenv(key_name, "").strip()
+
+        app_id_str = get_env_val("GH_APP_ID")
+        install_id_str = get_env_val("GH_INSTALL_ID")
+        priv_key_str = get_env_val("GH_PRIV_KEY").replace("\\n", "\n")
+
+        return cls(
+            app_id=int(app_id_str) if app_id_str else None,
+            install_id=int(install_id_str) if install_id_str else None,
+            private_key=priv_key_str,
+            owner=get_env_val("GITHUB_ISSUES_OWNER") or DEFAULT_GITHUB_ISSUES_OWNER,
+            repo=get_env_val("GITHUB_ISSUES_REPO") or DEFAULT_GITHUB_ISSUES_REPO,
+        )
+
+
+@dataclass(frozen=True)
 class Settings:
     # Group settings by domain so config stays centralized and maintainable.
     storage: StorageSettings
     email: EmailSettings
     upload: UploadURLSettings
     auth: AuthSettings
+    github_issues: GitHubIssuesSettings
     cors_allowed_origins: list[str]
 
     @classmethod
@@ -220,6 +253,7 @@ class Settings:
             email=EmailSettings.from_env(),
             upload=UploadURLSettings.from_env(),
             auth=AuthSettings.from_env(),
+            github_issues=GitHubIssuesSettings.from_env(),
             cors_allowed_origins=[
                 origin.strip()
                 for origin in os.getenv(

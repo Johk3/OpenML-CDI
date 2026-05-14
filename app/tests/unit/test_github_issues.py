@@ -1,0 +1,321 @@
+from unittest.mock import MagicMock, patch
+from datetime import datetime
+import pytest
+
+from github import GithubException
+
+from app.config import GitHubIssuesSettings
+from app.services.github_issues import (
+    GitHubAPIError,
+    _build_issue_body,
+    _parse_owner_repo_number,
+    create_issue,
+    get_issue_with_comments,
+    create_issue_for_dataset,
+    update_issue,
+)
+
+
+@pytest.fixture
+def settings():
+    return GitHubIssuesSettings(
+        app_id=123,
+        install_id=456,
+        private_key="test_key",
+        owner="openml",
+        repo="openmlupload-test",
+    )
+
+
+@pytest.fixture
+def empty_settings():
+    return GitHubIssuesSettings(
+        app_id=None,
+        install_id=None,
+        private_key="",
+        owner="openml",
+        repo="openmlupload-test",
+    )
+
+
+class TestParseOwnerRepoNumber:
+    def test_valid_url(self):
+        result = _parse_owner_repo_number(
+            "https://github.com/openml/openmlupload-test/issues/42"
+        )
+        assert result == ("openml", "openmlupload-test", 42)
+
+    def test_http_url(self):
+        result = _parse_owner_repo_number("http://github.com/user/repo/issues/1")
+        assert result == ("user", "repo", 1)
+
+    def test_invalid_url_returns_none(self):
+        assert _parse_owner_repo_number("not-a-url") is None
+        assert _parse_owner_repo_number("https://example.com/issues/1") is None
+
+
+class TestBuildIssueBody:
+    def test_basic_body(self):
+        body = _build_issue_body(
+            "abc-123", "My Dataset", {"description": "A test"}, "http://localhost:8000"
+        )
+        assert "My Dataset" in body
+        assert "http://localhost:8000/datasets/abc-123" in body
+        assert "A test" in body
+
+    def test_dict_description(self):
+        body = _build_issue_body(
+            "id1",
+            "Title",
+            {"description": {"text": "Nested desc"}},
+            "http://localhost:8000",
+        )
+        assert "Nested desc" in body
+
+    def test_file_count(self):
+        body = _build_issue_body(
+            "id1",
+            "Title",
+            {"filenames": ["a.csv", "b.csv"]},
+            "http://localhost:8000",
+        )
+        assert "**Files:** 2" in body
+
+
+class TestCreateIssue:
+    @patch("app.services.github_issues._get_github_client")
+    def test_success(self, mock_get_client, settings):
+        mock_gh = MagicMock()
+        mock_repo = MagicMock()
+        mock_issue = MagicMock()
+        mock_issue.html_url = "https://github.com/openml/openmlupload-test/issues/1"
+
+        mock_repo.create_issue.return_value = mock_issue
+        mock_gh.get_repo.return_value = mock_repo
+        mock_get_client.return_value = mock_gh
+
+        url = create_issue(settings, "ds-1", "Test", {}, "http://localhost:8000")
+        assert url == "https://github.com/openml/openmlupload-test/issues/1"
+        mock_repo.create_issue.assert_called_once()
+
+    @patch("app.services.github_issues._get_github_client")
+    def test_401_raises(self, mock_get_client, settings):
+        mock_get_client.side_effect = GithubException(
+            401, {"message": "Bad credentials"}
+        )
+
+        with pytest.raises(GitHubAPIError, match="invalid or expired"):
+            create_issue(settings, "ds-1", "Test", {}, "http://localhost:8000")
+
+    @patch("app.services.github_issues._get_github_client")
+    def test_rate_limit_403(self, mock_get_client, settings):
+        mock_get_client.side_effect = GithubException(
+            403, {"message": "API rate limit exceeded"}
+        )
+
+        with pytest.raises(GitHubAPIError, match="rate limit"):
+            create_issue(settings, "ds-1", "Test", {}, "http://localhost:8000")
+
+    @patch("app.services.github_issues._get_github_client")
+    def test_network_error(self, mock_get_client, settings):
+        mock_get_client.side_effect = Exception("boom")
+
+        with pytest.raises(Exception, match="boom"):
+            create_issue(settings, "ds-1", "Test", {}, "http://localhost:8000")
+
+
+class TestGetIssueWithComments:
+    @patch("app.services.github_issues._get_github_client")
+    def test_success(self, mock_get_client, settings):
+        mock_gh = MagicMock()
+        mock_repo = MagicMock()
+        mock_issue = MagicMock()
+
+        mock_issue.state = "open"
+        mock_issue.html_url = "https://github.com/openml/openmlupload-test/issues/1"
+        mock_issue.title = "[Dataset] Test"
+
+        mock_comment = MagicMock()
+        mock_comment.id = 100
+        mock_comment.user.login = "alice"
+        mock_comment.user.avatar_url = "https://avatar.test/a"
+        mock_comment.body = "Looks good!"
+        mock_comment.created_at = datetime(2026, 5, 13, 10, 0, 0)
+        mock_comment.author_association = "MEMBER"
+
+        mock_issue.get_comments.return_value = [mock_comment]
+
+        mock_repo.get_issue.return_value = mock_issue
+        mock_gh.get_repo.return_value = mock_repo
+        mock_get_client.return_value = mock_gh
+
+        result = get_issue_with_comments(
+            settings,
+            "https://github.com/openml/openmlupload-test/issues/1",
+        )
+        assert result["state"] == "open"
+        assert len(result["comments"]) == 1
+        assert result["comments"][0]["author"] == "alice"
+        assert result["comments"][0]["created_at"] == "2026-05-13T10:00:00Z"
+
+    def test_invalid_url_returns_none_state(self, settings):
+        result = get_issue_with_comments(settings, "not-a-url")
+        assert result["state"] == "none"
+        assert result["comments"] == []
+
+
+class TestCreateIssueForDataset:
+    def test_skips_when_no_token(self, empty_settings):
+        """Should not call GitHub when token is empty."""
+        mock_db_factory = MagicMock()
+        create_issue_for_dataset(
+            dataset_id="ds-1",
+            title="Test",
+            metadata={},
+            settings=empty_settings,
+            app_base_url="http://localhost:8000",
+            db_factory=mock_db_factory,
+        )
+        mock_db_factory.assert_not_called()
+
+    @patch("app.services.github_issues.create_issue")
+    def test_persists_url(self, mock_create, settings):
+        mock_create.return_value = (
+            "https://github.com/openml/openmlupload-test/issues/5"
+        )
+
+        mock_dataset = MagicMock()
+        mock_dataset.issue_url = ""
+        mock_db = MagicMock()
+        mock_db.get.return_value = mock_dataset
+        mock_db.__enter__ = MagicMock(return_value=mock_db)
+        mock_db.__exit__ = MagicMock(return_value=False)
+        mock_db_factory = MagicMock(return_value=mock_db)
+
+        create_issue_for_dataset(
+            dataset_id="ds-1",
+            title="Test",
+            metadata={},
+            settings=settings,
+            app_base_url="http://localhost:8000",
+            db_factory=mock_db_factory,
+        )
+
+        assert (
+            mock_dataset.issue_url
+            == "https://github.com/openml/openmlupload-test/issues/5"
+        )
+        mock_db.commit.assert_called_once()
+
+    @patch("app.services.github_issues.create_issue")
+    def test_handles_api_error_gracefully(self, mock_create, settings):
+        mock_create.side_effect = GitHubAPIError("rate limit", 403)
+        mock_db_factory = MagicMock()
+
+        # Should not raise
+        create_issue_for_dataset(
+            dataset_id="ds-1",
+            title="Test",
+            metadata={},
+            settings=settings,
+            app_base_url="http://localhost:8000",
+            db_factory=mock_db_factory,
+        )
+        mock_db_factory.assert_not_called()
+
+
+class TestUpdateIssue:
+    @patch("app.services.github_issues._get_github_client")
+    def test_success(self, mock_get_client, settings):
+        mock_gh = MagicMock()
+        mock_repo = MagicMock()
+        mock_issue = MagicMock()
+
+        mock_repo.get_issue.return_value = mock_issue
+        mock_gh.get_repo.return_value = mock_repo
+        mock_get_client.return_value = mock_gh
+
+        update_issue(
+            settings,
+            "https://github.com/openml/openmlupload-test/issues/42",
+            "ds-1",
+            "Updated Title",
+            {"description": "Updated desc"},
+            "http://localhost:8000",
+        )
+
+        mock_repo.get_issue.assert_called_once_with(42)
+        mock_issue.edit.assert_called_once()
+        args, kwargs = mock_issue.edit.call_args
+        assert kwargs["title"] == "[Dataset] Updated Title"
+        assert "Updated desc" in kwargs["body"]
+
+    def test_invalid_url_raises(self, settings):
+        with pytest.raises(GitHubAPIError, match="Invalid GitHub issue URL format"):
+            update_issue(
+                settings, "not-a-url", "ds-1", "Test", {}, "http://localhost:8000"
+            )
+
+    @patch("app.services.github_issues._get_github_client")
+    def test_api_error_raises(self, mock_get_client, settings):
+        mock_gh = MagicMock()
+        mock_repo = MagicMock()
+        mock_repo.get_issue.side_effect = GithubException(404, {"message": "Not Found"})
+        mock_gh.get_repo.return_value = mock_repo
+        mock_get_client.return_value = mock_gh
+
+        with pytest.raises(GitHubAPIError, match="error during update: Not Found"):
+            update_issue(
+                settings,
+                "https://github.com/openml/openmlupload-test/issues/42",
+                "ds-1",
+                "Updated Title",
+                {},
+                "http://localhost:8000",
+            )
+
+
+class TestUpdateIssueForDataset:
+    def test_skips_when_no_token(self, empty_settings):
+        """Should not call GitHub when token is empty."""
+        with patch("app.services.github_issues.update_issue") as mock_update:
+            from app.services.github_issues import update_issue_for_dataset
+
+            update_issue_for_dataset(
+                dataset_id="ds-1",
+                issue_url="https://github.com/openml/openmlupload-test/issues/42",
+                title="Test",
+                metadata={},
+                settings=empty_settings,
+                app_base_url="http://localhost:8000",
+            )
+            mock_update.assert_not_called()
+
+    @patch("app.services.github_issues.update_issue")
+    def test_calls_update_issue(self, mock_update, settings):
+        from app.services.github_issues import update_issue_for_dataset
+
+        update_issue_for_dataset(
+            dataset_id="ds-1",
+            issue_url="https://github.com/openml/openmlupload-test/issues/42",
+            title="Test",
+            metadata={},
+            settings=settings,
+            app_base_url="http://localhost:8000",
+        )
+        mock_update.assert_called_once()
+
+    @patch("app.services.github_issues.update_issue")
+    def test_handles_api_error_gracefully(self, mock_update, settings):
+        mock_update.side_effect = GitHubAPIError("rate limit", 403)
+        from app.services.github_issues import update_issue_for_dataset
+
+        # Should not raise
+        update_issue_for_dataset(
+            dataset_id="ds-1",
+            issue_url="https://github.com/openml/openmlupload-test/issues/42",
+            title="Test",
+            metadata={},
+            settings=settings,
+            app_base_url="http://localhost:8000",
+        )

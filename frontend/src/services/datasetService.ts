@@ -203,4 +203,22 @@ export const DatasetService = {
       filename: filenameMatch?.[1] || `dataset-${datasetId}.bin`,
     };
   },
+
+  /** Fetch GitHub issue state and comments for a dataset. */
+  getGitHubDiscussion: (datasetId: string) =>
+    apiClient
+      .get<{
+        state: string;
+        html_url: string;
+        title?: string;
+        comments: {
+          id: number;
+          author: string;
+          avatar_url: string;
+          body: string;
+          created_at: string;
+          author_association: string;
+        }[];
+      }>(`/datasets/${datasetId}/github-discussion`)
+      .then((res) => res.data),
 };

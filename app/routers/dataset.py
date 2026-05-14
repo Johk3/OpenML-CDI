@@ -42,6 +42,11 @@ from app.services.dataset_objects import (
     normalize_directory_structure,
     storage_keys_from_metadata,
 )
+from app.services.github_issues import (
+    GitHubAPIError,
+    create_issue_for_dataset,
+    get_issue_with_comments,
+)
 from app.storage.errors import StorageError
 from app.database import SessionLocal
 
@@ -257,6 +262,15 @@ def confirm_upload(
         storage=request.app.state.storage,
         db_factory=SessionLocal,
     )
+    background_tasks.add_task(
+        create_issue_for_dataset,
+        dataset_id=dataset_id,
+        title=dataset.title,
+        metadata=metadata,
+        settings=settings.github_issues,
+        app_base_url=settings.email.app_base_url,
+        db_factory=SessionLocal,
+    )
     return {
         "message": "Upload confirmed, scan started",
         "dataset_url": f"/datasets/{dataset_id}",
@@ -411,6 +425,8 @@ def update_status_dataset(
 @router.post("/metadata")
 def update_metadata_dataset(
     dataset_id: uuid.UUID,
+    request: Request,
+    background_tasks: BackgroundTasks,
     current_user: Annotated[User, Depends(get_current_active_user)],
     metadata: dict,
     db: Session = Depends(get_db),
@@ -429,6 +445,23 @@ def update_metadata_dataset(
     dataset_crud.update_dataset_metadata(
         db=db, dataset_id=dataset_id, metadata=metadata
     )
+
+    if dataset.issue_url:
+        from app.services.github_issues import update_issue_for_dataset
+
+        settings = request.app.state.settings
+        title = metadata.get("name", dataset.title)
+
+        background_tasks.add_task(
+            update_issue_for_dataset,
+            dataset_id=dataset_id,
+            issue_url=dataset.issue_url,
+            title=title,
+            metadata=metadata,
+            settings=settings.github_issues,
+            app_base_url=settings.email.app_base_url,
+        )
+
     return {"status_code": 200, "message": "Dataset metadata updated successfully"}
 
 
@@ -466,6 +499,33 @@ def update_issue_url_dataset(
         db=db, dataset_id=dataset_id, issue_url=issue_url
     )
     return {"status_code": 200, "message": "Dataset issue url updated successfully"}
+
+
+@router.get("/{dataset_id}/github-discussion")
+def get_github_discussion(
+    dataset_id: uuid.UUID,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Session = Depends(get_db),
+):
+    """
+    Proxy GitHub issue data and comments for the dataset.
+    """
+    dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
+    expert_or_owner(current_user, dataset)
+
+    issue_url = dataset.issue_url if dataset else ""
+    if not issue_url:
+        return {"state": "none", "html_url": "", "comments": []}
+
+    settings = request.app.state.settings.github_issues
+    try:
+        return get_issue_with_comments(settings, issue_url)
+    except GitHubAPIError as error:
+        raise HTTPException(
+            status_code=http_status.HTTP_502_BAD_GATEWAY,
+            detail=f"GitHub API error: {error}",
+        ) from error
 
 
 @router.post("/title")

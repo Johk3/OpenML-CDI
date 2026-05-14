@@ -194,19 +194,17 @@ def scan_uploaded_files(
                     clamd_port=clamd_port,
                     clamd_timeout_seconds=clamd_timeout_seconds,
                 )
-            except ClamAVUnavailableError as error:
-                logger.exception(
-                    "ClamAV unavailable while scanning dataset %s", dataset.id
+            except ClamAVUnavailableError:
+                logger.warning(
+                    "ClamAV unavailable while scanning dataset %s, marking as error.",
+                    dataset.id,
                 )
                 all_clean = False
-                overall_results.append(
-                    _scan_error_result(
-                        rel_path=rel_path,
-                        message=f"ClamAV unavailable: {str(error)}",
-                    )
-                )
-                _delete_quarantine_file(quarantine_path)
-                continue
+                scan_result = {
+                    "status": "error",
+                    "engine": SCAN_ENGINE,
+                    "message": "ClamAV unavailable: scan skipped.",
+                }
             except Exception as error:
                 logger.exception("Unexpected ClamAV failure for dataset %s", dataset.id)
                 all_clean = False

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import {
@@ -19,8 +19,15 @@ import {
   ChevronDown,
   ChevronUp,
   FileJson,
+  ExternalLink,
 } from 'lucide-react';
-import { CroissantDistribution, CroissantMetadata, Dataset, DatasetStatus } from '../types/auth';
+import {
+  CroissantDistribution,
+  CroissantMetadata,
+  Dataset,
+  DatasetStatus,
+  MalwareScan,
+} from '../types/auth';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { useUserContext } from '@/hooks/useUserContext';
@@ -119,6 +126,7 @@ function toFrontendDataset(b: BackendDataset): Dataset {
     croissantMetadata: croissant || (metadata.croissantMetadata as CroissantMetadata | undefined),
     files: metadata.filenames as string[],
     contact: contact,
+    malwareScan: metadata.malware_scan as MalwareScan,
     rawMetadata: b.dataset_metadata,
   };
 }
@@ -161,6 +169,53 @@ export const DatasetDetailPage: React.FC = () => {
     };
   }, [id]);
 
+  type GitHubComment = {
+    id: number;
+    author: string;
+    avatar_url: string;
+    body: string;
+    created_at: string;
+    author_association: string;
+  };
+  type DiscussionData = {
+    state: string;
+    html_url: string;
+    comments: GitHubComment[];
+  };
+
+  const [discussion, setDiscussion] = useState<DiscussionData | null>(null);
+  const [discussionLoading, setDiscussionLoading] = useState(true);
+
+  const fetchDiscussion = useCallback(async () => {
+    if (!id) return;
+    try {
+      const data = await DatasetService.getGitHubDiscussion(id);
+      setDiscussion(data);
+    } catch (Error) {
+      // Dont display an error to user
+      console.log(Error);
+    } finally {
+      setDiscussionLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    fetchDiscussion();
+    const interval = setInterval(fetchDiscussion, 30_000);
+    return () => clearInterval(interval);
+  }, [fetchDiscussion]);
+
+  const timeAgo = (iso: string) => {
+    const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+    if (seconds < 60) return 'just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  };
+
   if (!user) {
     return (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="container py-12">
@@ -202,7 +257,7 @@ export const DatasetDetailPage: React.FC = () => {
     );
   }
 
-  const { croissantMetadata, comments } = dataset;
+  const { croissantMetadata } = dataset;
   const statusLabel: Record<DatasetStatus, string> = {
     pending: 'Pending Expert Review',
     converted: 'Ongoing Processing',
@@ -555,32 +610,73 @@ export const DatasetDetailPage: React.FC = () => {
           <Card className="border-primary/10 shadow-sm">
             <CardHeader className="pb-3 border-b bg-muted/20">
               <CardTitle className="text-base flex items-center gap-2">
-                <MessageSquare className="w-4 h-4" /> Discussions
+                <MessageSquare className="w-4 h-4" /> GitHub Discussion
               </CardTitle>
-              <CardDescription>Comments and notes from users and experts</CardDescription>
+              <CardDescription>
+                {discussion && discussion.state !== 'none' ? (
+                  <span className="flex items-center gap-2 mt-1">
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                        discussion.state === 'open'
+                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                          : 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400'
+                      }`}
+                    >
+                      {discussion.state === 'open' ? 'Open' : 'Closed'}
+                    </span>
+                    <a
+                      href={discussion.html_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary hover:underline flex items-center gap-1 text-xs"
+                    >
+                      View on GitHub <ExternalLink size={10} />
+                    </a>
+                  </span>
+                ) : (
+                  'Issue comments from GitHub'
+                )}
+              </CardDescription>
             </CardHeader>
             <CardContent className="pt-4">
-              {comments && comments.length > 0 ? (
-                <div className="space-y-4">
-                  {comments.map((comment) => (
-                    <div key={comment.id} className="flex gap-3">
-                      <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                          comment.role === 'expert'
-                            ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30'
-                            : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30'
-                        }`}
-                      >
-                        {comment.author.charAt(0).toUpperCase()}
-                      </div>
+              {discussionLoading ? (
+                <div className="flex flex-col items-center py-6 gap-2">
+                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                  <p className="text-xs text-muted-foreground">Loading discussion…</p>
+                </div>
+              ) : discussion && discussion.state !== 'none' && discussion.comments.length > 0 ? (
+                <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
+                  {discussion.comments.map((c) => (
+                    <div key={c.id} className="flex gap-3">
+                      {c.avatar_url ? (
+                        <img
+                          src={c.avatar_url}
+                          alt={c.author}
+                          className="w-8 h-8 rounded-full shrink-0 border"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary shrink-0">
+                          {c.author.charAt(0).toUpperCase()}
+                        </div>
+                      )}
                       <div className="flex-1 bg-muted/40 rounded-lg p-3 text-sm">
                         <div className="flex justify-between items-start mb-1 gap-2">
-                          <span className="font-semibold text-foreground">{comment.author}</span>
+                          <span className="font-semibold text-foreground flex items-center gap-1.5">
+                            {c.author}
+                            {c.author_association === 'MEMBER' ||
+                            c.author_association === 'OWNER' ? (
+                              <span className="inline-flex px-1.5 py-0 rounded text-[9px] font-semibold bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
+                                {c.author_association === 'OWNER' ? 'Owner' : 'Member'}
+                              </span>
+                            ) : null}
+                          </span>
                           <span className="text-xs text-muted-foreground whitespace-nowrap">
-                            {new Date(comment.date).toLocaleDateString()}
+                            {timeAgo(c.created_at)}
                           </span>
                         </div>
-                        <p className="text-muted-foreground leading-relaxed">{comment.text}</p>
+                        <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap break-words">
+                          {c.body}
+                        </p>
                       </div>
                     </div>
                   ))}
@@ -589,10 +685,93 @@ export const DatasetDetailPage: React.FC = () => {
                 <div className="text-center py-6 text-muted-foreground text-sm">
                   <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-20" />
                   <p>No comments yet.</p>
+                  {discussion && discussion.html_url && (
+                    <a
+                      href={discussion.html_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 mt-2 text-xs text-primary hover:underline"
+                    >
+                      Start the conversation on GitHub <ExternalLink size={10} />
+                    </a>
+                  )}
                 </div>
               )}
             </CardContent>
           </Card>
+
+          {!dataset.malwareScan ? (
+            <div className="p-4 rounded-xl border bg-destructive/5 border-destructive/20 text-sm shadow-sm">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-destructive mb-1">Malware Scan Unavailable</p>
+                  <p className="text-muted-foreground text-xs">
+                    This dataset has not gone through the ClamAV malware scan. This is most likely
+                    because the ClamAV service is not running or is unreachable. Proceed with
+                    caution.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="p-4 rounded-xl border bg-muted/10 text-sm space-y-4 shadow-sm">
+              <div className="flex items-center gap-3 border-b pb-3">
+                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                  <Shield className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="font-semibold">ClamAV Malware Scan</p>
+                  <p className="text-xs text-muted-foreground">
+                    Scan engine: {dataset.malwareScan.engine || 'clamav'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                {dataset.malwareScan.files && dataset.malwareScan.files.length > 0 ? (
+                  dataset.malwareScan.files.map((file, idx) => {
+                    const isSkipped =
+                      file.status === 'clean' && file.message?.includes('disabled/unavailable');
+                    const displayStatus = isSkipped ? 'SKIPPED' : file.status.toUpperCase();
+                    const colorClass = isSkipped
+                      ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+                      : file.status === 'clean'
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                        : file.status === 'infected'
+                          ? 'bg-destructive/10 text-destructive dark:bg-destructive/20 dark:text-red-400'
+                          : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
+
+                    return (
+                      <div key={idx} className="flex flex-col p-2 rounded-md bg-card border">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium text-xs truncate flex-1" title={file.file}>
+                            {file.file}
+                          </span>
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold shrink-0 ${colorClass}`}
+                          >
+                            {displayStatus}
+                          </span>
+                        </div>
+                        {file.message && (
+                          <p
+                            className={`text-[10px] mt-1 ${isSkipped ? 'text-muted-foreground' : 'text-destructive'}`}
+                          >
+                            {file.message}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="text-muted-foreground text-xs italic">
+                    No scan results found for individual files.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </motion.div>

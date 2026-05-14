@@ -53,6 +53,19 @@ export interface Comment {
   date: string;
 }
 
+export interface MalwareScanFile {
+  status: 'clean' | 'infected' | 'error' | 'missing' | 'pending';
+  engine: string;
+  file: string;
+  message?: string;
+  signature?: string;
+}
+
+export interface MalwareScan {
+  engine?: string;
+  files?: MalwareScanFile[];
+}
+
 export interface Dataset {
   id: string;
   title: string;
@@ -71,5 +84,6 @@ export interface Dataset {
     last_name: string;
     email: string;
   };
+  malwareScan?: MalwareScan;
   rawMetadata?: Record<string, unknown>;
 }

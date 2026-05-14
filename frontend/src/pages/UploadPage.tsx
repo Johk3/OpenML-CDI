@@ -307,8 +307,8 @@ export const UploadPage: React.FC = () => {
             <div className="grid grid-cols-3 gap-4 mt-8 text-center">
               {[
                 { label: 'Secure Upload', desc: 'End-to-end encrypted' },
-                { label: 'Open Access', desc: 'Free for experts' },
-                { label: 'Expert Review', desc: 'Quality guaranteed' },
+                { label: 'Open Access', desc: 'Free for everyone' },
+                { label: 'Expert Review', desc: 'Reviews by experts ensure quality' },
               ].map((f) => (
                 <div key={f.label} className="p-4 rounded-xl bg-card border border-border/60">
                   <p className="font-semibold text-sm text-foreground">{f.label}</p>
