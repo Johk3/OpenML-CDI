@@ -38,7 +38,7 @@ from app.crud import dataset as dataset_crud
 from app.database.models import Dataset as DatasetModel
 import uuid
 from uuid import uuid4
-from typing import Annotated
+from typing import Annotated, Literal
 from pathlib import Path
 from app.services.scan import scan_uploaded_files
 from app.services.dataset_objects import (
@@ -598,11 +598,50 @@ def expert_or_owner(current_user: User, dataset: Dataset | None) -> None:
 
 
 def ensure_status_update_allowed(dataset: Dataset, next_status: Statuses) -> None:
-    if dataset.status == Statuses.QUARANTINED and next_status != Statuses.QUARANTINED:
+    if dataset.status == Statuses.QUARANTINED and next_status not in {
+        Statuses.QUARANTINED,
+        Statuses.REJECTED,
+    }:
         raise HTTPException(
             status_code=http_status.HTTP_409_CONFLICT,
-            detail="Quarantined datasets cannot be processed",
+            detail="Quarantined datasets can only be rejected",
         )
+
+    if next_status in {Statuses.APPROVED, Statuses.PUBLISHED} and not (
+        _has_review_ready_files(dataset)
+    ):
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail="Dataset is not ready for expert approval",
+        )
+
+
+def _has_review_ready_files(dataset: Dataset) -> bool:
+    metadata = dataset.dataset_metadata or {}
+    objects = get_dataset_objects(metadata)
+    if objects:
+        return all(
+            obj["scan_state"] == "clean"
+            and obj["download_state"] == "downloadable"
+            and obj["final_object_key"]
+            for obj in objects
+        )
+
+    scan_files = (metadata.get("malware_scan") or {}).get("files") or []
+    return bool(scan_files) and all(
+        result.get("status") == "clean" for result in scan_files
+    )
+
+
+def _is_visible_in_expert_review_queue(dataset: Dataset) -> bool:
+    if dataset.status == Statuses.PENDING:
+        return _has_review_ready_files(dataset)
+    return dataset.status in {
+        Statuses.QUARANTINED,
+        Statuses.APPROVED,
+        Statuses.REJECTED,
+        Statuses.PUBLISHED,
+    }
 
 
 def _require_multipart_storage(request: Request):
@@ -742,18 +781,34 @@ def _dataset_detail_response(dataset: DatasetModel) -> DatasetDetail:
 @router.get("/list", response_model=list[Dataset])
 def list_datasets(
     current_user: Annotated[User, Depends(get_current_active_user)],
+    scope: Literal["mine", "review_queue"] | None = Query(default=None),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
     """
-    Return all datasets owned by the current user.
-    Experts receive every dataset in the system.
+    Return datasets visible to the current user.
+    Experts see all datasets by default; regular users see their own datasets.
+    Experts can explicitly request the review queue.
     """
-    if current_user.role == Roles.EXPERT:
-        datasets = dataset_crud.get_all_datasets(db=db, offset=offset, limit=limit)
-        return [dataset for dataset in datasets if _is_ready_for_expert_review(dataset)]
-    return dataset_crud.get_datasets_for_user(db=db, user_id=current_user.id)
+    if scope == "review_queue":
+        if current_user.role != Roles.EXPERT:
+            raise HTTPException(
+                status_code=http_status.HTTP_403_FORBIDDEN,
+                detail="Only experts can view the review queue",
+            )
+        rows = db.query(DatasetModel).order_by(DatasetModel.created_at.desc()).all()
+        reviewable = [
+            Dataset.model_validate(row)
+            for row in rows
+            if _is_visible_in_expert_review_queue(row)
+        ]
+        return reviewable[offset : offset + limit]
+
+    if scope == "mine" or current_user.role != Roles.EXPERT:
+        return dataset_crud.get_datasets_for_user(db=db, user_id=current_user.id)
+
+    return dataset_crud.get_all_datasets(db=db, offset=offset, limit=limit)
 
 
 @router.get("/get", response_model=DatasetDetail)
@@ -994,26 +1049,6 @@ def download_dataset(
         iter_file(),
         media_type="application/octet-stream",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
-    )
-
-
-def _is_ready_for_expert_review(dataset: Dataset) -> bool:
-    if dataset.status != Statuses.PENDING:
-        return False
-
-    metadata = dataset.dataset_metadata or {}
-    objects = get_dataset_objects(metadata)
-    if objects:
-        return all(
-            obj["scan_state"] == "clean"
-            and obj["download_state"] == "downloadable"
-            and obj["final_object_key"]
-            for obj in objects
-        )
-
-    scan_files = (metadata.get("malware_scan") or {}).get("files") or []
-    return bool(scan_files) and all(
-        result.get("status") == "clean" for result in scan_files
     )
 
 

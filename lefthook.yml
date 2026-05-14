@@ -5,34 +5,34 @@ pre-commit:
     # Security
     gitleaks:
       root: frontend
-      run: npx gitleaks-secret-scanner@latest protect --staged --verbose --redact
+      run: pnpm exec gitleaks-secret-scanner protect --staged --verbose --redact
 
     # Python (FastAPI/Backend)
     black:
       root: app
       glob: "**/*.py"
-      run: pipx run --spec black black {staged_files}
+      run: black {staged_files}
 
     flake8:
       root: app
       glob: "**/*.py"
-      run: pipx run --spec flake8 flake8 {staged_files}
+      run: flake8 {staged_files}
 
     # JavaScript/TypeScript (React/Frontend)
     eslint:
       root: frontend
       glob: "**/*.{js,mjs,cjs,jsx,ts,tsx}"
-      run: npm_config_yes=true npx eslint@10 {staged_files}
+      run: pnpm exec eslint {staged_files}
 
     prettier:
       root: frontend
       glob: "**/*.{js,mjs,cjs,jsx,ts,tsx,css,json,md,yml,yaml}"
-      run: npm_config_yes=true npx prettier --write {staged_files}
+      run: pnpm exec prettier --write {staged_files}
 
     vitest-related:
       root: frontend
       glob: "**/*.{js,jsx,ts,tsx}"
-      run: npx vitest related --run {staged_files}
+      run: pnpm exec vitest related --run {staged_files}
 
     # Documentation
     markdownlint:
@@ -47,4 +47,4 @@ commit-msg:
   commands:
     commitlint:
       root: frontend
-      run: npx --no -- commitlint --edit {1} 
+      run: pnpm exec commitlint --edit {1} 

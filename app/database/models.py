@@ -17,6 +17,9 @@ class Statuses(str, enum.Enum):
     CLAIMED = "claimed"
     CONVERTED = "converted"
     QUARANTINED = "quarantined"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    PUBLISHED = "published"
 
 
 class User(Base):

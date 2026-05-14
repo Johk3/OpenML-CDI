@@ -49,7 +49,7 @@ def test_dev_mode_login_creates_user_and_sets_refresh_cookie(
     client, db_test_session, monkeypatch
 ):
     monkeypatch.setattr(
-        "app.routers.auth.resolve_github_repository_role", lambda _: Roles.USER
+        "app.routers.auth.resolve_github_repository_role", lambda *a, **k: Roles.USER
     )
 
     response = _login_user(
@@ -85,7 +85,7 @@ def test_auth_cookies_are_secure_when_configured(client, monkeypatch):
     )
 
     monkeypatch.setattr(
-        "app.routers.auth.resolve_github_repository_role", lambda _: Roles.USER
+        "app.routers.auth.resolve_github_repository_role", lambda *a, **k: Roles.USER
     )
 
     login_redirect = client.get("/api/auth/github/login", follow_redirects=False)
@@ -120,7 +120,7 @@ def test_auth_cookies_can_disable_secure_for_local_http(client, monkeypatch):
     )
 
     monkeypatch.setattr(
-        "app.routers.auth.resolve_github_repository_role", lambda _: Roles.USER
+        "app.routers.auth.resolve_github_repository_role", lambda *a, **k: Roles.USER
     )
 
     login_redirect = client.get("/api/auth/github/login", follow_redirects=False)
@@ -140,7 +140,7 @@ def test_login_assigns_expert_for_github_maintainer(
 ):
     resolved_usernames: list[str] = []
 
-    def fake_resolve_role(username: str) -> Roles:
+    def fake_resolve_role(username: str, **kwargs) -> Roles:
         resolved_usernames.append(username)
         return Roles.EXPERT
 
@@ -179,7 +179,7 @@ def test_login_downgrades_expert_after_github_permission_removal(
     resolved_roles = iter([Roles.EXPERT, Roles.USER])
     monkeypatch.setattr(
         "app.routers.auth.resolve_github_repository_role",
-        lambda _username: next(resolved_roles),
+        lambda _username, **kwargs: next(resolved_roles),
     )
 
     _login_user(

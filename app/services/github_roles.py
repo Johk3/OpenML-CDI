@@ -3,18 +3,21 @@ import os
 from typing import Protocol
 from urllib.parse import quote
 
+import requests
 from requests import Response
 
 from app.database.models import Roles
+from app.config import GitHubIssuesSettings
 
 logger = logging.getLogger(__name__)
 
 GITHUB_PERMISSION_OWNER_ENV = "GITHUB_PERMISSION_OWNER"
 GITHUB_PERMISSION_REPO_ENV = "GITHUB_PERMISSION_REPO"
-GITHUB_API_VERSION = "2026-03-10"
+GITHUB_API_VERSION = "2022-11-28"
 DEFAULT_GITHUB_PERMISSION_OWNER = "openml"
 DEFAULT_GITHUB_PERMISSION_REPO = "openmlupload"
-MAINTAINER_ROLE_NAMES = {"maintain", "admin"}
+# All collaborator roles now qualify for expert status
+MAINTAINER_ROLE_NAMES = {"read", "triage", "write", "maintain", "admin"}
 
 
 class GitHubPermissionLookupError(RuntimeError):
@@ -29,13 +32,24 @@ class GitHubPermissionClient(Protocol):
 class GitHubRepositoryPermissionClient:
     def __init__(
         self,
-        session,
+        session=None,
         *,
+        token: str | None = None,
         owner: str | None = None,
         repo: str | None = None,
         api_base_url: str = "https://api.github.com",
     ):
-        self.session = session
+        # If a token is provided (App token), we use a fresh session to avoid
+        # conflicts with user-level OAuth sessions.
+        if token:
+            self.session = session or requests.Session()
+            self.token = token
+            self.auth_method = "app_token"
+        else:
+            self.session = session or requests.Session()
+            self.token = None
+            self.auth_method = "user_session" if session else "unauthenticated"
+
         self.owner = (
             owner
             or os.getenv(GITHUB_PERMISSION_OWNER_ENV, DEFAULT_GITHUB_PERMISSION_OWNER)
@@ -46,6 +60,15 @@ class GitHubRepositoryPermissionClient:
         ).strip()
         self.api_base_url = api_base_url.rstrip("/")
 
+    def _get_headers(self) -> dict:
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": GITHUB_API_VERSION,
+        }
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        return headers
+
     def get_repository_permission(self, username: str) -> dict:
         safe_owner = quote(self.owner, safe="")
         safe_repo = quote(self.repo, safe="")
@@ -54,28 +77,57 @@ class GitHubRepositoryPermissionClient:
             f"{self.api_base_url}/repos/{safe_owner}/{safe_repo}"
             f"/collaborators/{safe_username}/permission"
         )
+        logger.debug(
+            "Checking GitHub repository permission",
+            extra={
+                "url": url,
+                "auth_method": self.auth_method,
+                "github_username": username,
+            },
+        )
         try:
             response: Response = self.session.get(
                 url,
-                headers={
-                    "Accept": "application/vnd.github+json",
-                    "X-GitHub-Api-Version": GITHUB_API_VERSION,
-                },
+                headers=self._get_headers(),
             )
         except Exception as error:
             raise GitHubPermissionLookupError("GitHub request failed") from error
+
         if response.status_code == 404:
+            logger.debug(
+                "GitHub returned 404 (not a collaborator)",
+                extra={
+                    "github_username": username,
+                    "repo": f"{self.owner}/{self.repo}",
+                },
+            )
             return {"permission": "none", "role_name": "none"}
+
         if response.status_code != 200:
+            logger.warning(
+                "GitHub permission check failed with non-200 status",
+                extra={
+                    "status_code": response.status_code,
+                    "body": response.text[:500],
+                    "github_username": username,
+                },
+            )
             raise GitHubPermissionLookupError(
                 f"GitHub returned {response.status_code} for {self.owner}/{self.repo}"
             )
+
         try:
             payload = response.json()
         except ValueError as error:
             raise GitHubPermissionLookupError("GitHub returned invalid JSON") from error
+
         if not isinstance(payload, dict):
             raise GitHubPermissionLookupError("GitHub returned an invalid payload")
+
+        logger.debug(
+            "GitHub permission payload received",
+            extra={"github_username": username, "payload": payload},
+        )
         return payload
 
 
@@ -94,6 +146,11 @@ class GitHubRepositoryRoleResolver:
     def resolve_role(self, username: str) -> Roles:
         try:
             permission_payload = self.client.get_repository_permission(username)
+            role = map_github_repository_role(permission_payload)
+
+            if role == Roles.EXPERT:
+                return role
+
         except GitHubPermissionLookupError as error:
             logger.warning(
                 "GitHub repository permission lookup failed; assigning least privilege",
@@ -101,25 +158,33 @@ class GitHubRepositoryRoleResolver:
             )
             return Roles.USER
 
-        role = map_github_repository_role(permission_payload)
-        logger.info(
-            "GitHub repository role assignment resolved",
-            extra={
-                "github_username": username,
-                "github_role_name": permission_payload.get("role_name"),
-                "github_permission": permission_payload.get("permission"),
-                "assigned_role": role.value,
-            },
-        )
-        return role
-
-
-def resolve_github_repository_role(username: str, session=None) -> Roles:
-    if session is None:
-        logger.warning(
-            "GitHub repository permission lookup skipped; assigning least privilege",
-            extra={"github_username": username},
-        )
         return Roles.USER
-    client = GitHubRepositoryPermissionClient(session)
+
+
+def resolve_github_repository_role(
+    username: str,
+    session=None,
+    owner: str | None = None,
+    repo: str | None = None,
+    settings: GitHubIssuesSettings | None = None,
+) -> Roles:
+    token = None
+    if settings:
+        from app.services.github_issues import get_installation_token, GitHubAPIError
+
+        try:
+            token = get_installation_token(settings)
+            logger.debug("Acquired GitHub App installation token for role resolution")
+        except GitHubAPIError as error:
+            logger.warning(
+                "Failed to get GitHub App installation token for role resolution",
+                extra={"error": str(error)},
+            )
+
+    # If we have an App token, we use it with a fresh session to avoid conflicts
+    # with the user's OAuth session.
+    client_session = session if not token else None
+    client = GitHubRepositoryPermissionClient(
+        client_session, token=token, owner=owner, repo=repo
+    )
     return GitHubRepositoryRoleResolver(client).resolve_role(username)

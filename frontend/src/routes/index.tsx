@@ -14,6 +14,8 @@ import { ProtectedRoute } from '../components/ProtectedRoute';
 import { UserPage } from '../pages/UserPage';
 import { Providers } from '../providers/Providers';
 
+import { ExpertQueuePage } from '../pages/ExpertQueuePage';
+
 export const routes: RouteObject[] = [
   {
     path: '/',
@@ -42,6 +44,14 @@ export const routes: RouteObject[] = [
       {
         path: 'datasets/:id',
         element: <DatasetDetailPage />,
+      },
+      {
+        path: 'expert-queue',
+        element: (
+          <ProtectedRoute>
+            <ExpertQueuePage />
+          </ProtectedRoute>
+        ),
       },
       {
         path: 'login',

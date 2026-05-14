@@ -108,9 +108,51 @@ def test_quarantined_dataset_cannot_be_moved_to_processing(client, db_test_sessi
     )
 
     assert response.status_code == 409
-    assert response.json() == {"detail": "Quarantined datasets cannot be processed"}
+    assert response.json() == {"detail": "Quarantined datasets can only be rejected"}
     db_test_session.refresh(db_test_session.get(Dataset, dataset_id))
     assert db_test_session.get(Dataset, dataset_id).status == Statuses.QUARANTINED
+
+
+def test_quarantined_dataset_can_be_rejected(client, db_test_session):
+    uploader_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    db_test_session.add(
+        User(
+            id=uploader_id,
+            email="uploader2@example.com",
+            username="uploader2",
+            first_name="Upload",
+            last_name="User",
+            role=Roles.EXPERT,
+            created_at=datetime.now(timezone.utc),
+        )
+    )
+    db_test_session.add(
+        Dataset(
+            id=dataset_id,
+            title="Quarantined dataset",
+            owner_id=uploader_id,
+            dataset_metadata={
+                "filename": "infected.csv",
+                "malware_scan": {
+                    "status": "infected",
+                },
+            },
+            status=Statuses.QUARANTINED,
+        )
+    )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(uploader_id), "type": "access"})
+
+    response = client.post(
+        "/api/datasets/status",
+        params={"dataset_id": str(dataset_id), "status": "rejected"},
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 200
+    db_test_session.refresh(db_test_session.get(Dataset, dataset_id))
+    assert db_test_session.get(Dataset, dataset_id).status == Statuses.REJECTED
 
 
 def test_download_uses_only_downloadable_final_object(client, db_test_session):
@@ -179,7 +221,123 @@ def test_download_rejects_unscanned_quarantine_object(client, db_test_session):
     assert response.json() == {"detail": "Dataset files are not available for download"}
 
 
-def test_expert_list_only_includes_clean_pending_datasets(client, db_test_session):
+def test_unscanned_pending_dataset_cannot_be_approved(client, db_test_session):
+    expert_id = uuid.uuid4()
+    owner_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    db_test_session.add_all(
+        [
+            _user(user_id=expert_id, role=Roles.EXPERT),
+            _user(user_id=owner_id),
+            Dataset(
+                id=dataset_id,
+                title="Unscanned pending",
+                owner_id=owner_id,
+                dataset_metadata={
+                    "filenames": ["pending.csv"],
+                    "objects": [_object_metadata(object_key="quarantine/pending.csv")],
+                },
+                status=Statuses.PENDING,
+            ),
+        ]
+    )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(expert_id), "type": "access"})
+
+    response = client.post(
+        "/api/datasets/status",
+        params={"dataset_id": str(dataset_id), "status": "approved"},
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Dataset is not ready for expert approval"}
+    db_test_session.refresh(db_test_session.get(Dataset, dataset_id))
+    assert db_test_session.get(Dataset, dataset_id).status == Statuses.PENDING
+
+
+def test_expert_default_list_includes_all_datasets(client, db_test_session):
+    expert_id = uuid.uuid4()
+    owner_id = uuid.uuid4()
+    expert_dataset_id = uuid.uuid4()
+    other_dataset_id = uuid.uuid4()
+    db_test_session.add_all(
+        [
+            _user(user_id=expert_id, role=Roles.EXPERT),
+            _user(user_id=owner_id),
+            Dataset(
+                id=expert_dataset_id,
+                title="Expert owned",
+                owner_id=expert_id,
+                dataset_metadata={"filenames": ["expert.csv"]},
+                status=Statuses.PENDING,
+            ),
+            Dataset(
+                id=other_dataset_id,
+                title="Other owned",
+                owner_id=owner_id,
+                dataset_metadata={"filenames": ["other.csv"]},
+                status=Statuses.PENDING,
+            ),
+        ]
+    )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(expert_id), "type": "access"})
+
+    response = client.get(
+        "/api/datasets/list",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 200
+    assert {dataset["id"] for dataset in response.json()} == {
+        str(expert_dataset_id),
+        str(other_dataset_id),
+    }
+
+
+def test_regular_user_default_list_only_includes_owned_datasets(
+    client, db_test_session
+):
+    user_id = uuid.uuid4()
+    owner_id = uuid.uuid4()
+    user_dataset_id = uuid.uuid4()
+    other_dataset_id = uuid.uuid4()
+    db_test_session.add_all(
+        [
+            _user(user_id=user_id),
+            _user(user_id=owner_id),
+            Dataset(
+                id=user_dataset_id,
+                title="User owned",
+                owner_id=user_id,
+                dataset_metadata={"filenames": ["user.csv"]},
+                status=Statuses.PENDING,
+            ),
+            Dataset(
+                id=other_dataset_id,
+                title="Other owned",
+                owner_id=owner_id,
+                dataset_metadata={"filenames": ["other.csv"]},
+                status=Statuses.PENDING,
+            ),
+        ]
+    )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(user_id), "type": "access"})
+
+    response = client.get(
+        "/api/datasets/list",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 200
+    assert [dataset["id"] for dataset in response.json()] == [str(user_dataset_id)]
+
+
+def test_expert_review_queue_excludes_unscanned_pending_datasets(
+    client, db_test_session
+):
     expert_id = uuid.uuid4()
     owner_id = uuid.uuid4()
     clean_id = uuid.uuid4()
@@ -237,8 +395,26 @@ def test_expert_list_only_includes_clean_pending_datasets(client, db_test_sessio
 
     response = client.get(
         "/api/datasets/list",
+        params={"scope": "review_queue"},
         headers={"Authorization": f"Bearer {access_token}"},
     )
 
     assert response.status_code == 200
-    assert [dataset["id"] for dataset in response.json()] == [str(clean_id)]
+    dataset_ids = [dataset["id"] for dataset in response.json()]
+    assert dataset_ids == [str(quarantined_id), str(clean_id)]
+
+
+def test_regular_users_cannot_request_expert_review_queue(client, db_test_session):
+    user_id = uuid.uuid4()
+    db_test_session.add(_user(user_id=user_id))
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(user_id), "type": "access"})
+
+    response = client.get(
+        "/api/datasets/list",
+        params={"scope": "review_queue"},
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Only experts can view the review queue"}

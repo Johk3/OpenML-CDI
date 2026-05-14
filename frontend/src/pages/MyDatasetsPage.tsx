@@ -94,6 +94,21 @@ const STATUS_CONFIG: Record<DatasetStatus, { label: string; icon: React.ReactNod
       icon: <AlertCircle size={13} />,
       cls: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800',
     },
+    approved: {
+      label: 'Approved',
+      icon: <CheckCircle2 size={13} />,
+      cls: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-950/40 dark:text-green-300 dark:border-green-800',
+    },
+    rejected: {
+      label: 'Rejected',
+      icon: <AlertCircle size={13} />,
+      cls: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800',
+    },
+    published: {
+      label: 'Published',
+      icon: <Database size={13} />,
+      cls: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800',
+    },
   };
 
 const StatusBadge = ({ status }: { status: DatasetStatus }) => {

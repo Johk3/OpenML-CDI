@@ -39,8 +39,8 @@ class GitHubAPIError(RuntimeError):
         self.status_code = status_code
 
 
-def _get_github_client(settings: GitHubIssuesSettings) -> Github:
-    """Initialize a PyGithub client using GitHub App authentication."""
+def get_installation_token(settings: GitHubIssuesSettings) -> str:
+    """Acquire a GitHub App installation access token."""
     if not settings.app_id or not settings.install_id or not settings.private_key:
         raise GitHubAPIError("GitHub App credentials are not fully configured")
 
@@ -48,16 +48,19 @@ def _get_github_client(settings: GitHubIssuesSettings) -> Github:
     integration = GithubIntegration(auth=auth)
 
     try:
-        # Get access token for the specific installation
         access = integration.get_access_token(settings.install_id)
-        # We must use token authentication since creating issues as an App requires
-        # an installation token.
-        return Github(auth=Auth.Token(access.token))
+        return access.token
     except GithubException as e:
         raise GitHubAPIError(
             f"Failed to authenticate as GitHub App: {e.data.get('message', str(e))}",
             e.status,
         )
+
+
+def _get_github_client(settings: GitHubIssuesSettings) -> Github:
+    """Initialize a PyGithub client using GitHub App authentication."""
+    token = get_installation_token(settings)
+    return Github(auth=Auth.Token(token))
 
 
 def _build_issue_body(

@@ -11,9 +11,12 @@ from app.services.github_roles import (
 
 
 class FakeGitHubClient:
-    def __init__(self, payload=None, error: Exception | None = None):
+    def __init__(
+        self, payload=None, error: Exception | None = None, is_contributor=False
+    ):
         self.payload = payload or {}
         self.error = error
+        self.contributor = is_contributor
         self.calls: list[str] = []
 
     def get_repository_permission(self, username: str) -> dict:
@@ -22,9 +25,12 @@ class FakeGitHubClient:
             raise self.error
         return self.payload
 
+    def is_contributor(self, username: str) -> bool:
+        return self.contributor
+
 
 class FakeResponse:
-    def __init__(self, status_code: int, payload: dict):
+    def __init__(self, status_code: int, payload: list | dict):
         self.status_code = status_code
         self.payload = payload
 
@@ -68,6 +74,17 @@ def test_repository_permission_client_uses_expected_github_endpoint_and_headers(
     ]
 
 
+def test_repository_permission_client_applies_auth_header_when_token_provided():
+    session = RecordingSession(FakeResponse(200, {"role_name": "maintain"}))
+    # We pass session explicitly to the client even with a token for testing
+    client = GitHubRepositoryPermissionClient(
+        session, owner="openml", repo="openmlupload", token="gh-app-token"
+    )
+
+    assert client.get_repository_permission("octocat") == {"role_name": "maintain"}
+    assert session.requests[0]["headers"]["Authorization"] == "Bearer gh-app-token"
+
+
 def test_repository_permission_client_wraps_http_errors_as_lookup_failures():
     client = GitHubRepositoryPermissionClient(
         FailingSession(), owner="openml", repo="openmlupload"
@@ -81,17 +98,30 @@ def test_repository_permission_client_wraps_http_errors_as_lookup_failures():
         raise AssertionError("Expected GitHubPermissionLookupError")
 
 
-def test_maps_maintain_or_admin_permission_to_expert():
+def test_maps_all_collaborator_permissions_to_expert():
+    assert map_github_repository_role({"role_name": "read"}) == Roles.EXPERT
+    assert map_github_repository_role({"role_name": "triage"}) == Roles.EXPERT
+    assert map_github_repository_role({"role_name": "write"}) == Roles.EXPERT
     assert map_github_repository_role({"role_name": "maintain"}) == Roles.EXPERT
     assert map_github_repository_role({"role_name": "admin"}) == Roles.EXPERT
     assert map_github_repository_role({"permission": "admin"}) == Roles.EXPERT
 
 
-def test_maps_non_maintainer_permission_to_user():
-    assert map_github_repository_role({"role_name": "write"}) == Roles.USER
-    assert map_github_repository_role({"role_name": "triage"}) == Roles.USER
-    assert map_github_repository_role({"permission": "write"}) == Roles.USER
+def test_maps_no_permission_to_user():
+    assert map_github_repository_role({"role_name": "none"}) == Roles.USER
     assert map_github_repository_role({}) == Roles.USER
+
+
+def test_resolver_does_not_promote_non_collaborating_contributors():
+    client = FakeGitHubClient(payload={"role_name": "none"}, is_contributor=True)
+    resolver = GitHubRepositoryRoleResolver(client)
+    assert resolver.resolve_role("contributor-user") == Roles.USER
+
+
+def test_resolver_returns_user_if_neither_collaborator_nor_contributor():
+    client = FakeGitHubClient(payload={"role_name": "none"}, is_contributor=False)
+    resolver = GitHubRepositoryRoleResolver(client)
+    assert resolver.resolve_role("regular-user") == Roles.USER
 
 
 def test_permission_lookup_failure_falls_back_to_user_and_logs(caplog):

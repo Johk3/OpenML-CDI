@@ -12,13 +12,14 @@ ENV PATH="$PNPM_HOME:$PATH"
 
 WORKDIR /app/frontend
 
-# Copy package manifests first
-COPY frontend/package.json frontend/pnpm-lock.yaml* frontend/package-lock.json* ./
+# Copy package manifests and install config first
+COPY frontend/package.json frontend/pnpm-lock.yaml* frontend/pnpm-workspace.yaml* frontend/.npmrc* frontend/package-lock.json* ./
 
 # Automatically detect package manager and install deps
-RUN if [ -f pnpm-lock.yaml ]; then \
-      --mount=type=cache,target=/pnpm/store pnpm fetch --frozen-lockfile && \
-      --mount=type=cache,target=/pnpm/store pnpm install --frozen-lockfile --offline; \
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    if [ -f pnpm-lock.yaml ]; then \
+      pnpm fetch --frozen-lockfile && \
+      pnpm install --frozen-lockfile --offline; \
     elif [ -f package-lock.json ]; then \
       npm ci --include=dev; \
     else \

@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from requests_oauthlib import OAuth2Session
 from sqlalchemy.orm import Session
 
-from app.config import Settings
+from app.config import Settings, GitHubIssuesSettings
 from app.crud.users import (
     TokenReuseDetectedError,
     get_families,
@@ -238,13 +238,17 @@ def _sync_oauth_user_role(
     user: User,
     github_username: str,
     github_session: OAuth2Session | None = None,
+    owner: str | None = None,
+    repo: str | None = None,
+    settings: GitHubIssuesSettings | None = None,
 ) -> User:
-    if github_session is None:
-        resolved_role = resolve_github_repository_role(github_username)
-    else:
-        resolved_role = resolve_github_repository_role(
-            github_username, session=github_session
-        )
+    resolved_role = resolve_github_repository_role(
+        github_username,
+        session=github_session,
+        owner=owner,
+        repo=repo,
+        settings=settings,
+    )
 
     if user.role != resolved_role:
         user = update_role(db, user.id, resolved_role)
@@ -255,6 +259,8 @@ def _sync_oauth_user_role(
             "user_id": str(user.id),
             "github_username": github_username,
             "assigned_role": resolved_role.value,
+            "owner": owner,
+            "repo": repo,
         },
     )
     return user
@@ -390,10 +396,14 @@ def auth_github_callback(
             first_name=first_name,
             last_name=last_name,
         )
+        settings = request.app.state.settings
         user = _sync_oauth_user_role(
             db=db,
             user=user,
             github_username=username,
+            owner=settings.github_issues.owner,
+            repo=settings.github_issues.repo,
+            settings=settings.github_issues,
         )
         _delete_oauth_state_cookie(response, secure=cookie_secure)
         return _issue_tokens(response, user.id, db, secure=cookie_secure)
@@ -479,11 +489,15 @@ def auth_github_callback(
 
     _delete_oauth_state_cookie(response, secure=cookie_secure)
 
+    settings = request.app.state.settings
     user = _sync_oauth_user_role(
         db=db,
         user=user,
         github_username=github_username,
         github_session=github,
+        owner=settings.github_issues.owner,
+        repo=settings.github_issues.repo,
+        settings=settings.github_issues,
     )
 
     return _issue_tokens(response, user.id, db, secure=cookie_secure)

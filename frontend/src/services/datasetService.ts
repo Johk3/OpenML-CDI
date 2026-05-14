@@ -674,7 +674,7 @@ export const DatasetService = {
       .then((res) => res.data),
 
   /** List datasets for the current user (AND all datasets for experts). */
-  listDatasets: (params?: { offset?: number; limit?: number }) =>
+  listDatasets: (params?: { scope?: 'mine' | 'review_queue'; offset?: number; limit?: number }) =>
     apiClient.get<BackendDataset[]>('/datasets/list', { params }).then((res) => res.data),
 
   /** Update dataset status (experts ONLY!!). */

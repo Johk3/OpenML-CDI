@@ -325,6 +325,9 @@ export const DatasetDetailPage: React.FC = () => {
     converted: 'Ongoing Processing',
     claimed: 'Verified & Published',
     quarantined: 'Processing Error',
+    approved: 'Approved',
+    rejected: 'Rejected',
+    published: 'Published',
   };
 
   return (

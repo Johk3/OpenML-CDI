@@ -17,7 +17,14 @@ export interface TokenResponse {
   token_type: string;
 }
 
-export type DatasetStatus = 'pending' | 'claimed' | 'converted' | 'quarantined';
+export type DatasetStatus =
+  | 'pending'
+  | 'claimed'
+  | 'converted'
+  | 'quarantined'
+  | 'approved'
+  | 'rejected'
+  | 'published';
 
 export interface CroissantVariable {
   name: string;

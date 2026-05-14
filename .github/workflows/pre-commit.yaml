@@ -9,23 +9,33 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.14'
 
+      - name: Install Python Linters
+        run: pip install black flake8
+
       - name: Install Frontend Dependencies
         # Required because ESLint relies on local plugins inside node_modules
         working-directory: ./frontend
-        run: npm ci # Or 'npm install' if we do not use package-lock.json
+        run: pnpm install --frozen-lockfile
 
       - name: Install Lefthook
-        run: npm install -g @evilmartians/lefthook
+        run: pnpm add -g @evilmartians/lefthook
 
       - name: Run all hooks
         # --all-files forces Lefthook to check the entire repository, not just staged files
