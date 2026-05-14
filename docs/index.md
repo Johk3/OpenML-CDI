@@ -18,6 +18,7 @@ Background concepts and design decisions.
 | -------------------------------------------------------------------- | --------------------------------------------------------------- |
 | [Code Review and Ownership Philosophy](explanation/review-policy.md) | Why we review code the way we do, and how ownership is assigned |
 | [Dataset Detail Page](explanation/dataset-detail-page.md)            | Overview of the dataset detail page feature                     |
+| [Upload Mechanism](explanation/upload-mechanism.md)                  | High-level upload, scan, and storage flow                       |
 | [GitHub Issue Integration](explanation/github-issue-integration.md)  | How GitHub issues are created and synced for dataset reviews    |
 | [Dropbox and S3 Storage Spike](explanation/storage-backend-dropbox-s3-spike.md) | Earlier provider comparison; superseded by the final S3 storage reference |
 
