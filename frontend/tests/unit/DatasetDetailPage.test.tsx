@@ -1,7 +1,8 @@
 import { screen } from '@testing-library/react';
 import { vi } from 'vitest';
 import { navigateTo } from '../utils';
-import { BackendDataset } from '@/types/dataset';
+import { mockDatasetService } from '../mocks/datasetService';
+import type { BackendDataset } from '@/types/dataset';
 
 vi.mock('@/hooks/useUserContext', () => ({
   useUserContext: vi.fn(() => ({
@@ -42,6 +43,47 @@ describe('DatasetDetailPage', () => {
     expect(screen.getByRole('columnheader', { name: /name/i })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: /type/i })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: /description/i })).toBeInTheDocument();
+  });
+
+  it('renders original folder paths from upload package metadata', async () => {
+    const folderDataset = {
+      id: 'ds-folder',
+      title: 'Folder Dataset',
+      status: 'pending',
+      created_at: '2026-04-01T00:00:00Z',
+      dataset_metadata: {
+        description: 'Folder dataset description',
+        croissantMetadata: {
+          title: 'Folder Dataset',
+          description: 'Folder dataset description',
+          license: 'CC-BY-4.0',
+          contributors: ['OpenML Team'],
+          variables: [],
+        },
+        filenames: ['Folder_Dataset_files.zip'],
+      },
+      upload_package: {
+        compressed: true,
+        representation: 'zip',
+        root: 'dataset',
+        paths: ['dataset/train/one.csv', 'dataset/test/two.csv'],
+        archive_path: 'Folder_Dataset_files.zip',
+        manifest: {
+          version: 1,
+          path_count: 2,
+          source: 'browser-selection',
+        },
+      },
+    };
+    mockDatasetService.getDataset.mockResolvedValueOnce(
+      folderDataset as unknown as Awaited<ReturnType<typeof mockDatasetService.getDataset>>,
+    );
+
+    navigateTo('/datasets/ds-folder');
+
+    expect(await screen.findByText('dataset/train/one.csv')).toBeInTheDocument();
+    expect(screen.getByText('dataset/test/two.csv')).toBeInTheDocument();
+    expect(screen.getByText(/ZIP package/i)).toBeInTheDocument();
   });
 
   it('should render the comments section and malware scan', async () => {

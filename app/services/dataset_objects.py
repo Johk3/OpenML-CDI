@@ -7,10 +7,12 @@ DATASET_OBJECTS_KEY = "objects"
 DIRECTORY_STRUCTURE_KEY = "directory_structure"
 STORAGE_SCHEMA_VERSION_KEY = "storage_schema_version"
 STORAGE_SCHEMA_VERSION = 1
+UPLOAD_PACKAGE_MANIFEST_VERSION = 1
 
 UPLOAD_STATES = {"pending", "uploaded", "promoted"}
 SCAN_STATES = {"pending", "clean", "infected", "error", "missing"}
 DOWNLOAD_STATES = {"unavailable", "downloadable"}
+UPLOAD_REPRESENTATIONS = {"single_object", "multi_object", "zip"}
 
 
 class DatasetObjectValidationError(ValueError):
@@ -113,15 +115,20 @@ def normalize_directory_structure(
     *,
     original_paths: list[str],
 ) -> dict[str, Any] | None:
+    uploaded_paths = [_normalize_original_path(path) for path in original_paths]
+
     if directory_structure is None:
-        normalized_paths = [_normalize_original_path(path) for path in original_paths]
-        if not any("/" in path for path in normalized_paths):
+        if len(uploaded_paths) == 1 and not any("/" in path for path in uploaded_paths):
             return None
-        return {
-            "compressed": False,
-            "root": _common_root(normalized_paths),
-            "paths": normalized_paths,
-        }
+        return _build_directory_structure(
+            compressed=False,
+            paths=uploaded_paths,
+            uploaded_paths=uploaded_paths,
+            root=_common_root(uploaded_paths),
+            archive_path=None,
+            manifest=None,
+            requested_representation=None,
+        )
 
     if not isinstance(directory_structure, dict):
         raise DatasetObjectValidationError("directory_structure must be an object")
@@ -160,10 +167,62 @@ def normalize_directory_structure(
             "directory_structure root must contain every path"
         )
 
+    return _build_directory_structure(
+        compressed=bool(directory_structure.get("compressed", False)),
+        paths=paths,
+        uploaded_paths=uploaded_paths,
+        root=normalized_root,
+        archive_path=directory_structure.get("archive_path"),
+        manifest=directory_structure.get("manifest"),
+        requested_representation=directory_structure.get("representation"),
+    )
+
+
+def get_upload_package_metadata(metadata: dict[str, Any]) -> dict[str, Any] | None:
+    package = (metadata or {}).get(DIRECTORY_STRUCTURE_KEY)
+    if not isinstance(package, dict):
+        return None
+
+    paths = package.get("paths")
+    if not isinstance(paths, list) or not paths:
+        return None
+
+    try:
+        normalized_paths = [_normalize_original_path(str(path)) for path in paths]
+        _reject_duplicates(normalized_paths, "directory structure paths")
+        root = package.get("root")
+        normalized_root = (
+            _normalize_original_path(str(root)) if root is not None else None
+        )
+        archive_path = package.get("archive_path")
+        normalized_archive_path = (
+            _normalize_original_path(str(archive_path))
+            if archive_path is not None
+            else None
+        )
+    except DatasetObjectValidationError:
+        return None
+
+    compressed = bool(package.get("compressed", False))
+    representation = str(
+        package.get("representation")
+        or _representation_for(compressed=compressed, paths=normalized_paths)
+    )
+    if representation not in UPLOAD_REPRESENTATIONS:
+        return None
+
+    try:
+        manifest = _normalize_manifest(package.get("manifest"), len(normalized_paths))
+    except DatasetObjectValidationError:
+        return None
+
     return {
-        "compressed": bool(directory_structure.get("compressed", False)),
+        "compressed": compressed,
+        "representation": representation,
         "root": normalized_root,
-        "paths": paths,
+        "paths": normalized_paths,
+        "archive_path": normalized_archive_path,
+        "manifest": manifest,
     }
 
 
@@ -297,6 +356,91 @@ def _validate_object(obj: dict[str, Any]) -> dict[str, Any]:
         "upload_state": upload_state,
         "scan_state": scan_state,
         "download_state": download_state,
+    }
+
+
+def _build_directory_structure(
+    *,
+    compressed: bool,
+    paths: list[str],
+    uploaded_paths: list[str],
+    root: str | None,
+    archive_path: Any,
+    manifest: Any,
+    requested_representation: Any,
+) -> dict[str, Any]:
+    representation = _representation_for(compressed=compressed, paths=paths)
+
+    if requested_representation is not None:
+        requested = str(requested_representation)
+        if requested not in UPLOAD_REPRESENTATIONS:
+            raise DatasetObjectValidationError(
+                "directory_structure representation is invalid"
+            )
+        if requested != representation:
+            raise DatasetObjectValidationError(
+                "directory_structure representation does not match compressed flag"
+            )
+
+    if compressed:
+        if len(uploaded_paths) != 1 or not uploaded_paths[0].lower().endswith(".zip"):
+            raise DatasetObjectValidationError(
+                "Compressed uploads must contain exactly one ZIP archive"
+            )
+        normalized_archive_path = (
+            _normalize_original_path(str(archive_path))
+            if archive_path is not None
+            else uploaded_paths[0]
+        )
+        if normalized_archive_path != uploaded_paths[0]:
+            raise DatasetObjectValidationError(
+                "directory_structure archive_path must match uploaded ZIP archive"
+            )
+    else:
+        if archive_path not in (None, ""):
+            raise DatasetObjectValidationError(
+                "directory_structure archive_path is only valid for ZIP uploads"
+            )
+        if paths != uploaded_paths:
+            raise DatasetObjectValidationError(
+                "directory_structure paths must match uploaded paths"
+            )
+        normalized_archive_path = None
+
+    return {
+        "compressed": compressed,
+        "representation": representation,
+        "root": root,
+        "paths": paths,
+        "archive_path": normalized_archive_path,
+        "manifest": _normalize_manifest(manifest, len(paths)),
+    }
+
+
+def _representation_for(*, compressed: bool, paths: list[str]) -> str:
+    if compressed:
+        return "zip"
+    if len(paths) > 1:
+        return "multi_object"
+    return "single_object"
+
+
+def _normalize_manifest(manifest: Any, path_count: int) -> dict[str, Any]:
+    if manifest is not None and not isinstance(manifest, dict):
+        raise DatasetObjectValidationError(
+            "directory_structure manifest must be an object"
+        )
+
+    source = "directory_structure.paths"
+    if isinstance(manifest, dict):
+        raw_source = manifest.get("source")
+        if raw_source is not None and str(raw_source).strip():
+            source = str(raw_source).strip()
+
+    return {
+        "version": UPLOAD_PACKAGE_MANIFEST_VERSION,
+        "path_count": path_count,
+        "source": source,
     }
 
 

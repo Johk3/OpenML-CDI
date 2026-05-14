@@ -34,6 +34,29 @@ import { useUserContext } from '@/hooks/useUserContext';
 import { DatasetService } from '@/services/datasetService';
 import { BackendDataset } from '@/types/dataset';
 
+type UploadRepresentation = 'single_object' | 'multi_object' | 'zip';
+
+interface UploadDirectoryStructure {
+  compressed: boolean;
+  representation: UploadRepresentation;
+  root: string | null;
+  paths: string[];
+  archive_path?: string | null;
+  manifest: {
+    version: number;
+    path_count: number;
+    source: string;
+  };
+}
+
+type BackendDatasetWithPackage = BackendDataset & {
+  upload_package?: UploadDirectoryStructure;
+};
+
+type DatasetWithUploadPackage = Dataset & {
+  uploadPackage?: UploadDirectoryStructure;
+};
+
 function parseDistribution(value: unknown): CroissantDistribution[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -55,8 +78,46 @@ function parseDistribution(value: unknown): CroissantDistribution[] {
     });
 }
 
-function toFrontendDataset(b: BackendDataset): Dataset {
+function parseUploadPackage(value: unknown): UploadDirectoryStructure | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const obj = value as Record<string, unknown>;
+  if (!Array.isArray(obj.paths) || obj.paths.some((path) => typeof path !== 'string')) {
+    return undefined;
+  }
+
+  const representation =
+    obj.representation === 'zip' ||
+    obj.representation === 'multi_object' ||
+    obj.representation === 'single_object'
+      ? obj.representation
+      : obj.compressed
+        ? 'zip'
+        : obj.paths.length > 1
+          ? 'multi_object'
+          : 'single_object';
+
+  const manifest =
+    typeof obj.manifest === 'object' && obj.manifest !== null
+      ? (obj.manifest as Record<string, unknown>)
+      : {};
+
+  return {
+    compressed: Boolean(obj.compressed),
+    representation,
+    root: typeof obj.root === 'string' ? obj.root : null,
+    paths: obj.paths as string[],
+    archive_path: typeof obj.archive_path === 'string' ? obj.archive_path : null,
+    manifest: {
+      version: typeof manifest.version === 'number' ? manifest.version : 1,
+      path_count: typeof manifest.path_count === 'number' ? manifest.path_count : obj.paths.length,
+      source: typeof manifest.source === 'string' ? manifest.source : 'directory_structure.paths',
+    },
+  };
+}
+
+function toFrontendDataset(b: BackendDatasetWithPackage): DatasetWithUploadPackage {
   const metadata = b.dataset_metadata || {};
+  const uploadPackage = parseUploadPackage(b.upload_package ?? metadata.directory_structure);
   let description = '';
   let contact: Dataset['contact'];
   let metrics: Dataset['metrics'];
@@ -124,7 +185,8 @@ function toFrontendDataset(b: BackendDataset): Dataset {
     status: (b.status || 'pending') as DatasetStatus,
     metrics,
     croissantMetadata: croissant || (metadata.croissantMetadata as CroissantMetadata | undefined),
-    files: metadata.filenames as string[],
+    files: uploadPackage?.paths ?? (metadata.filenames as string[]),
+    uploadPackage,
     contact: contact,
     malwareScan: metadata.malware_scan as MalwareScan,
     rawMetadata: b.dataset_metadata,
@@ -136,7 +198,7 @@ export const DatasetDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useUserContext();
 
-  const [dataset, setDataset] = useState<Dataset | null>(null);
+  const [dataset, setDataset] = useState<DatasetWithUploadPackage | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [showAllFiles, setShowAllFiles] = useState(false);
@@ -153,7 +215,7 @@ export const DatasetDetailPage: React.FC = () => {
       setError(null);
 
       try {
-        const data: BackendDataset = await DatasetService.getDataset(id);
+        const data = (await DatasetService.getDataset(id)) as BackendDatasetWithPackage;
         if (isMounted) setDataset(toFrontendDataset(data));
       } catch (err) {
         if (isMounted) setError(err instanceof Error ? err.message : 'Dataset not found.');
@@ -507,6 +569,15 @@ export const DatasetDetailPage: React.FC = () => {
                   <FileCode className="w-5 h-5 text-primary" /> Uploaded Files (
                   {dataset.files.length})
                 </h2>
+                {dataset.uploadPackage && (
+                  <span className="text-xs font-medium px-2 py-1 rounded-md bg-muted text-muted-foreground">
+                    {dataset.uploadPackage.representation === 'zip'
+                      ? 'ZIP package'
+                      : dataset.uploadPackage.representation === 'multi_object'
+                        ? 'Multiple objects'
+                        : 'Single object'}
+                  </span>
+                )}
                 <Button
                   variant="outline"
                   size="sm"

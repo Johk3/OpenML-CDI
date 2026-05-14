@@ -32,6 +32,7 @@ class DatasetDetail(Dataset):
     dataset_url: str
     download_url: str | None = None
     storage_objects: list[dict[str, Any]] = Field(default_factory=list)
+    upload_package: dict[str, Any] | None = None
 
 
 class DatasetUploadURLRequest(BaseModel):

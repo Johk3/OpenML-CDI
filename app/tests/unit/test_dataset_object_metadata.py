@@ -7,6 +7,7 @@ from app.services.dataset_objects import (
     get_dataset_objects,
     mark_objects_scan_results,
     mark_objects_uploaded,
+    normalize_directory_structure,
 )
 from app.storage.types import ObjectMetadata, UploadTarget
 
@@ -94,6 +95,101 @@ def test_build_dataset_objects_rejects_duplicate_original_paths():
             ],
             original_paths=["data.csv", "data.csv"],
             content_types=[None, None],
+        )
+
+
+def test_normalize_directory_structure_records_zip_package_contract():
+    directory_structure = normalize_directory_structure(
+        {
+            "compressed": True,
+            "root": "dataset",
+            "paths": ["dataset/train/one.csv", "dataset/test/two.csv"],
+            "archive_path": "Folder_Dataset_files.zip",
+            "manifest": {"source": "browser-selection"},
+        },
+        original_paths=["Folder_Dataset_files.zip"],
+    )
+
+    assert directory_structure == {
+        "compressed": True,
+        "representation": "zip",
+        "root": "dataset",
+        "paths": ["dataset/train/one.csv", "dataset/test/two.csv"],
+        "archive_path": "Folder_Dataset_files.zip",
+        "manifest": {
+            "version": 1,
+            "path_count": 2,
+            "source": "browser-selection",
+        },
+    }
+
+
+def test_normalize_directory_structure_requires_one_zip_archive_for_compressed_upload():
+    with pytest.raises(DatasetObjectValidationError, match="exactly one ZIP archive"):
+        normalize_directory_structure(
+            {
+                "compressed": True,
+                "root": "dataset",
+                "paths": ["dataset/train/one.csv", "dataset/test/two.csv"],
+            },
+            original_paths=["dataset/train/one.csv", "dataset/test/two.csv"],
+        )
+
+
+def test_normalize_directory_structure_rejects_duplicate_manifest_paths():
+    with pytest.raises(DatasetObjectValidationError, match="Duplicate"):
+        normalize_directory_structure(
+            {
+                "compressed": True,
+                "paths": ["dataset/data.csv", "dataset/data.csv"],
+            },
+            original_paths=["Dataset_files.zip"],
+        )
+
+
+def test_normalize_directory_structure_rejects_unsafe_manifest_paths():
+    with pytest.raises(DatasetObjectValidationError, match="cannot be absolute"):
+        normalize_directory_structure(
+            {
+                "compressed": True,
+                "paths": ["dataset/data.csv", "../secret.csv"],
+            },
+            original_paths=["Dataset_files.zip"],
+        )
+
+
+def test_normalize_directory_structure_records_multi_object_contract():
+    directory_structure = normalize_directory_structure(
+        {
+            "compressed": False,
+            "root": "dataset",
+            "paths": ["dataset/train/one.csv", "dataset/test/two.csv"],
+        },
+        original_paths=["dataset/train/one.csv", "dataset/test/two.csv"],
+    )
+
+    assert directory_structure == {
+        "compressed": False,
+        "representation": "multi_object",
+        "root": "dataset",
+        "paths": ["dataset/train/one.csv", "dataset/test/two.csv"],
+        "archive_path": None,
+        "manifest": {
+            "version": 1,
+            "path_count": 2,
+            "source": "directory_structure.paths",
+        },
+    }
+
+
+def test_normalize_directory_structure_rejects_mismatched_multi_object_paths():
+    with pytest.raises(DatasetObjectValidationError, match="must match uploaded paths"):
+        normalize_directory_structure(
+            {
+                "compressed": False,
+                "paths": ["dataset/train/one.csv", "dataset/test/two.csv"],
+            },
+            original_paths=["dataset/train/one.csv", "dataset/test/other.csv"],
         )
 
 

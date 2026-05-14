@@ -29,12 +29,52 @@ import { ChunkedUploadController, ChunkedUploadProgress } from '@/types/dataset'
 
 type UploadState = 'idle' | 'contact' | 'compressing' | 'uploading' | 'success' | 'error';
 type UploadSessionState = 'idle' | 'uploading' | 'paused' | 'resumed' | 'completed';
+type UploadRepresentation = 'single_object' | 'multi_object' | 'zip';
+
+interface UploadDirectoryStructure {
+  compressed: boolean;
+  representation: UploadRepresentation;
+  root: string | null;
+  paths: string[];
+  archive_path?: string | null;
+  manifest: {
+    version: number;
+    path_count: number;
+    source: string;
+  };
+}
 
 const getUploadPath = (file: File) => file.webkitRelativePath || file.name;
 
 const getDirectoryRoot = (paths: string[]) => {
   const firstPath = paths.find((path) => path.includes('/'));
   return firstPath?.split('/')[0] ?? null;
+};
+
+const buildUploadDirectoryStructure = (
+  originalPaths: string[],
+  uploadedFiles: File[],
+  compressed: boolean,
+): UploadDirectoryStructure | undefined => {
+  const root = getDirectoryRoot(originalPaths);
+  if (!compressed && originalPaths.length === 1 && root === null) return undefined;
+
+  return {
+    compressed,
+    representation: compressed
+      ? 'zip'
+      : originalPaths.length > 1
+        ? 'multi_object'
+        : 'single_object',
+    root,
+    paths: originalPaths,
+    archive_path: compressed ? getUploadPath(uploadedFiles[0]) : null,
+    manifest: {
+      version: 1,
+      path_count: originalPaths.length,
+      source: 'browser-selection',
+    },
+  };
 };
 
 const TIPS = [
@@ -168,7 +208,7 @@ export const UploadPage: React.FC = () => {
       // Request presigned urls
       setUploadState('uploading');
 
-      const { id, presigned_urls } = await DatasetService.requestUploadUrl({
+      const uploadPayload = {
         name: formData.name,
         description: {
           text: formData.description,
@@ -177,15 +217,18 @@ export const UploadPage: React.FC = () => {
             last_name: formData.lastName,
             email: formData.email,
           },
-          directory_structure: {
-            compressed: selectedFiles.length > 1,
-            root: getDirectoryRoot(selectedPaths),
-            paths: selectedPaths,
-          },
         },
         filenames: filesToUpload.map(getUploadPath),
         content_types: filesToUpload.map((f) => f.type || undefined),
-      });
+        byte_sizes: filesToUpload.map((f) => f.size),
+        directory_structure: buildUploadDirectoryStructure(
+          selectedPaths,
+          filesToUpload,
+          selectedFiles.length > 1,
+        ),
+      };
+
+      const { id, presigned_urls } = await DatasetService.requestUploadUrl(uploadPayload);
 
       // Upload using the worker pool
       const uploadTotalSize = filesToUpload.reduce((acc, f) => acc + f.size, 0);

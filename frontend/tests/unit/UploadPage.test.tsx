@@ -165,13 +165,19 @@ describe('UploadPage', () => {
       );
       expect(mockDatasetService.requestUploadUrl).toHaveBeenCalledWith(
         expect.objectContaining({
-          description: expect.objectContaining({
-            directory_structure: {
-              compressed: true,
-              root: 'dataset',
-              paths: ['dataset/train/one.csv', 'dataset/test/two.csv'],
+          byte_sizes: [3],
+          directory_structure: {
+            compressed: true,
+            representation: 'zip',
+            root: 'dataset',
+            paths: ['dataset/train/one.csv', 'dataset/test/two.csv'],
+            archive_path: 'Folder_Dataset_files.zip',
+            manifest: {
+              version: 1,
+              path_count: 2,
+              source: 'browser-selection',
             },
-          }),
+          },
         }),
       );
     });

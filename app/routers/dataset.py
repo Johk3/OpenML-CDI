@@ -38,6 +38,7 @@ from app.services.dataset_objects import (
     attach_dataset_objects,
     build_dataset_objects,
     get_dataset_objects,
+    get_upload_package_metadata,
     mark_objects_uploaded,
     normalize_directory_structure,
     storage_keys_from_metadata,
@@ -330,6 +331,7 @@ def _dataset_detail_response(dataset: DatasetModel) -> DatasetDetail:
             f"/api/datasets/{dataset.id}/download" if has_downloadable_files else None
         ),
         storage_objects=storage_objects,
+        upload_package=get_upload_package_metadata(metadata),
     )
 
 
@@ -350,7 +352,7 @@ def list_datasets(
     return dataset_crud.get_datasets_for_user(db=db, user_id=current_user.id)
 
 
-@router.get("/get", response_model=Dataset)
+@router.get("/get", response_model=DatasetDetail)
 def get_dataset(
     dataset_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_active_user)],
@@ -362,7 +364,7 @@ def get_dataset(
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
     expert_or_owner(current_user, dataset)
     if dataset:
-        return dataset
+        return _dataset_detail_response(dataset)
     raise HTTPException(status_code=404, detail="Dataset not found")
 
 
