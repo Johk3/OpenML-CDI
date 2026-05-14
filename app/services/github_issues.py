@@ -11,6 +11,25 @@ from app.database.models import Dataset
 
 logger = logging.getLogger(__name__)
 
+PRIVATE_METADATA_FIELDS = {
+    "name",
+    "description",
+    "filenames",
+    "filename",
+    "file_objects",
+    "text",
+    "contact",
+    "malware_scan",
+    "storage_key",
+    "storage_keys",
+    "objects",
+    "directory_structure",
+    "content_types",
+    "byte_sizes",
+    "checksums",
+    "storage_schema_version",
+}
+
 
 class GitHubAPIError(RuntimeError):
     """Raised when the GitHub API returns an error response."""
@@ -65,18 +84,7 @@ def _build_issue_body(
 
     # remove large/duplicate fields from the display dict
     display_metadata = {
-        k: v
-        for k, v in metadata.items()
-        if k
-        not in (
-            "name",
-            "description",
-            "filenames",
-            "malware_scan",
-            "file_objects",
-            "text",
-            "contact",
-        )
+        k: v for k, v in metadata.items() if k not in PRIVATE_METADATA_FIELDS
     }
 
     lines = [

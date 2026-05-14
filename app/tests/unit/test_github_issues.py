@@ -81,6 +81,46 @@ class TestBuildIssueBody:
         )
         assert "**Files:** 2" in body
 
+    def test_filters_internal_upload_metadata(self):
+        body = _build_issue_body(
+            "id1",
+            "Title",
+            {
+                "text": "Please review this dataset.",
+                "filenames": ["folder/private.csv"],
+                "storage_keys": ["datasets/batch/folder/private.csv"],
+                "objects": [
+                    {
+                        "object_key": "datasets/batch/folder/private.csv",
+                        "original_path": "folder/private.csv",
+                        "etag": "secret-etag",
+                    }
+                ],
+                "directory_structure": {"paths": ["folder/private.csv"]},
+                "content_types": ["text/csv"],
+                "byte_sizes": [123],
+                "checksums": ["secret-checksum"],
+                "storage_schema_version": 1,
+                "contact": {"email": "uploader@example.com"},
+                "malware_scan": {"status": "clean"},
+            },
+            "http://localhost:8000",
+        )
+
+        assert "Please review this dataset." in body
+        assert "**Files:** 1" in body
+        assert "storage_keys" not in body
+        assert "datasets/batch" not in body
+        assert "objects" not in body
+        assert "directory_structure" not in body
+        assert "folder/private.csv" not in body
+        assert "content_types" not in body
+        assert "byte_sizes" not in body
+        assert "secret-checksum" not in body
+        assert "storage_schema_version" not in body
+        assert "uploader@example.com" not in body
+        assert "malware_scan" not in body
+
 
 class TestCreateIssue:
     @patch("app.services.github_issues._get_github_client")
