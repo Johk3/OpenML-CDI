@@ -116,6 +116,11 @@ class LocalStorageBackend:
         del storage_key, upload_id, part_number, expires_seconds
         raise NotImplementedError("Local storage does not support multipart uploads")
 
+    def list_multipart_parts(self, storage_key: str, upload_id: str):
+        """Local storage does not need multipart upload part listings."""
+        del storage_key, upload_id
+        raise NotImplementedError("Local storage does not support multipart uploads")
+
     def complete_multipart_upload(
         self,
         storage_key: str,

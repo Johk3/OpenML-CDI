@@ -10,6 +10,7 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from zipfile import ZIP_DEFLATED, ZipFile
 from app.database import get_db
@@ -18,6 +19,13 @@ from app.schemas.datasets import (
     DatasetConfirmUploadRequest,
     DatasetCreate,
     DatasetDetail,
+    DatasetMultipartCompleteRequest,
+    DatasetMultipartObjectRequest,
+    DatasetMultipartPartsResponse,
+    DatasetMultipartPartURLResponse,
+    DatasetMultipartUploadedPart,
+    DatasetMultipartUploadCreateRequest,
+    DatasetMultipartUploadResponse,
     DatasetUploadContract,
     DatasetUploadURLRequest,
     DatasetUploadURLResponse,
@@ -52,6 +60,8 @@ from app.storage.errors import StorageError
 from app.database import SessionLocal
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
+MULTIPART_UPLOADS_KEY = "multipart_uploads"
+MULTIPART_UPLOAD_THRESHOLD_BYTES = 8 * 1024 * 1024
 
 
 @router.post(
@@ -84,6 +94,11 @@ def create_upload_url(
             content_type=content_type,
             expires_seconds=expires_seconds,
         )
+        byte_size = (
+            payload.byte_sizes[index]
+            if payload.byte_sizes and index < len(payload.byte_sizes)
+            else None
+        )
         presigned_urls.append(url)
         upload_contracts.append(
             DatasetUploadContract(
@@ -94,6 +109,10 @@ def create_upload_url(
                 headers=({"Content-Type": content_type} if content_type else {}),
                 content_type=content_type,
                 expires_seconds=expires_seconds,
+                upload_mode=_upload_mode_for_contract(
+                    request=request,
+                    byte_size=byte_size,
+                ),
             )
         )
 
@@ -183,6 +202,17 @@ def _create_upload_contract_url(
     return f"{request.url_for('upload_file', storage_key=storage_key)}"
 
 
+def _upload_mode_for_contract(*, request: Request, byte_size: int | None) -> str:
+    storage = request.app.state.storage
+    if (
+        storage.backend_name() == "s3"
+        and byte_size is not None
+        and byte_size > MULTIPART_UPLOAD_THRESHOLD_BYTES
+    ):
+        return "multipart"
+    return "direct"
+
+
 @router.put("/upload/{storage_key:path}")
 async def upload_file(
     storage_key: str,
@@ -195,6 +225,274 @@ async def upload_file(
     return {"message": "Upload successful", "storage_key": storage_key}
 
 
+@router.post(
+    "/{dataset_id}/multipart-uploads",
+    response_model=DatasetMultipartUploadResponse,
+    status_code=http_status.HTTP_201_CREATED,
+)
+def initiate_multipart_upload(
+    dataset_id: uuid.UUID,
+    payload: DatasetMultipartUploadCreateRequest,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Session = Depends(get_db),
+) -> DatasetMultipartUploadResponse:
+    storage = _require_multipart_storage(request)
+    dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
+    expert_or_owner(current_user, dataset)
+    metadata = dict(dataset.dataset_metadata or {})
+    upload_object = _get_quarantine_upload_object(metadata, payload.object_key)
+    expires_seconds = request.app.state.settings.upload.expires_seconds
+    content_type = payload.content_type or upload_object.get("content_type")
+
+    try:
+        upload = storage.initiate_multipart_upload(
+            payload.object_key,
+            content_type=content_type,
+        )
+    except (NotImplementedError, StorageError, ValueError) as error:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
+
+    session = {
+        "object_key": upload.storage_key,
+        "part_size": payload.part_size,
+        "content_type": content_type,
+        "expires_seconds": expires_seconds,
+        "expires_at": (
+            datetime.now(timezone.utc) + timedelta(seconds=expires_seconds)
+        ).isoformat(),
+        "status": "active",
+    }
+    metadata = _set_multipart_upload_session(metadata, upload.upload_id, session)
+    dataset_crud.update_dataset_metadata(
+        db=db, dataset_id=dataset_id, metadata=metadata
+    )
+
+    return DatasetMultipartUploadResponse(
+        dataset_id=dataset_id,
+        object_key=upload.storage_key,
+        upload_id=upload.upload_id,
+        part_size=payload.part_size,
+        expires_seconds=expires_seconds,
+        status="active",
+    )
+
+
+@router.post(
+    "/{dataset_id}/multipart-uploads/{upload_id}/parts/{part_number}/url",
+    response_model=DatasetMultipartPartURLResponse,
+    status_code=http_status.HTTP_201_CREATED,
+)
+def create_multipart_part_url(
+    dataset_id: uuid.UUID,
+    upload_id: str,
+    part_number: int,
+    payload: DatasetMultipartObjectRequest,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Session = Depends(get_db),
+) -> DatasetMultipartPartURLResponse:
+    if part_number <= 0 or part_number > 10000:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="part_number must be between 1 and 10000",
+        )
+
+    storage = _require_multipart_storage(request)
+    dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
+    expert_or_owner(current_user, dataset)
+    metadata = dict(dataset.dataset_metadata or {})
+    _get_active_multipart_upload_session(metadata, upload_id, payload.object_key)
+    expires_seconds = request.app.state.settings.upload.expires_seconds
+
+    try:
+        url = storage.create_multipart_part_url(
+            payload.object_key,
+            upload_id=upload_id,
+            part_number=part_number,
+            expires_seconds=expires_seconds,
+        )
+    except (NotImplementedError, StorageError, ValueError) as error:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
+
+    return DatasetMultipartPartURLResponse(
+        url=url,
+        method="PUT",
+        headers={},
+        expires_seconds=expires_seconds,
+    )
+
+
+@router.get(
+    "/{dataset_id}/multipart-uploads/{upload_id}/parts",
+    response_model=DatasetMultipartPartsResponse,
+)
+def list_multipart_parts(
+    dataset_id: uuid.UUID,
+    upload_id: str,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    object_key: str = Query(..., min_length=1),
+    db: Session = Depends(get_db),
+) -> DatasetMultipartPartsResponse:
+    storage = _require_multipart_storage(request)
+    dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
+    expert_or_owner(current_user, dataset)
+    metadata = dict(dataset.dataset_metadata or {})
+    _get_active_multipart_upload_session(metadata, upload_id, object_key)
+
+    try:
+        parts = storage.list_multipart_parts(object_key, upload_id=upload_id)
+    except (NotImplementedError, StorageError, ValueError) as error:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
+
+    return DatasetMultipartPartsResponse(
+        object_key=object_key,
+        upload_id=upload_id,
+        parts=[
+            DatasetMultipartUploadedPart(
+                part_number=part.part_number,
+                etag=part.etag,
+                size=part.size,
+            )
+            for part in parts
+        ],
+    )
+
+
+@router.post(
+    "/{dataset_id}/multipart-uploads/{upload_id}/complete",
+    status_code=http_status.HTTP_202_ACCEPTED,
+)
+def complete_multipart_upload(
+    dataset_id: uuid.UUID,
+    upload_id: str,
+    payload: DatasetMultipartCompleteRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Session = Depends(get_db),
+):
+    storage = _require_multipart_storage(request)
+    dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
+    expert_or_owner(current_user, dataset)
+    metadata = dict(dataset.dataset_metadata or {})
+    upload_object = _get_quarantine_upload_object(metadata, payload.object_key)
+    session = _get_active_multipart_upload_session(
+        metadata,
+        upload_id,
+        payload.object_key,
+    )
+    parts = _validated_complete_parts(payload)
+
+    try:
+        storage.complete_multipart_upload(
+            payload.object_key,
+            upload_id=upload_id,
+            parts=parts,
+        )
+        verified_metadata = storage.verify_object(
+            payload.object_key,
+            expected_size=upload_object.get("byte_size"),
+            expected_content_type=upload_object.get("content_type"),
+        )
+        objects = get_dataset_objects(metadata)
+        updated_objects = [
+            (
+                mark_objects_uploaded([obj], [verified_metadata])[0]
+                if obj["object_key"] == payload.object_key
+                else obj
+            )
+            for obj in objects
+        ]
+        metadata = attach_dataset_objects(metadata, updated_objects)
+        metadata = _set_multipart_upload_session(
+            metadata,
+            upload_id,
+            {
+                **session,
+                "status": "completed",
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "etag": verified_metadata.etag,
+                "byte_size": verified_metadata.byte_size,
+            },
+        )
+        dataset_crud.update_dataset_metadata(
+            db=db, dataset_id=dataset_id, metadata=metadata
+        )
+    except (
+        DatasetObjectValidationError,
+        NotImplementedError,
+        StorageError,
+        ValueError,
+    ) as error:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
+
+    _enqueue_upload_scan(
+        request=request,
+        background_tasks=background_tasks,
+        dataset_id=dataset_id,
+        storage_keys=[payload.object_key],
+    )
+    return {
+        "message": "Multipart upload completed, scan started",
+        "dataset_url": f"/datasets/{dataset_id}",
+    }
+
+
+@router.delete(
+    "/{dataset_id}/multipart-uploads/{upload_id}",
+    status_code=http_status.HTTP_204_NO_CONTENT,
+)
+def abort_multipart_upload(
+    dataset_id: uuid.UUID,
+    upload_id: str,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    object_key: str = Query(..., min_length=1),
+    db: Session = Depends(get_db),
+) -> None:
+    storage = _require_multipart_storage(request)
+    dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
+    expert_or_owner(current_user, dataset)
+    metadata = dict(dataset.dataset_metadata or {})
+    session = _get_active_multipart_upload_session(metadata, upload_id, object_key)
+
+    try:
+        storage.abort_multipart_upload(object_key, upload_id)
+    except (NotImplementedError, StorageError, ValueError) as error:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
+
+    metadata = _set_multipart_upload_session(
+        metadata,
+        upload_id,
+        {
+            **session,
+            "status": "aborted",
+            "aborted_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    dataset_crud.update_dataset_metadata(
+        db=db, dataset_id=dataset_id, metadata=metadata
+    )
+    return None
+
+
 @router.post("/{dataset_id}/confirm-upload", status_code=http_status.HTTP_202_ACCEPTED)
 def confirm_upload(
     dataset_id: uuid.UUID,
@@ -204,9 +502,9 @@ def confirm_upload(
     payload: DatasetConfirmUploadRequest | None = None,
     db: Session = Depends(get_db),
 ):
-    settings = request.app.state.settings
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
     expert_or_owner(current_user, dataset)
+    settings = request.app.state.settings
 
     metadata = dict(dataset.dataset_metadata or {})
     storage_keys = storage_keys_from_metadata(metadata)
@@ -250,18 +548,11 @@ def confirm_upload(
             detail=str(error),
         ) from error
 
-    background_tasks.add_task(
-        scan_uploaded_files,
+    _enqueue_upload_scan(
+        request=request,
+        background_tasks=background_tasks,
         dataset_id=dataset_id,
         storage_keys=storage_keys,
-        quarantine_dir=Path(settings.storage.quarantine_dir),
-        final_dir=Path(settings.storage.local_upload_dir) / "ready",
-        clamd_socket=settings.storage.clamd_socket,
-        clamd_host=settings.storage.clamd_host,
-        clamd_port=settings.storage.clamd_port,
-        clamd_timeout_seconds=settings.storage.clamd_timeout_seconds,
-        storage=request.app.state.storage,
-        db_factory=SessionLocal,
     )
     background_tasks.add_task(
         create_issue_for_dataset,
@@ -312,6 +603,119 @@ def ensure_status_update_allowed(dataset: Dataset, next_status: Statuses) -> Non
             status_code=http_status.HTTP_409_CONFLICT,
             detail="Quarantined datasets cannot be processed",
         )
+
+
+def _require_multipart_storage(request: Request):
+    storage = request.app.state.storage
+    if storage.backend_name() != "s3":
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail="Multipart uploads require S3 storage",
+        )
+    return storage
+
+
+def _get_quarantine_upload_object(metadata: dict, object_key: str) -> dict:
+    try:
+        objects = get_dataset_objects(metadata)
+    except DatasetObjectValidationError as error:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
+
+    for obj in objects:
+        if obj["object_key"] == object_key:
+            if not object_key.startswith("quarantine/"):
+                raise HTTPException(
+                    status_code=http_status.HTTP_400_BAD_REQUEST,
+                    detail="Multipart uploads require a quarantine object key",
+                )
+            return obj
+
+    raise HTTPException(
+        status_code=http_status.HTTP_400_BAD_REQUEST,
+        detail="Multipart object key is not part of this dataset",
+    )
+
+
+def _get_active_multipart_upload_session(
+    metadata: dict,
+    upload_id: str,
+    object_key: str,
+) -> dict:
+    _get_quarantine_upload_object(metadata, object_key)
+    sessions = metadata.get(MULTIPART_UPLOADS_KEY) or {}
+    session = sessions.get(upload_id)
+    if not isinstance(session, dict) or session.get("object_key") != object_key:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="Multipart upload session not found",
+        )
+    if session.get("status") != "active":
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail="Multipart upload session is not active",
+        )
+    return dict(session)
+
+
+def _set_multipart_upload_session(
+    metadata: dict,
+    upload_id: str,
+    session: dict,
+) -> dict:
+    updated = dict(metadata or {})
+    sessions = dict(updated.get(MULTIPART_UPLOADS_KEY) or {})
+    sessions[upload_id] = session
+    updated[MULTIPART_UPLOADS_KEY] = sessions
+    return updated
+
+
+def _validated_complete_parts(
+    payload: DatasetMultipartCompleteRequest,
+) -> list[dict[str, str | int]]:
+    part_numbers = [part.part_number for part in payload.parts]
+    if part_numbers != sorted(part_numbers) or len(part_numbers) != len(
+        set(part_numbers)
+    ):
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="Multipart parts must be ordered by unique part_number values",
+        )
+    complete_parts = []
+    for part in payload.parts:
+        etag = part.etag.strip()
+        if not etag:
+            raise HTTPException(
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+                detail="Multipart part etag cannot be empty",
+            )
+        complete_parts.append({"part_number": part.part_number, "etag": etag})
+    return complete_parts
+
+
+def _enqueue_upload_scan(
+    *,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    dataset_id: uuid.UUID,
+    storage_keys: list[str],
+) -> None:
+    settings = request.app.state.settings
+    background_tasks.add_task(
+        scan_uploaded_files,
+        dataset_id=dataset_id,
+        storage_keys=storage_keys,
+        quarantine_dir=Path(settings.storage.quarantine_dir),
+        final_dir=Path(settings.storage.local_upload_dir) / "ready",
+        clamd_socket=settings.storage.clamd_socket,
+        clamd_host=settings.storage.clamd_host,
+        clamd_port=settings.storage.clamd_port,
+        clamd_timeout_seconds=settings.storage.clamd_timeout_seconds,
+        storage=request.app.state.storage,
+        db_factory=SessionLocal,
+    )
 
 
 def _dataset_detail_response(dataset: DatasetModel) -> DatasetDetail:

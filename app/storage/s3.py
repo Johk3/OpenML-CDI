@@ -15,7 +15,7 @@ from .errors import (
     StorageUnavailableError,
     StorageVerificationError,
 )
-from .types import MultipartUpload, ObjectMetadata, UploadTarget
+from .types import MultipartPart, MultipartUpload, ObjectMetadata, UploadTarget
 
 SAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -202,6 +202,35 @@ class S3StorageBackend:
             )
         except Exception as error:
             raise self._to_storage_error("create multipart part URL", error) from error
+
+    def list_multipart_parts(
+        self, storage_key: str, upload_id: str
+    ) -> list[MultipartPart]:
+        key = self._validate_storage_key(storage_key)
+        kwargs = {"Bucket": self.bucket, "Key": key, "UploadId": upload_id}
+        uploaded_parts: list[MultipartPart] = []
+
+        try:
+            while True:
+                response = self._client.list_parts(**kwargs)
+                for part in response.get("Parts", []):
+                    uploaded_parts.append(
+                        MultipartPart(
+                            part_number=int(part["PartNumber"]),
+                            etag=self._clean_etag(part.get("ETag")) or "",
+                            size=part.get("Size"),
+                        )
+                    )
+                if not response.get("IsTruncated"):
+                    break
+                marker = response.get("NextPartNumberMarker")
+                if marker is None:
+                    break
+                kwargs["PartNumberMarker"] = marker
+        except Exception as error:
+            raise self._to_storage_error("list multipart parts", error) from error
+
+        return uploaded_parts
 
     def complete_multipart_upload(
         self,

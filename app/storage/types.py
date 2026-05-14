@@ -28,3 +28,4 @@ class MultipartUpload:
 class MultipartPart:
     part_number: int
     etag: str
+    size: int | None = None

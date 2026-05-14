@@ -1,5 +1,5 @@
 from typing import Protocol, Any
-from .types import MultipartUpload, ObjectMetadata, UploadTarget
+from .types import MultipartPart, MultipartUpload, ObjectMetadata, UploadTarget
 
 
 class StorageBackend(Protocol):
@@ -70,6 +70,12 @@ class StorageBackend(Protocol):
         expires_seconds: int = 3600,
     ) -> str:
         """Create a short-lived URL for uploading one multipart part."""
+        ...
+
+    def list_multipart_parts(
+        self, storage_key: str, upload_id: str
+    ) -> list[MultipartPart]:
+        """List uploaded parts for a multipart upload."""
         ...
 
     def complete_multipart_upload(

@@ -56,6 +56,15 @@ class RecordingS3Client:
         self.calls.append(("abort_multipart_upload", kwargs))
         return {}
 
+    def list_parts(self, **kwargs):
+        self.calls.append(("list_parts", kwargs))
+        return {
+            "Parts": [
+                {"PartNumber": 1, "ETag": '"etag-1"', "Size": 5},
+                {"PartNumber": 2, "ETag": '"etag-2"', "Size": 7},
+            ]
+        }
+
 
 class _Body:
     def __init__(self, data: bytes):
@@ -183,6 +192,10 @@ def test_multipart_lifecycle_uses_s3_contracts():
         part_number=1,
         expires_seconds=60,
     )
+    parts = backend.list_multipart_parts(
+        "quarantine/batch/large.csv",
+        upload_id=upload.upload_id,
+    )
     backend.complete_multipart_upload(
         "quarantine/batch/large.csv",
         upload_id=upload.upload_id,
@@ -192,11 +205,23 @@ def test_multipart_lifecycle_uses_s3_contracts():
 
     assert upload.upload_id == "upload-1"
     assert part_url == "https://signed.example/upload_part"
+    assert [(part.part_number, part.etag, part.size) for part in parts] == [
+        (1, "etag-1", 5),
+        (2, "etag-2", 7),
+    ]
     assert (
         "create_multipart_upload",
         {
             "Bucket": "datasets",
             "Key": "quarantine/batch/large.csv",
             "ContentType": "text/csv",
+        },
+    ) in client.calls
+    assert (
+        "list_parts",
+        {
+            "Bucket": "datasets",
+            "Key": "quarantine/batch/large.csv",
+            "UploadId": "upload-1",
         },
     ) in client.calls

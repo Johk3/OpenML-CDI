@@ -5,6 +5,9 @@ import { renderWithRouter, mockNavigate } from '../utils';
 import { mockDatasetService } from '../mocks/datasetService';
 import { compressFilesToZip } from '@/utils/compress';
 
+const createLargeFile = () =>
+  new File([new Uint8Array(9 * 1024 * 1024)], 'data.csv', { type: 'text/csv' });
+
 vi.mock('@/utils/compress', () => ({
   compressFilesToZip: vi.fn(async (_files: File[], zipName: string) => {
     return new File(['zip'], zipName, { type: 'application/zip' });
@@ -28,17 +31,35 @@ describe('UploadPage', () => {
     mockDatasetService.requestUploadUrl.mockResolvedValue({
       id: 'test-dataset-id',
       presigned_urls: ['http://example.com/presigned'],
+      upload_contracts: [
+        {
+          original_path: 'data.csv',
+          object_key: 'quarantine/batch/data.csv',
+          url: 'http://example.com/presigned',
+          method: 'PUT',
+          headers: { 'Content-Type': 'text/csv' },
+          content_type: 'text/csv',
+          expires_seconds: 3600,
+        },
+      ],
     });
-    mockDatasetService.uploadFileInChunks.mockImplementation(async (_url, file, options) => {
-      options?.onProgress?.({
-        loadedBytes: file.size,
-        totalBytes: file.size,
-        chunkIndex: 0,
-        totalChunks: 1,
-        status: 'completed',
-      });
-    });
+    mockDatasetService.uploadFileMultipart.mockImplementation(
+      async (_datasetId, _contract, file, options) => {
+        options?.onProgress?.({
+          loadedBytes: file.size,
+          totalBytes: file.size,
+          chunkIndex: 0,
+          totalChunks: 1,
+          status: 'completed',
+        });
+      },
+    );
     mockDatasetService.confirmUpload.mockResolvedValue(undefined);
+    mockDatasetService.shouldUseMultipartUpload.mockImplementation(
+      (file: File, contract?: { url?: string }) =>
+        file.size > 8 * 1024 * 1024 && !contract?.url?.includes('/api/datasets/upload/'),
+    );
+    mockDatasetService.getRestorableMultipartUpload.mockReturnValue(null);
     renderWithRouter(<UploadPage />);
   });
 
@@ -182,8 +203,26 @@ describe('UploadPage', () => {
       );
     });
 
-    it('uses resumable chunked upload controls while a file is uploading', async () => {
-      mockDatasetService.uploadFileInChunks.mockImplementation(() => new Promise(() => undefined));
+    it('uses multipart upload controls while a large file is uploading', async () => {
+      fireEvent.click(screen.getByText('Change'));
+      const fileInput = document.getElementById('file-input') as HTMLInputElement;
+      fireEvent.change(fileInput, { target: { files: [createLargeFile()] } });
+      mockDatasetService.uploadFileMultipart.mockImplementation(() => new Promise(() => undefined));
+      mockDatasetService.requestUploadUrl.mockResolvedValueOnce({
+        id: 'test-dataset-id',
+        presigned_urls: ['http://example.com/presigned'],
+        upload_contracts: [
+          {
+            original_path: 'data.csv',
+            object_key: 'quarantine/batch/data.csv',
+            url: 'http://example.com/presigned',
+            method: 'PUT',
+            headers: { 'Content-Type': 'text/csv' },
+            content_type: 'text/csv',
+            expires_seconds: 3600,
+          },
+        ],
+      });
 
       fireEvent.click(screen.getByText(/Upload Dataset/i));
 
@@ -192,11 +231,95 @@ describe('UploadPage', () => {
       });
 
       expect(screen.getByRole('button', { name: /pause upload/i })).toBeInTheDocument();
-      expect(mockDatasetService.uploadFileInChunks).toHaveBeenCalled();
+      expect(mockDatasetService.uploadFileMultipart).toHaveBeenCalled();
       expect(mockDatasetService.uploadFileToPresignedUrl).not.toHaveBeenCalled();
 
       fireEvent.click(screen.getByRole('button', { name: /pause upload/i }));
       expect(await screen.findByRole('button', { name: /resume upload/i })).toBeInTheDocument();
+    });
+
+    it('uses the direct PUT path for small files and confirms after upload', async () => {
+      fireEvent.click(screen.getByText(/Upload Dataset/i));
+
+      await waitFor(() => {
+        expect(mockDatasetService.confirmUpload).toHaveBeenCalledWith('test-dataset-id');
+      });
+
+      expect(mockDatasetService.uploadFileToPresignedUrl).toHaveBeenCalledWith(
+        'http://example.com/presigned',
+        expect.any(File),
+        expect.any(Function),
+      );
+      expect(mockDatasetService.uploadFileMultipart).not.toHaveBeenCalled();
+    });
+
+    it('uses the direct PUT path for large files when the backend returns a local upload URL', async () => {
+      fireEvent.click(screen.getByText('Change'));
+      const fileInput = document.getElementById('file-input') as HTMLInputElement;
+      fireEvent.change(fileInput, { target: { files: [createLargeFile()] } });
+      mockDatasetService.requestUploadUrl.mockResolvedValueOnce({
+        id: 'test-dataset-id',
+        presigned_urls: ['http://localhost:8000/api/datasets/upload/datasets/batch/data.csv'],
+        upload_contracts: [
+          {
+            original_path: 'data.csv',
+            object_key: 'datasets/batch/data.csv',
+            url: 'http://localhost:8000/api/datasets/upload/datasets/batch/data.csv',
+            method: 'PUT',
+            headers: { 'Content-Type': 'text/csv' },
+            content_type: 'text/csv',
+            expires_seconds: 3600,
+          },
+        ],
+      });
+
+      fireEvent.click(screen.getByText(/Upload Dataset/i));
+
+      await waitFor(() => {
+        expect(mockDatasetService.confirmUpload).toHaveBeenCalledWith('test-dataset-id');
+      });
+
+      expect(mockDatasetService.uploadFileToPresignedUrl).toHaveBeenCalledWith(
+        'http://localhost:8000/api/datasets/upload/datasets/batch/data.csv',
+        expect.any(File),
+        expect.any(Function),
+      );
+      expect(mockDatasetService.uploadFileMultipart).not.toHaveBeenCalled();
+    });
+
+    it('does not confirm upload when multipart completion fails', async () => {
+      fireEvent.click(screen.getByText('Change'));
+      const fileInput = document.getElementById('file-input') as HTMLInputElement;
+      fireEvent.change(fileInput, { target: { files: [createLargeFile()] } });
+      mockDatasetService.uploadFileMultipart.mockRejectedValueOnce(
+        new Error(
+          'Upload failed while sending part 2 of 3. Please check your connection and resume the upload.',
+        ),
+      );
+      mockDatasetService.requestUploadUrl.mockResolvedValueOnce({
+        id: 'test-dataset-id',
+        presigned_urls: ['http://example.com/presigned'],
+        upload_contracts: [
+          {
+            original_path: 'data.csv',
+            object_key: 'quarantine/batch/data.csv',
+            url: 'http://example.com/presigned',
+            method: 'PUT',
+            headers: { 'Content-Type': 'text/csv' },
+            content_type: 'text/csv',
+            expires_seconds: 3600,
+          },
+        ],
+      });
+
+      fireEvent.click(screen.getByText(/Upload Dataset/i));
+
+      await waitFor(() => {
+        expect(screen.getByText('Upload Failed')).toBeInTheDocument();
+      });
+
+      expect(mockDatasetService.confirmUpload).not.toHaveBeenCalled();
+      expect(screen.getByText(/Upload failed while sending part 2 of 3/i)).toBeInTheDocument();
     });
   });
 });

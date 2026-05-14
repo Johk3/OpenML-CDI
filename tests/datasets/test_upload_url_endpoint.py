@@ -97,31 +97,6 @@ def _assert_dataset_object(
     assert obj["download_state"] == "unavailable"
 
 
-def _assert_dataset_object(
-    metadata: dict,
-    *,
-    original_path: str,
-    storage_key: str,
-    content_type: str | None = None,
-):
-    objects = metadata["objects"]
-    matching = [obj for obj in objects if obj["original_path"] == original_path]
-    assert len(matching) == 1
-    obj = matching[0]
-    assert obj["backend"] == "local"
-    assert obj["provider"] == "local"
-    assert obj["object_key"] == storage_key
-    assert obj["quarantine_key"] == storage_key
-    assert obj["final_object_key"] is None
-    assert obj["content_type"] == content_type
-    assert obj["byte_size"] is None
-    assert obj["checksum"] is None
-    assert obj["etag"] is None
-    assert obj["upload_state"] == "pending"
-    assert obj["scan_state"] == "pending"
-    assert obj["download_state"] == "unavailable"
-
-
 @pytest.fixture
 def db_session_factory(tmp_path: Path):
     db_path = tmp_path / "upload_url_test.db"
@@ -224,6 +199,7 @@ def test_upload_url_creates_pending_dataset_and_returns_presigned_url(
         "headers": {},
         "content_type": None,
         "expires_seconds": 3600,
+        "upload_mode": "direct",
     }
     dataset_id = uuid.UUID(body["id"])
 
@@ -551,6 +527,7 @@ def test_upload_url_returns_direct_s3_upload_contract(
     assert contract["content_type"] == "text/csv"
     assert contract["headers"] == {"Content-Type": "text/csv"}
     assert contract["expires_seconds"] == 120
+    assert contract["upload_mode"] == "direct"
     assert storage.upload_url_calls[0]["content_type"] == "text/csv"
     assert storage.upload_url_calls[0]["expires_seconds"] == 120
 
@@ -564,6 +541,30 @@ def test_upload_url_returns_direct_s3_upload_contract(
         assert obj["original_path"] == "folder/data.csv"
         assert obj["byte_size"] == 8
         assert obj["upload_state"] == "pending"
+
+
+def test_upload_url_marks_large_s3_upload_contract_as_multipart(
+    client: TestClient, db_session_factory, monkeypatch
+):
+    uploader_id = uuid.uuid4()
+    access_token = _create_access_token_for_user(db_session_factory, uploader_id)
+    storage = _FakeS3Storage()
+    monkeypatch.setattr(client.app.state, "storage", storage)
+
+    response = client.post(
+        "/api/datasets/upload-url",
+        json={
+            "name": "Large S3 dataset",
+            "filenames": ["large.zip"],
+            "content_types": ["application/zip"],
+            "byte_sizes": [8 * 1024 * 1024 + 1],
+        },
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 201
+    contract = response.json()["upload_contracts"][0]
+    assert contract["upload_mode"] == "multipart"
 
 
 def test_upload_url_persists_directory_structure_metadata_from_description(
@@ -609,11 +610,18 @@ def test_upload_url_persists_directory_structure_metadata_from_description(
         metadata = dataset.dataset_metadata
         assert metadata["directory_structure"] == {
             "compressed": True,
+            "representation": "zip",
             "root": "dataset",
             "paths": [
                 "dataset/train/data.csv",
                 "dataset/test/data.csv",
             ],
+            "archive_path": "Folder_Dataset_files.zip",
+            "manifest": {
+                "version": 1,
+                "path_count": 2,
+                "source": "directory_structure.paths",
+            },
         }
 
 

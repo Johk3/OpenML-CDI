@@ -7,7 +7,7 @@ export const mockDatasetService = {
     presigned_urls: ['http://example.com/presigned'],
   }),
   uploadFileToPresignedUrl: vi.fn().mockResolvedValue(undefined),
-  uploadFileInChunks: vi.fn().mockImplementation(async (_url, file, options) => {
+  uploadFileMultipart: vi.fn().mockImplementation(async (_datasetId, _contract, file, options) => {
     options?.onProgress?.({
       loadedBytes: file.size,
       totalBytes: file.size,
@@ -16,6 +16,16 @@ export const mockDatasetService = {
       status: 'completed',
     });
   }),
+  shouldUseMultipartUpload: vi.fn(
+    (file: File, contract?: { url?: string; upload_mode?: string }) =>
+      contract?.upload_mode === 'multipart' ||
+      (contract?.upload_mode !== 'direct' &&
+        file.size > 8 * 1024 * 1024 &&
+        !contract?.url?.includes('/api/datasets/upload/')),
+  ),
+  getRestorableMultipartUpload: vi.fn().mockReturnValue(null),
+  uploadContractFromSession: vi.fn(),
+  abortMultipartUpload: vi.fn().mockResolvedValue(undefined),
   confirmUpload: vi.fn().mockResolvedValue(undefined),
   listDatasets: vi.fn().mockResolvedValue([
     {

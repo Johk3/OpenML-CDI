@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -53,6 +53,7 @@ class DatasetUploadContract(BaseModel):
     headers: dict[str, str] = Field(default_factory=dict)
     content_type: str | None = None
     expires_seconds: int
+    upload_mode: Literal["direct", "multipart"] = "direct"
 
 
 class DatasetUploadURLResponse(BaseModel):
@@ -64,3 +65,51 @@ class DatasetUploadURLResponse(BaseModel):
 
 class DatasetConfirmUploadRequest(BaseModel):
     etags: list[str | None] | None = None
+
+
+class DatasetMultipartUploadCreateRequest(BaseModel):
+    object_key: str = Field(..., min_length=1)
+    content_type: str | None = None
+    part_size: int = Field(default=8 * 1024 * 1024, ge=5 * 1024 * 1024)
+
+
+class DatasetMultipartUploadResponse(BaseModel):
+    dataset_id: UUID
+    object_key: str
+    upload_id: str
+    part_size: int
+    expires_seconds: int
+    status: str
+
+
+class DatasetMultipartObjectRequest(BaseModel):
+    object_key: str = Field(..., min_length=1)
+
+
+class DatasetMultipartPartURLResponse(BaseModel):
+    url: str
+    method: str = "PUT"
+    headers: dict[str, str] = Field(default_factory=dict)
+    expires_seconds: int
+
+
+class DatasetMultipartUploadedPart(BaseModel):
+    part_number: int
+    etag: str
+    size: int | None = None
+
+
+class DatasetMultipartPartsResponse(BaseModel):
+    object_key: str
+    upload_id: str
+    parts: list[DatasetMultipartUploadedPart]
+
+
+class DatasetMultipartCompletedPart(BaseModel):
+    part_number: int = Field(..., ge=1, le=10000)
+    etag: str = Field(..., min_length=1)
+
+
+class DatasetMultipartCompleteRequest(BaseModel):
+    object_key: str = Field(..., min_length=1)
+    parts: list[DatasetMultipartCompletedPart] = Field(..., min_length=1)

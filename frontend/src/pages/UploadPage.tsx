@@ -25,24 +25,22 @@ import { AxiosError } from 'axios';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { compressFilesToZip } from '@/utils/compress';
-import { ChunkedUploadController, ChunkedUploadProgress } from '@/types/dataset';
+import {
+  ChunkedUploadController,
+  ChunkedUploadProgress,
+  DatasetUploadContract,
+  UploadDirectoryStructure,
+} from '@/types/dataset';
 
 type UploadState = 'idle' | 'contact' | 'compressing' | 'uploading' | 'success' | 'error';
-type UploadSessionState = 'idle' | 'uploading' | 'paused' | 'resumed' | 'completed';
-type UploadRepresentation = 'single_object' | 'multi_object' | 'zip';
-
-interface UploadDirectoryStructure {
-  compressed: boolean;
-  representation: UploadRepresentation;
-  root: string | null;
-  paths: string[];
-  archive_path?: string | null;
-  manifest: {
-    version: number;
-    path_count: number;
-    source: string;
-  };
-}
+type UploadSessionState =
+  | 'idle'
+  | 'uploading'
+  | 'paused'
+  | 'resumed'
+  | 'retrying'
+  | 'completed'
+  | 'aborted';
 
 const getUploadPath = (file: File) => file.webkitRelativePath || file.name;
 
@@ -129,6 +127,7 @@ export const UploadPage: React.FC = () => {
   const [currentChunk, setCurrentChunk] = useState(0);
   const [totalChunks, setTotalChunks] = useState(1);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [hasMultipartControls, setHasMultipartControls] = useState(false);
   const uploadControllerRef = useRef<ChunkedUploadController | null>(null);
 
   // Prevention of accidental page closure during compression or upload
@@ -188,6 +187,7 @@ export const UploadPage: React.FC = () => {
     setCurrentChunk(0);
     setTotalChunks(1);
     setUploadedFileName(null);
+    setHasMultipartControls(false);
     setOriginalFileCount(selectedFiles.length);
 
     try {
@@ -208,27 +208,52 @@ export const UploadPage: React.FC = () => {
       // Request presigned urls
       setUploadState('uploading');
 
-      const uploadPayload = {
-        name: formData.name,
-        description: {
-          text: formData.description,
-          contact: {
-            first_name: formData.firstName,
-            last_name: formData.lastName,
-            email: formData.email,
-          },
-        },
-        filenames: filesToUpload.map(getUploadPath),
-        content_types: filesToUpload.map((f) => f.type || undefined),
-        byte_sizes: filesToUpload.map((f) => f.size),
-        directory_structure: buildUploadDirectoryStructure(
-          selectedPaths,
-          filesToUpload,
-          selectedFiles.length > 1,
-        ),
-      };
-
-      const { id, presigned_urls } = await DatasetService.requestUploadUrl(uploadPayload);
+      const restorableMultipartSession =
+        filesToUpload.length === 1
+          ? DatasetService.getRestorableMultipartUpload(filesToUpload[0])
+          : null;
+      const uploadResponse = restorableMultipartSession
+        ? {
+            id: restorableMultipartSession.datasetId,
+            presigned_urls: [''],
+            upload_contracts: [
+              DatasetService.uploadContractFromSession(restorableMultipartSession),
+            ],
+          }
+        : await DatasetService.requestUploadUrl({
+            name: formData.name,
+            description: {
+              text: formData.description,
+              contact: {
+                first_name: formData.firstName,
+                last_name: formData.lastName,
+                email: formData.email,
+              },
+            },
+            filenames: filesToUpload.map(getUploadPath),
+            content_types: filesToUpload.map((f) => f.type || undefined),
+            byte_sizes: filesToUpload.map((f) => f.size),
+            directory_structure: buildUploadDirectoryStructure(
+              selectedPaths,
+              filesToUpload,
+              selectedFiles.length > 1,
+            ),
+          });
+      const { id, presigned_urls } = uploadResponse;
+      const uploadContracts = filesToUpload.map<DatasetUploadContract>((file, index) => {
+        const contract = uploadResponse.upload_contracts?.[index];
+        if (contract) return contract;
+        return {
+          original_path: getUploadPath(file),
+          object_key: '',
+          url: presigned_urls[index],
+          method: 'PUT',
+          headers: file.type ? { 'Content-Type': file.type } : {},
+          content_type: file.type || null,
+          expires_seconds: 0,
+          upload_mode: 'direct',
+        };
+      });
 
       // Upload using the worker pool
       const uploadTotalSize = filesToUpload.reduce((acc, f) => acc + f.size, 0);
@@ -246,6 +271,7 @@ export const UploadPage: React.FC = () => {
         },
         abort: () => {
           paused = false;
+          setUploadSessionState('aborted');
         },
         isPaused: () => paused,
       };
@@ -273,13 +299,43 @@ export const UploadPage: React.FC = () => {
         updateProgress(index, progress.loadedBytes);
       };
 
+      const uploadDirectFile = async (
+        file: File,
+        index: number,
+        contract: DatasetUploadContract,
+      ) => {
+        setUploadedFileName(file.name);
+        setCurrentChunk(0);
+        setTotalChunks(1);
+        setUploadSessionState('uploading');
+        await DatasetService.uploadFileToPresignedUrl(contract.url, file, (event) => {
+          updateProgress(index, event.loaded);
+        });
+        updateProgress(index, file.size);
+      };
+
+      let usedMultipartUpload = false;
+
       const tasks = filesToUpload.map((file, index) => async () => {
+        const contract = uploadContracts[index];
+        const canUseMultipart =
+          Boolean(contract.object_key) &&
+          (DatasetService.shouldUseMultipartUpload(file, contract) ||
+            restorableMultipartSession?.objectKey === contract.object_key);
+
         try {
-          await DatasetService.uploadFileInChunks(presigned_urls[index], file, {
-            controller: uploadController,
-            onProgress: (progress) => updateChunkProgress(index, file, progress),
-          });
-          updateProgress(index, file.size);
+          if (canUseMultipart) {
+            usedMultipartUpload = true;
+            setHasMultipartControls(true);
+            await DatasetService.uploadFileMultipart(id, contract, file, {
+              controller: uploadController,
+              onProgress: (progress) => updateChunkProgress(index, file, progress),
+            });
+            updateProgress(index, file.size);
+            return;
+          }
+
+          await uploadDirectFile(file, index, contract);
         } catch (err) {
           console.error(`Failed to upload ${file.name}:`, err);
           throw err;
@@ -289,8 +345,9 @@ export const UploadPage: React.FC = () => {
       await runWithLimit(6, tasks);
       setUploadProgress(100);
 
-      // Confirm upload
-      await DatasetService.confirmUpload(id);
+      if (!usedMultipartUpload) {
+        await DatasetService.confirmUpload(id);
+      }
 
       setDatasetId(id);
       setUploadSessionState('completed');
@@ -302,7 +359,9 @@ export const UploadPage: React.FC = () => {
         detail === 'Not authorized to create this dataset'
           ? 'You do not have permission to upload datasets.'
           : (detail ??
-              'An unexpected error occurred during upload. For large folders, check your connection stability and try again.'),
+              (err instanceof Error
+                ? err.message
+                : 'An unexpected error occurred during upload. For large folders, check your connection stability and try again.')),
       );
       setUploadState('error');
     } finally {
@@ -316,6 +375,10 @@ export const UploadPage: React.FC = () => {
 
   const handleResumeUpload = () => {
     uploadControllerRef.current?.resume();
+  };
+
+  const handleCancelUpload = () => {
+    uploadControllerRef.current?.abort();
   };
 
   return (
@@ -584,26 +647,39 @@ export const UploadPage: React.FC = () => {
                             ? 'Upload resumed from saved progress.'
                             : `Uploading chunks for ${uploadedFileName ?? selectedFiles[0]?.name ?? 'file'}.`}
                       </p>
-                      {uploadSessionState === 'paused' ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={handleResumeUpload}
-                        >
-                          <PlayCircle size={16} />
-                          Resume Upload
-                        </Button>
-                      ) : (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={handlePauseUpload}
-                        >
-                          <PauseCircle size={16} />
-                          Pause Upload
-                        </Button>
+                      {hasMultipartControls && (
+                        <div className="flex gap-2">
+                          {uploadSessionState === 'paused' ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={handleResumeUpload}
+                            >
+                              <PlayCircle size={16} />
+                              Resume Upload
+                            </Button>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={handlePauseUpload}
+                            >
+                              <PauseCircle size={16} />
+                              Pause Upload
+                            </Button>
+                          )}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleCancelUpload}
+                          >
+                            <XCircle size={16} />
+                            Cancel Upload
+                          </Button>
+                        </div>
                       )}
                     </div>
 
