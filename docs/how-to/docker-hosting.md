@@ -34,6 +34,8 @@ docker run -d \
 
 Once running, the application is available at **[http://localhost:8000](http://localhost:8000)**.
 
+This starts the application container only. Dataset upload confirmation also requires a reachable ClamAV `clamd` daemon; see [Upload malware scanning](#upload-malware-scanning).
+
 ## Environment variables
 
 The application reads the following environment variables. Pass them with `-e` flags:
@@ -56,10 +58,22 @@ docker run -d \
 | `STORAGE_BACKEND`       | `local`          | Storage backend to use for uploads.                                                                                                               |
 | `LOCAL_UPLOAD_DIR`      | `.local_uploads` | Directory for locally stored uploads. Set this to a path under`/data` (e.g. `/data/uploads`) so that uploads are persisted on the mounted volume. |
 | `QUARANTINE_DIR`        | `.quarantine`    | Directory used for temporary scan copies before promotion.                                                                                        |
-|                         |                  |                                                                                                                                                   |
+| `CLAMD_SOCKET`          |                  | Unix socket path for`clamd`. When set, this takes precedence over `CLAMD_HOST` and `CLAMD_PORT`.                                                  |
 | `CLAMD_HOST`            | `127.0.0.1`      | Hostname for`clamd` when using TCP.                                                                                                               |
 | `CLAMD_PORT`            | `3310`           | TCP port for`clamd`.                                                                                                                              |
 | `CLAMD_TIMEOUT_SECONDS` | `10`             | Timeout for ClamAV daemon calls.                                                                                                                  |
+
+## Upload malware scanning
+
+Uploaded datasets are scanned before they are promoted from quarantine storage to the ready/downloadable location. Production and production-like deployments must run a ClamAV `clamd` daemon as a sidecar, sibling container, host service, or managed service and configure the application with `CLAMD_SOCKET` or `CLAMD_HOST`/`CLAMD_PORT`.
+
+If `clamd` is unavailable, uploaded bytes are not modified, but the scan records an error, the dataset is marked quarantined, and the uploaded objects are not promoted for download or expert review.
+
+For local upload-flow development, prefer the development Compose stack because it starts `clamd` with the backend:
+
+```bash
+docker compose -f docker-compose.dev.yml up backend frontend minio minio-init clamd
+```
 
 ## Using the pre-built image from GHCR
 

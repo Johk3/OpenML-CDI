@@ -15,13 +15,14 @@ router = APIRouter(prefix="/user", tags=["user"])
 @router.get("/get", response_model=User)
 def get_user(
     user_id: uuid.UUID,
-    db: Session = Depends(get_db),
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ):
     """
     Get a user.
     """
-    user = user_crud.get_user(db=db, user_id=user_id)
-    return user if user else HTTPException(status_code=404, detail="User not found")
+    if user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return current_user
 
 
 @router.post("/delete")
@@ -71,7 +72,7 @@ def change_device_name(
     if not family_owner:
         raise HTTPException(status_code=400, detail="Invalid family_id")
     if not family_owner.id == current_user.id:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+        raise HTTPException(status_code=403, detail="Forbidden")
     user_crud.set_family_name(db, family_id, device_name)
 
     return {"status_code": 200, "message": "Family name changed"}
@@ -83,4 +84,9 @@ def get_family_name(
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Session = Depends(get_db),
 ):
+    family_owner = user_crud.get_family_owner(db, family_id)
+    if not family_owner:
+        raise HTTPException(status_code=400, detail="Invalid family_id")
+    if not family_owner.id == current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden")
     return {"status_code": 200, "family_name": get_family_name_crud(db, family_id)}

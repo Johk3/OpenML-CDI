@@ -1,5 +1,7 @@
 # Dropbox and S3 viability for the OpenML upload backend
 
+> Status: this was a decision spike. The final storage architecture is documented in [S3 Storage Architecture and Local Setup](../reference/s3-storage.md). Use that reference for implementation, deployment, local MinIO setup, CORS, cleanup, and permission requirements.
+
 ## Short summary
 
 Dropbox is technically viable for the OpenML upload flow, but it is not the best default for primary app-owned storage. Its public HTTP API and official SDKs support upload, download, listing, metadata, deletion, sharing links, and large-file upload sessions. The main mismatch is architectural: Dropbox is organized around user- or team-owned namespaces, while this upload backend needs application-owned storage with malware scanning, review state, and controlled downloads.
