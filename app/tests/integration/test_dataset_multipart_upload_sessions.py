@@ -206,9 +206,24 @@ def test_multipart_upload_session_lifecycle_exposes_s3_api(
     storage = _MultipartStorage()
     scan_calls = []
     client.app.state.storage = storage
+
+    def fake_scan(**kwargs):
+        scan_calls.append(kwargs)
+        return {
+            "files": [
+                {
+                    "status": "clean",
+                    "engine": "clamav",
+                    "file": "large.csv",
+                    "final_object_key": f"ready/{dataset_id}/large.csv",
+                }
+            ],
+            "engine": "clamav",
+        }
+
     monkeypatch.setattr(
         "app.routers.dataset.scan_uploaded_files",
-        lambda **kwargs: scan_calls.append(kwargs),
+        fake_scan,
     )
     _seed_dataset(
         db_test_session,
@@ -278,7 +293,7 @@ def test_multipart_upload_session_lifecycle_exposes_s3_api(
 
     assert complete_response.status_code == 202
     assert complete_response.json() == {
-        "message": "Multipart upload completed, scan started",
+        "message": "Multipart upload completed and scan finished",
         "dataset_url": f"/datasets/{dataset_id}",
     }
     assert [name for name, _ in storage.calls] == [
@@ -402,6 +417,8 @@ def test_complete_multipart_upload_rejects_verification_failure_before_scan(
 
     assert response.status_code == 400
     assert response.json() == {"detail": "Object size mismatch"}
+    db_test_session.expire_all()
+    assert db_test_session.get(Dataset, dataset_id) is None
     assert [name for name, _ in storage.calls] == [
         "complete_multipart_upload",
         "verify_object",

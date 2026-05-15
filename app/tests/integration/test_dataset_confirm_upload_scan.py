@@ -155,7 +155,7 @@ def test_confirm_upload_promotes_clean_file_and_keeps_dataset_pending(
     assert not list(quarantine_dir.glob("*"))
 
 
-def test_confirm_upload_quarantines_infected_file_and_deletes_quarantine_copy(
+def test_confirm_upload_deletes_dataset_when_file_is_infected(
     scan_client: TestClient, db_test_session, monkeypatch
 ):
     uploader_id = uuid.uuid4()
@@ -180,21 +180,10 @@ def test_confirm_upload_quarantines_infected_file_and_deletes_quarantine_copy(
 
     response = _confirm_upload(scan_client, dataset_id, access_token)
 
-    assert response.status_code == 202
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Uploaded file failed malware scan"}
     db_test_session.expire_all()
-    dataset = db_test_session.get(Dataset, dataset_id)
-    assert dataset.status == Statuses.QUARANTINED
-    assert dataset.dataset_metadata["malware_scan"] == {
-        "files": [
-            {
-                "status": "infected",
-                "engine": "clamav",
-                "signature": "Eicar-Test-Signature",
-                "file": "infected.csv",
-            }
-        ],
-        "engine": "clamav",
-    }
+    assert db_test_session.get(Dataset, dataset_id) is None
     final_path = (
         Path(scan_client.app.state.settings.storage.local_upload_dir)
         / "ready"
@@ -206,7 +195,7 @@ def test_confirm_upload_quarantines_infected_file_and_deletes_quarantine_copy(
     assert not list(quarantine_dir.glob("*"))
 
 
-def test_confirm_upload_handles_clamd_unavailable_without_500(
+def test_confirm_upload_deletes_dataset_when_clamd_is_unavailable(
     scan_client: TestClient, db_test_session, monkeypatch
 ):
     uploader_id = uuid.uuid4()
@@ -230,15 +219,10 @@ def test_confirm_upload_handles_clamd_unavailable_without_500(
 
     response = _confirm_upload(scan_client, dataset_id, access_token)
 
-    assert response.status_code == 202
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Upload scan could not be completed"}
     db_test_session.expire_all()
-    dataset = db_test_session.get(Dataset, dataset_id)
-    assert dataset.status == Statuses.QUARANTINED
-    scan_result = dataset.dataset_metadata["malware_scan"]["files"][0]
-    assert scan_result["status"] == "error"
-    assert scan_result["engine"] == "clamav"
-    assert scan_result["file"] == "offline.csv"
-    assert "ClamAV unavailable" in scan_result["message"]
+    assert db_test_session.get(Dataset, dataset_id) is None
     final_path = (
         Path(scan_client.app.state.settings.storage.local_upload_dir)
         / "ready"

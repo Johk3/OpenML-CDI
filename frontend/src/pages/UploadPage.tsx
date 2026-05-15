@@ -32,13 +32,21 @@ import {
   UploadDirectoryStructure,
 } from '@/types/dataset';
 
-type UploadState = 'idle' | 'contact' | 'compressing' | 'uploading' | 'success' | 'error';
+type UploadState =
+  | 'idle'
+  | 'contact'
+  | 'compressing'
+  | 'uploading'
+  | 'finalizing'
+  | 'success'
+  | 'error';
 type UploadSessionState =
   | 'idle'
   | 'uploading'
   | 'paused'
   | 'resumed'
   | 'retrying'
+  | 'finalizing'
   | 'completed'
   | 'aborted';
 
@@ -132,7 +140,11 @@ export const UploadPage: React.FC = () => {
 
   // Prevention of accidental page closure during compression or upload
   React.useEffect(() => {
-    if (uploadState === 'compressing' || uploadState === 'uploading') {
+    if (
+      uploadState === 'compressing' ||
+      uploadState === 'uploading' ||
+      uploadState === 'finalizing'
+    ) {
       const handleBeforeUnload = (e: BeforeUnloadEvent) => {
         e.preventDefault();
         e.returnValue = '';
@@ -189,6 +201,7 @@ export const UploadPage: React.FC = () => {
     setUploadedFileName(null);
     setHasMultipartControls(false);
     setOriginalFileCount(selectedFiles.length);
+    let createdDatasetId: string | null = null;
 
     try {
       // Compress
@@ -256,6 +269,7 @@ export const UploadPage: React.FC = () => {
       });
 
       // Upload using the worker pool
+      createdDatasetId = id;
       const uploadTotalSize = filesToUpload.reduce((acc, f) => acc + f.size, 0);
       const loadedBytesByFile = new Array(filesToUpload.length).fill(0);
       let lastUpdate = 0;
@@ -292,10 +306,16 @@ export const UploadPage: React.FC = () => {
       const updateChunkProgress = (index: number, file: File, progress: ChunkedUploadProgress) => {
         setUploadedFileName(file.name);
         setCurrentChunk(
-          progress.status === 'completed' ? progress.totalChunks : progress.chunkIndex,
+          progress.status === 'completed' || progress.status === 'finalizing'
+            ? progress.totalChunks
+            : progress.chunkIndex,
         );
         setTotalChunks(progress.totalChunks);
         setUploadSessionState(progress.status);
+        if (progress.status === 'finalizing') {
+          setUploadProgress(100);
+          setUploadState('finalizing');
+        }
         updateProgress(index, progress.loadedBytes);
       };
 
@@ -329,6 +349,10 @@ export const UploadPage: React.FC = () => {
             setHasMultipartControls(true);
             await DatasetService.uploadFileMultipart(id, contract, file, {
               controller: uploadController,
+              onFinalizing: () => {
+                setUploadProgress(100);
+                setUploadState('finalizing');
+              },
               onProgress: (progress) => updateChunkProgress(index, file, progress),
             });
             updateProgress(index, file.size);
@@ -344,6 +368,7 @@ export const UploadPage: React.FC = () => {
 
       await runWithLimit(6, tasks);
       setUploadProgress(100);
+      setUploadState('finalizing');
 
       if (!usedMultipartUpload) {
         await DatasetService.confirmUpload(id);
@@ -353,6 +378,13 @@ export const UploadPage: React.FC = () => {
       setUploadSessionState('completed');
       setUploadState('success');
     } catch (err) {
+      if (createdDatasetId) {
+        try {
+          await DatasetService.deleteDataset(createdDatasetId);
+        } catch {
+          // The backend may already have cleaned up the failed upload record.
+        }
+      }
       const axiosErr = err as AxiosError<{ detail?: string }>;
       const detail = axiosErr.response?.data?.detail;
       setErrorMessage(
@@ -552,6 +584,7 @@ export const UploadPage: React.FC = () => {
 
         {(uploadState === 'compressing' ||
           uploadState === 'uploading' ||
+          uploadState === 'finalizing' ||
           uploadState === 'success' ||
           uploadState === 'error') && (
           <motion.div
@@ -560,7 +593,7 @@ export const UploadPage: React.FC = () => {
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.3 }}
-            className="text-center max-w-md mx-auto mt-20"
+            className="text-center max-w-lg mx-auto mt-20"
           >
             <Card className="shadow-lg">
               <CardContent className="pt-12 pb-12 flex flex-col items-center">
@@ -694,6 +727,29 @@ export const UploadPage: React.FC = () => {
 
                     <TipsCarousel />
                   </>
+                ) : uploadState === 'finalizing' ? (
+                  <>
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ repeat: Infinity, duration: 1.5, ease: 'linear' }}
+                      className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-6"
+                    >
+                      <Clock size={36} className="text-primary" />
+                    </motion.div>
+                    <h2 className="heading-2 mb-2">Finalizing upload…</h2>
+                    <p className="text-muted-foreground text-sm mb-6 max-w-xs">
+                      Verifying your uploaded files with the server. The completion message will
+                      appear after every file is confirmed.
+                    </p>
+                    <div className="w-full max-w-xs bg-muted rounded-full h-1.5 overflow-hidden">
+                      <motion.div
+                        className="h-full bg-primary"
+                        initial={{ width: 0 }}
+                        animate={{ width: '100%' }}
+                        transition={{ duration: 0.2 }}
+                      />
+                    </div>
+                  </>
                 ) : uploadState === 'success' ? (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
@@ -724,17 +780,17 @@ export const UploadPage: React.FC = () => {
                     <div className="upload-status-notice">
                       <Info size={14} className="shrink-0 mt-0.5" />
                       <span>
-                        Processing timeline varies by submission. You can influence the speediness
-                        of the processing of your dataset by giving us a detailed description of
-                        your dataset metadata. Your dataset status will update once processing
-                        begins. You can track progress on{' '}
+                        Enter as much known metadata as possible before expert review, including
+                        dataset contents, collection method, creators, license, publication dates,
+                        files, and known limitations. Incomplete metadata may delay expert review,
+                        but your uploaded dataset is saved. You can finish later from{' '}
                         <button
                           onClick={() => navigate('/datasets')}
                           className="font-bold underline hover:text-primary transition-colors"
                         >
                           My Datasets
-                        </button>{' '}
-                        or view your{' '}
+                        </button>
+                        , or view your{' '}
                         <button
                           onClick={() => navigate(`/datasets/${datasetId}`)}
                           className="font-bold underline hover:text-primary transition-colors"
@@ -747,10 +803,10 @@ export const UploadPage: React.FC = () => {
 
                     <div className="flex gap-3 mt-6">
                       <Button variant="outline" onClick={() => navigate('/datasets')}>
-                        View My Datasets
+                        Finish Later
                       </Button>
                       <Button onClick={() => navigate('/metadata', { state: { datasetId } })}>
-                        Configure Metadata <ArrowRight size={16} />
+                        Complete Metadata <ArrowRight size={16} />
                       </Button>
                     </div>
                   </motion.div>

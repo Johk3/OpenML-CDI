@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from zipfile import ZIP_DEFLATED, ZipFile
+import logging
 from app.database import get_db
 from app.schemas.datasets import (
     Dataset,
@@ -60,6 +61,7 @@ from app.storage.errors import StorageError
 from app.database import SessionLocal
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
+logger = logging.getLogger(__name__)
 MULTIPART_UPLOADS_KEY = "multipart_uploads"
 MULTIPART_UPLOAD_THRESHOLD_BYTES = 8 * 1024 * 1024
 
@@ -439,19 +441,37 @@ def complete_multipart_upload(
         StorageError,
         ValueError,
     ) as error:
+        _delete_failed_upload(
+            request=request,
+            db=db,
+            dataset_id=dataset_id,
+            storage_keys=[payload.object_key],
+            scan_result=None,
+        )
         raise HTTPException(
             status_code=http_status.HTTP_400_BAD_REQUEST,
             detail=str(error),
         ) from error
 
-    _enqueue_upload_scan(
+    scan_result = _run_upload_scan(
         request=request,
-        background_tasks=background_tasks,
         dataset_id=dataset_id,
         storage_keys=[payload.object_key],
     )
+    if _scan_result_failed(scan_result):
+        _delete_failed_upload(
+            request=request,
+            db=db,
+            dataset_id=dataset_id,
+            storage_keys=[payload.object_key],
+            scan_result=scan_result,
+        )
+        raise HTTPException(
+            status_code=_scan_failure_status_code(scan_result),
+            detail=_scan_failure_detail(scan_result),
+        )
     return {
-        "message": "Multipart upload completed, scan started",
+        "message": "Multipart upload completed and scan finished",
         "dataset_url": f"/datasets/{dataset_id}",
     }
 
@@ -547,17 +567,36 @@ def confirm_upload(
             db=db, dataset_id=dataset_id, metadata=metadata
         )
     except (DatasetObjectValidationError, StorageError, ValueError) as error:
+        _delete_failed_upload(
+            request=request,
+            db=db,
+            dataset_id=dataset_id,
+            storage_keys=storage_keys,
+            scan_result=None,
+        )
         raise HTTPException(
             status_code=http_status.HTTP_400_BAD_REQUEST,
             detail=str(error),
         ) from error
 
-    _enqueue_upload_scan(
+    scan_result = _run_upload_scan(
         request=request,
-        background_tasks=background_tasks,
         dataset_id=dataset_id,
         storage_keys=storage_keys,
     )
+    if _scan_result_failed(scan_result):
+        _delete_failed_upload(
+            request=request,
+            db=db,
+            dataset_id=dataset_id,
+            storage_keys=storage_keys,
+            scan_result=scan_result,
+        )
+        raise HTTPException(
+            status_code=_scan_failure_status_code(scan_result),
+            detail=_scan_failure_detail(scan_result),
+        )
+
     background_tasks.add_task(
         create_issue_for_dataset,
         dataset_id=dataset_id,
@@ -568,7 +607,7 @@ def confirm_upload(
         db_factory=SessionLocal,
     )
     return {
-        "message": "Upload confirmed, scan started",
+        "message": "Upload confirmed and scan finished",
         "dataset_url": f"/datasets/{dataset_id}",
     }
 
@@ -738,16 +777,14 @@ def _validated_complete_parts(
     return complete_parts
 
 
-def _enqueue_upload_scan(
+def _run_upload_scan(
     *,
     request: Request,
-    background_tasks: BackgroundTasks,
     dataset_id: uuid.UUID,
     storage_keys: list[str],
-) -> None:
+) -> dict | None:
     settings = request.app.state.settings
-    background_tasks.add_task(
-        scan_uploaded_files,
+    return scan_uploaded_files(
         dataset_id=dataset_id,
         storage_keys=storage_keys,
         quarantine_dir=Path(settings.storage.quarantine_dir),
@@ -759,6 +796,68 @@ def _enqueue_upload_scan(
         storage=request.app.state.storage,
         db_factory=SessionLocal,
     )
+
+
+def _scan_result_failed(scan_result: dict | None) -> bool:
+    files = (scan_result or {}).get("files")
+    if not isinstance(files, list) or not files:
+        return True
+    return any(
+        file.get("status") != "clean" for file in files if isinstance(file, dict)
+    )
+
+
+def _scan_failure_status_code(scan_result: dict | None) -> int:
+    files = (scan_result or {}).get("files") or []
+    statuses = {
+        str(file.get("status"))
+        for file in files
+        if isinstance(file, dict) and file.get("status")
+    }
+    if statuses & {"error", "missing"}:
+        return http_status.HTTP_503_SERVICE_UNAVAILABLE
+    return http_status.HTTP_400_BAD_REQUEST
+
+
+def _scan_failure_detail(scan_result: dict | None) -> str:
+    files = (scan_result or {}).get("files") or []
+    statuses = {
+        str(file.get("status"))
+        for file in files
+        if isinstance(file, dict) and file.get("status")
+    }
+    if "infected" in statuses:
+        return "Uploaded file failed malware scan"
+    return "Upload scan could not be completed"
+
+
+def _delete_failed_upload(
+    *,
+    request: Request,
+    db: Session,
+    dataset_id: uuid.UUID,
+    storage_keys: list[str],
+    scan_result: dict | None,
+) -> None:
+    keys_to_delete = set(storage_keys)
+    for file_result in (scan_result or {}).get("files", []):
+        if isinstance(file_result, dict) and file_result.get("final_object_key"):
+            keys_to_delete.add(str(file_result["final_object_key"]))
+
+    for storage_key in keys_to_delete:
+        try:
+            request.app.state.storage.delete(storage_key)
+        except Exception:
+            logger.exception(
+                "Failed to delete uploaded object %s for failed dataset %s",
+                storage_key,
+                dataset_id,
+            )
+
+    try:
+        dataset_crud.delete_dataset(db=db, dataset_id=dataset_id)
+    except ValueError:
+        db.rollback()
 
 
 def _dataset_detail_response(dataset: DatasetModel) -> DatasetDetail:

@@ -304,6 +304,7 @@ export const DatasetService = {
       controller?: ChunkedUploadController;
       maxRetries?: number;
       retryDelayMs?: number;
+      onFinalizing?: () => void;
       onProgress?: (progress: ChunkedUploadProgress) => void;
     },
   ) => {
@@ -543,6 +544,14 @@ export const DatasetService = {
       if (firstError) throw firstError;
 
       const completedParts = mergeUploadedParts(file, partSize, uploadedParts);
+      options?.onFinalizing?.();
+      options?.onProgress?.({
+        loadedBytes: file.size,
+        totalBytes: file.size,
+        chunkIndex: totalChunks,
+        totalChunks,
+        status: 'finalizing',
+      });
       await DatasetService.completeMultipartUpload(
         datasetId,
         upload.uploadId,

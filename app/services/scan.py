@@ -156,13 +156,13 @@ def scan_uploaded_files(
     clamd_timeout_seconds: float,
     storage: Any,
     db_factory: Callable[[], Session],
-) -> None:
+) -> dict[str, Any] | None:
     quarantine_dir.mkdir(parents=True, exist_ok=True)
 
     with db_factory() as db:
         dataset = db.get(Dataset, dataset_id)
         if dataset is None:
-            return
+            return None
 
         overall_results: list[dict[str, Any]] = []
         all_clean = True
@@ -245,7 +245,9 @@ def scan_uploaded_files(
 
             overall_results.append(scan_result)
 
-        _set_scan_metadata(dataset, {"files": overall_results, "engine": SCAN_ENGINE})
+        scan_summary = {"files": overall_results, "engine": SCAN_ENGINE}
+        _set_scan_metadata(dataset, scan_summary)
         # Uploaded datasets stay pending expert review unless malware is detected.
         dataset.status = Statuses.PENDING if all_clean else Statuses.QUARANTINED
         db.commit()
+        return scan_summary

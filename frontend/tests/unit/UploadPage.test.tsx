@@ -150,6 +150,43 @@ describe('UploadPage', () => {
       expect(screen.getByText('John')).toBeInTheDocument();
     });
 
+    it('prompts uploaders to complete known metadata after upload', async () => {
+      fireEvent.click(screen.getByText(/Upload Dataset/i));
+
+      await waitFor(() => {
+        expect(screen.getByText('Upload Complete!')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText(/enter as much known metadata as possible/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/dataset contents, collection method, creators/i),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(/license, publication dates, files, and known limitations/i),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/incomplete metadata may delay expert review/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /complete metadata/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /finish later/i })).toBeInTheDocument();
+    });
+
+    it('routes the success actions to metadata completion or My Datasets', async () => {
+      fireEvent.click(screen.getByText(/Upload Dataset/i));
+
+      await waitFor(() => {
+        expect(screen.getByText('Upload Complete!')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: /complete metadata/i }));
+
+      expect(mockNavigate).toHaveBeenCalledWith('/metadata', {
+        state: { datasetId: 'test-dataset-id' },
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: /finish later/i }));
+
+      expect(mockNavigate).toHaveBeenCalledWith('/datasets');
+    });
+
     it('sends original directory paths in upload metadata when files are zipped', async () => {
       const changeButton = screen.getByText('Change');
       fireEvent.click(changeButton);
@@ -253,6 +290,76 @@ describe('UploadPage', () => {
       expect(mockDatasetService.uploadFileMultipart).not.toHaveBeenCalled();
     });
 
+    it('keeps a finalizing loading screen visible while upload confirmation is pending', async () => {
+      let resolveConfirmation: () => void = () => undefined;
+      mockDatasetService.confirmUpload.mockReturnValueOnce(
+        new Promise<void>((resolve) => {
+          resolveConfirmation = resolve;
+        }),
+      );
+
+      fireEvent.click(screen.getByText(/Upload Dataset/i));
+
+      await waitFor(() => {
+        expect(mockDatasetService.confirmUpload).toHaveBeenCalledWith('test-dataset-id');
+      });
+
+      expect(screen.queryByText('Upload Complete!')).not.toBeInTheDocument();
+      expect(screen.getByText('Finalizing upload…')).toBeInTheDocument();
+      expect(screen.getByText(/verifying your uploaded files/i)).toBeInTheDocument();
+
+      resolveConfirmation();
+
+      await waitFor(() => {
+        expect(screen.getByText('Upload Complete!')).toBeInTheDocument();
+      });
+    });
+
+    it('shows the finalizing loading screen while multipart completion is pending', async () => {
+      fireEvent.click(screen.getByText('Change'));
+      const fileInput = document.getElementById('file-input') as HTMLInputElement;
+      fireEvent.change(fileInput, { target: { files: [createLargeFile()] } });
+      let resolveMultipartCompletion: () => void = () => undefined;
+      mockDatasetService.uploadFileMultipart.mockImplementationOnce(
+        async (_datasetId, _contract, file, options) => {
+          options?.onProgress?.({
+            loadedBytes: file.size,
+            totalBytes: file.size,
+            chunkIndex: 1,
+            totalChunks: 1,
+            status: 'uploading',
+          });
+          options?.onFinalizing?.();
+          options?.onProgress?.({
+            loadedBytes: file.size,
+            totalBytes: file.size,
+            chunkIndex: 1,
+            totalChunks: 1,
+            status: 'finalizing',
+          });
+          await new Promise<void>((resolve) => {
+            resolveMultipartCompletion = resolve;
+          });
+        },
+      );
+
+      fireEvent.click(screen.getByText(/Upload Dataset/i));
+
+      await waitFor(() => {
+        expect(screen.getByText('Finalizing upload…')).toBeInTheDocument();
+      });
+
+      expect(screen.queryByText('Upload Complete!')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /pause upload/i })).not.toBeInTheDocument();
+
+      resolveMultipartCompletion();
+
+      await waitFor(() => {
+        expect(screen.getByText('Upload Complete!')).toBeInTheDocument();
+      });
+      expect(mockDatasetService.confirmUpload).not.toHaveBeenCalled();
+    });
+
     it('uses the direct PUT path for large files when the backend returns a local upload URL', async () => {
       fireEvent.click(screen.getByText('Change'));
       const fileInput = document.getElementById('file-input') as HTMLInputElement;
@@ -320,6 +427,21 @@ describe('UploadPage', () => {
 
       expect(mockDatasetService.confirmUpload).not.toHaveBeenCalled();
       expect(screen.getByText(/Upload failed while sending part 2 of 3/i)).toBeInTheDocument();
+    });
+
+    it('deletes the pre-created dataset record when direct upload fails', async () => {
+      mockDatasetService.uploadFileToPresignedUrl.mockRejectedValueOnce(
+        new Error('Storage upload failed'),
+      );
+
+      fireEvent.click(screen.getByText(/Upload Dataset/i));
+
+      await waitFor(() => {
+        expect(screen.getByText('Upload Failed')).toBeInTheDocument();
+      });
+
+      expect(mockDatasetService.deleteDataset).toHaveBeenCalledWith('test-dataset-id');
+      expect(mockDatasetService.confirmUpload).not.toHaveBeenCalled();
     });
   });
 });

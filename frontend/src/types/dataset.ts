@@ -63,7 +63,7 @@ export interface ChunkedUploadProgress {
   totalBytes: number;
   chunkIndex: number;
   totalChunks: number;
-  status: 'uploading' | 'paused' | 'resumed' | 'retrying' | 'completed' | 'aborted';
+  status: 'uploading' | 'paused' | 'resumed' | 'retrying' | 'finalizing' | 'completed' | 'aborted';
 }
 
 export interface ChunkedUploadController {
