@@ -16,6 +16,48 @@ docker build -t openml-upload .
 
 The Dockerfile uses a multi-stage build that compiles the React frontend, installs Python dependencies, and produces a slim production image. No extra build arguments are required.
 
+## Running the Compose stack
+
+The easiest way to run a complete instance is the root Compose stack. It starts the application, Postgres, ClamAV, and Caddy:
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+```
+
+With the default `.env` values, the application is available at **[http://localhost:8000](http://localhost:8000)**.
+
+For GitHub login, create a GitHub OAuth App and set these deployment-time credentials in the root `.env` file:
+
+```env
+GITHUB_CLIENT_ID=your-client-id
+GITHUB_SECRET=your-client-secret
+GITHUB_REDIRECT=http://localhost:8000/login/callback
+```
+
+The callback URL configured in the GitHub OAuth App must exactly match `GITHUB_REDIRECT`. End users do not provide these values when they log in; they identify this deployed application to GitHub.
+
+Dataset review issue creation defaults to `koevoet1221/openmlupload-testing` for this test deployment. For the official deployment, update `GITHUB_ISSUES_OWNER` and `GITHUB_ISSUES_REPO` in `.env`.
+
+For a production domain, use the HTTPS callback, for example:
+
+```env
+APP_BASE_URL=https://upload.example.com
+GITHUB_REDIRECT=https://upload.example.com/login/callback
+COOKIE_SECURE=true
+CADDY_SITE_ADDRESS=upload.example.com
+HTTP_PORT=80
+HTTPS_PORT=443
+GITHUB_ISSUES_OWNER=official-owner
+GITHUB_ISSUES_REPO=official-repo
+```
+
+For a local smoke test without GitHub OAuth, set:
+
+```env
+AUTH_DEV_MODE_APPROVE_ALL_LOGINS=true
+```
+
 ## Running the container
 
 ```bash

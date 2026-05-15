@@ -34,8 +34,8 @@ DEFAULT_APP_BASE_URL = "http://localhost:8000"
 DEFAULT_EMAIL_VERIFICATION_TTL_HOURS = 24
 DEFAULT_QUARANTINE_DIR = ".quarantine"
 DEFAULT_CORS_ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
-DEFAULT_GITHUB_ISSUES_OWNER = "openml"
-DEFAULT_GITHUB_ISSUES_REPO = "openmlupload-test"
+DEFAULT_GITHUB_ISSUES_OWNER = "koevoet1221"
+DEFAULT_GITHUB_ISSUES_REPO = "openmlupload-testing"
 
 
 def _get_bool_env(name: str, default: bool) -> bool:

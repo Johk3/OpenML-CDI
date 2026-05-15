@@ -12,7 +12,61 @@ run `uvicorn app.main:app --reload` to start server
 
 ## Docker
 
-You can also build and run the application as a Docker container:
+For a complete local or client test run, use Docker Compose. It starts the application, Postgres, ClamAV, Caddy, migrations, and persistent Docker volumes.
+
+First copy the example environment file:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` and set at least:
+
+```env
+POSTGRES_PASSWORD=replace-with-a-real-password
+JWT_SECRET=replace-with-a-random-secret
+```
+
+For real GitHub login, also set:
+
+```env
+GITHUB_CLIENT_ID=your-client-id
+GITHUB_SECRET=your-client-secret
+GITHUB_REDIRECT=http://localhost:8000/login/callback
+```
+
+These GitHub values are not user account details. They identify this deployed application to GitHub before any user can log in. The GitHub OAuth App callback URL must exactly match `GITHUB_REDIRECT`.
+
+For a local smoke test without GitHub OAuth, set this in `.env`:
+
+```env
+AUTH_DEV_MODE_APPROVE_ALL_LOGINS=true
+```
+
+Then start the stack:
+
+```bash
+docker compose up -d --build
+```
+
+The app will be available at **http://localhost:8000**.
+
+Dataset GitHub issue creation is separate from login. The Compose defaults target the test repository:
+
+```env
+GITHUB_ISSUES_OWNER=koevoet1221
+GITHUB_ISSUES_REPO=openmlupload-testing
+```
+
+To actually create issues, configure the GitHub App values in `.env`:
+
+```env
+GH_APP_ID=
+GH_INSTALL_ID=
+GH_PRIV_KEY=
+```
+
+You can also build and run only the application container:
 
 ```bash
 docker build -t openml-upload .

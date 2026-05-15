@@ -24,6 +24,8 @@ def test_settings_defaults(monkeypatch):
     assert settings.storage.clamd_host == "127.0.0.1"
     assert settings.storage.clamd_port == 3310
     assert settings.storage.clamd_timeout_seconds == 10.0
+    assert settings.github_issues.owner == "koevoet1221"
+    assert settings.github_issues.repo == "openmlupload-testing"
 
 
 def test_cookie_secure_can_be_disabled_for_local_http(monkeypatch):

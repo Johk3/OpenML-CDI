@@ -57,6 +57,8 @@ COPY --from=python-builder /install /usr/local
 
 # Copy FastAPI application code
 COPY app/ ./app
+COPY alembic.ini ./alembic.ini
+COPY alembic/ ./alembic
 
 # Copy React build output into a 'static' folder served by FastAPI
 COPY --from=frontend-builder /app/frontend/dist ./app/static

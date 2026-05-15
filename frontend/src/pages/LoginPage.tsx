@@ -5,6 +5,8 @@ import { useSearchParams } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
+
 export const LoginPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const error = searchParams.get('error');
@@ -73,7 +75,7 @@ const GitHubLoginButton: React.FC = () => (
         border: 'none',
       }}
     >
-      <a href={`${import.meta.env.VITE_API_BASE_URL}/api/auth/github/login`}>
+      <a href={`${API_BASE_URL}/api/auth/github/login`}>
         <Github size={20} />
         Continue with GitHub
       </a>

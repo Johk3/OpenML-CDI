@@ -1,0 +1,109 @@
+name: openml-upload
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${OPENML_UPLOAD_IMAGE:-openml-upload:local}
+    restart: unless-stopped
+    depends_on:
+      database:
+        condition: service_healthy
+      clamd:
+        condition: service_started
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DATABASE_URI: postgresql+psycopg://${POSTGRES_USER:-openml_upload}:${POSTGRES_PASSWORD:-please-change}@database:5432/${POSTGRES_DB:-openml_upload}
+      JWT_SECRET: ${JWT_SECRET:-please-change}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8000}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8000,http://127.0.0.1:8000}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      LOCAL_UPLOAD_DIR: /data/uploads
+      QUARANTINE_DIR: /data/quarantine
+      CLAMD_HOST: clamd
+      CLAMD_PORT: 3310
+      CLAMD_TIMEOUT_SECONDS: ${CLAMD_TIMEOUT_SECONDS:-10}
+      UPLOAD_URL_EXPIRES_SECONDS: ${UPLOAD_URL_EXPIRES_SECONDS:-3600}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_SECRET: ${GITHUB_SECRET:-}
+      GITHUB_REDIRECT: ${GITHUB_REDIRECT:-http://localhost:8000/login/callback}
+      GITHUB_ISSUES_OWNER: ${GITHUB_ISSUES_OWNER:-koevoet1221}
+      GITHUB_ISSUES_REPO: ${GITHUB_ISSUES_REPO:-openmlupload-testing}
+      AUTH_DEV_MODE_APPROVE_ALL_LOGINS: ${AUTH_DEV_MODE_APPROVE_ALL_LOGINS:-false}
+    command:
+      - /bin/sh
+      - -c
+      - |
+        alembic upgrade head
+        exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+    volumes:
+      - openml-data:/data
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'python -c "import urllib.request; urllib.request.urlopen(''http://127.0.0.1:8000/docs'', timeout=5).close()"',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks:
+      - app-network
+
+  database:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-openml_upload}
+      POSTGRES_USER: ${POSTGRES_USER:-openml_upload}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-please-change}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+
+  clamd:
+    image: clamav/clamav:stable
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      CADDY_SITE_ADDRESS: ${CADDY_SITE_ADDRESS:-:80}
+    ports:
+      - "${HTTP_PORT:-8000}:80"
+      - "${HTTPS_PORT:-8443}:443"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - app-network
+
+volumes:
+  openml-data:
+  postgres-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  app-network:
+    driver: bridge
