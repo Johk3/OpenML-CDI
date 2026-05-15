@@ -19,6 +19,8 @@ app/.env
 # Database
 app_dev.db
 .local_uploads/
+app/data/*
+!app/data/.gitkeep
 
 # NixOS
 flake.nix
