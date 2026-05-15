@@ -164,8 +164,12 @@ def scan_uploaded_files(
         if dataset is None:
             return None
 
+        dataset.status = Statuses.SCANNING
+        db.commit()
+
         overall_results: list[dict[str, Any]] = []
         all_clean = True
+        integration_failed = False
 
         for storage_key in storage_keys:
             rel_path = _get_relative_path(storage_key)
@@ -232,6 +236,7 @@ def scan_uploaded_files(
                         "Failed to move clean file for dataset %s", dataset.id
                     )
                     all_clean = False
+                    integration_failed = True
                     scan_result = _scan_error_result(
                         rel_path=rel_path,
                         message=f"Failed to promote clean file: {str(error)}",
@@ -247,7 +252,11 @@ def scan_uploaded_files(
 
         scan_summary = {"files": overall_results, "engine": SCAN_ENGINE}
         _set_scan_metadata(dataset, scan_summary)
-        # Uploaded datasets stay pending expert review unless malware is detected.
-        dataset.status = Statuses.PENDING if all_clean else Statuses.QUARANTINED
+        if all_clean:
+            dataset.status = Statuses.PENDING_REVIEW
+        elif integration_failed:
+            dataset.status = Statuses.INTEGRATION_FAILED
+        else:
+            dataset.status = Statuses.QUARANTINED
         db.commit()
         return scan_summary

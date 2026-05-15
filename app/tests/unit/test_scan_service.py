@@ -126,7 +126,7 @@ def _run_scan(
     )
 
 
-def test_scan_uploaded_clean_file_moves_to_dataset_ready_dir_and_stays_pending(
+def test_scan_uploaded_clean_file_moves_to_dataset_ready_dir_and_marks_pending_review(
     db_test_session, tmp_path: Path, monkeypatch
 ):
     storage = LocalStorageBackend(tmp_path / "uploads")
@@ -166,7 +166,7 @@ def test_scan_uploaded_clean_file_moves_to_dataset_ready_dir_and_stays_pending(
     assert not list(quarantine_dir.glob("*"))
     final_key_path = storage._root / "ready" / str(dataset.id) / "clean.csv"
     assert final_key_path.read_bytes() == payload
-    assert dataset.status == Statuses.PENDING
+    assert dataset.status == Statuses.PENDING_REVIEW
     assert dataset.dataset_metadata["malware_scan"] == {
         "files": [
             {
@@ -303,7 +303,7 @@ def test_scan_uploaded_s3_clean_file_promotes_quarantine_object(
     assert obj["upload_state"] == "promoted"
     assert obj["final_object_key"] == final_key
     assert obj["download_state"] == "downloadable"
-    assert dataset.status == Statuses.PENDING
+    assert dataset.status == Statuses.PENDING_REVIEW
 
 
 def test_scan_uploaded_s3_promotion_failure_prevents_download(
@@ -365,7 +365,7 @@ def test_scan_uploaded_s3_promotion_failure_prevents_download(
     obj = dataset.dataset_metadata["objects"][0]
     assert storage.promotions == []
     assert storage_key in storage.objects
-    assert dataset.status == Statuses.QUARANTINED
+    assert dataset.status == Statuses.INTEGRATION_FAILED
     assert obj["scan_state"] == "error"
     assert obj["final_object_key"] is None
     assert obj["download_state"] == "unavailable"
@@ -403,7 +403,7 @@ def test_scan_uploaded_nested_folder_preserves_structure(
     db_test_session.refresh(dataset)
     expected_path = storage._root / "ready" / str(dataset.id) / "folder/sub/data.csv"
     assert expected_path.read_bytes() == payload
-    assert dataset.status == Statuses.PENDING
+    assert dataset.status == Statuses.PENDING_REVIEW
     assert dataset.dataset_metadata["malware_scan"]["files"][0]["file"] == (
         "folder/sub/data.csv"
     )

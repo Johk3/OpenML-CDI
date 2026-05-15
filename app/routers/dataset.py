@@ -57,6 +57,14 @@ from app.services.github_issues import (
     create_issue_for_dataset,
     get_issue_with_comments,
 )
+from app.services.dataset_lifecycle import (
+    DatasetLifecycleError,
+    DatasetLifecyclePermissionError,
+    assert_lifecycle_transition_allowed,
+    lifecycle_state,
+    lifecycle_summary,
+    requested_lifecycle_state,
+)
 from app.storage.errors import StorageError
 from app.database import SessionLocal
 
@@ -170,7 +178,7 @@ def create_upload_url(
         title=payload.name,
         dataset_metadata=dataset_metadata,
         owner_id=current_user.id,
-        status=Statuses.PENDING,
+        status=Statuses.PENDING_UPLOAD,
     )
     try:
         db.add(dataset)
@@ -435,6 +443,9 @@ def complete_multipart_upload(
         dataset_crud.update_dataset_metadata(
             db=db, dataset_id=dataset_id, metadata=metadata
         )
+        dataset_crud.update_dataset_status(
+            db=db, dataset_id=dataset_id, status=Statuses.UPLOADED
+        )
     except (
         DatasetObjectValidationError,
         NotImplementedError,
@@ -566,6 +577,9 @@ def confirm_upload(
         dataset_crud.update_dataset_metadata(
             db=db, dataset_id=dataset_id, metadata=metadata
         )
+        dataset_crud.update_dataset_status(
+            db=db, dataset_id=dataset_id, status=Statuses.UPLOADED
+        )
     except (DatasetObjectValidationError, StorageError, ValueError) as error:
         _delete_failed_upload(
             request=request,
@@ -640,23 +654,41 @@ def expert_or_owner(current_user: User, dataset: Dataset | None) -> None:
         )
 
 
-def ensure_status_update_allowed(dataset: Dataset, next_status: Statuses) -> None:
-    if dataset.status == Statuses.QUARANTINED and next_status not in {
-        Statuses.QUARANTINED,
-        Statuses.REJECTED,
-    }:
-        raise HTTPException(
-            status_code=http_status.HTTP_409_CONFLICT,
-            detail="Quarantined datasets can only be rejected",
-        )
-
-    if next_status in {Statuses.APPROVED, Statuses.PUBLISHED} and not (
-        _has_review_ready_files(dataset)
+def ensure_status_update_allowed(
+    dataset: Dataset,
+    next_status: Statuses,
+    *,
+    actor_role: Roles,
+) -> None:
+    current_state = lifecycle_state(dataset)
+    next_state = requested_lifecycle_state(next_status)
+    if (
+        current_state != Statuses.QUARANTINED
+        and next_state in {Statuses.APPROVED, Statuses.PUBLISHED}
+        and not _has_review_ready_files(dataset)
     ):
         raise HTTPException(
             status_code=http_status.HTTP_409_CONFLICT,
             detail="Dataset is not ready for expert approval",
         )
+
+    try:
+        assert_lifecycle_transition_allowed(
+            dataset,
+            next_status,
+            actor_role=actor_role,
+            system=False,
+        )
+    except DatasetLifecyclePermissionError as error:
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail=str(error),
+        ) from error
+    except DatasetLifecycleError as error:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail=str(error),
+        ) from error
 
 
 def _has_review_ready_files(dataset: Dataset) -> bool:
@@ -677,13 +709,17 @@ def _has_review_ready_files(dataset: Dataset) -> bool:
 
 
 def _is_visible_in_expert_review_queue(dataset: Dataset) -> bool:
+    state = lifecycle_state(dataset)
+    if state == Statuses.PENDING_REVIEW:
+        return True
     if dataset.status == Statuses.PENDING:
         return _has_review_ready_files(dataset)
-    return dataset.status in {
+    return state in {
         Statuses.QUARANTINED,
         Statuses.APPROVED,
         Statuses.REJECTED,
         Statuses.PUBLISHED,
+        Statuses.INTEGRATION_FAILED,
     }
 
 
@@ -863,6 +899,7 @@ def _delete_failed_upload(
 def _dataset_detail_response(dataset: DatasetModel) -> DatasetDetail:
     metadata = dict(dataset.dataset_metadata or {})
     storage_objects = get_dataset_objects(metadata)
+    lifecycle = lifecycle_summary(dataset)
     has_downloadable_files = bool(storage_keys_from_metadata(metadata))
     return DatasetDetail(
         id=dataset.id,
@@ -878,6 +915,7 @@ def _dataset_detail_response(dataset: DatasetModel) -> DatasetDetail:
         ),
         storage_objects=storage_objects,
         upload_package=get_upload_package_metadata(metadata),
+        lifecycle=lifecycle,
     )
 
 
@@ -982,8 +1020,12 @@ def update_status_dataset(
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    ensure_status_update_allowed(dataset, status)
-    dataset_crud.update_dataset_status(db=db, dataset_id=dataset_id, status=status)
+    ensure_status_update_allowed(dataset, status, actor_role=current_user.role)
+    dataset_crud.update_dataset_status(
+        db=db,
+        dataset_id=dataset_id,
+        status=requested_lifecycle_state(status),
+    )
     return {"status_code": 200, "message": "Dataset status updated successfully"}
 
 

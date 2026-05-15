@@ -5,6 +5,7 @@ import pytest
 from github import GithubException
 
 from app.config import GitHubIssuesSettings
+from app.database.models import Statuses
 from app.services.github_issues import (
     GitHubAPIError,
     _build_issue_body,
@@ -226,6 +227,8 @@ class TestCreateIssueForDataset:
 
         mock_dataset = MagicMock()
         mock_dataset.issue_url = ""
+        mock_dataset.status = Statuses.PENDING_REVIEW
+        mock_dataset.dataset_metadata = {}
         mock_db = MagicMock()
         mock_db.get.return_value = mock_dataset
         mock_db.__enter__ = MagicMock(return_value=mock_db)
@@ -250,7 +253,14 @@ class TestCreateIssueForDataset:
     @patch("app.services.github_issues.create_issue")
     def test_handles_api_error_gracefully(self, mock_create, settings):
         mock_create.side_effect = GitHubAPIError("rate limit", 403)
-        mock_db_factory = MagicMock()
+        mock_dataset = MagicMock()
+        mock_dataset.status = Statuses.PENDING_REVIEW
+        mock_dataset.dataset_metadata = {}
+        mock_db = MagicMock()
+        mock_db.get.return_value = mock_dataset
+        mock_db.__enter__ = MagicMock(return_value=mock_db)
+        mock_db.__exit__ = MagicMock(return_value=False)
+        mock_db_factory = MagicMock(return_value=mock_db)
 
         # Should not raise
         create_issue_for_dataset(
@@ -261,7 +271,8 @@ class TestCreateIssueForDataset:
             app_base_url="http://localhost:8000",
             db_factory=mock_db_factory,
         )
-        mock_db_factory.assert_not_called()
+        assert mock_dataset.status == "integration_failed"
+        mock_db.commit.assert_called_once()
 
 
 class TestUpdateIssue:

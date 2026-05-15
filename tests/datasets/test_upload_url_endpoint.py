@@ -218,7 +218,7 @@ def test_upload_url_creates_pending_dataset_and_returns_presigned_url(
             storage_key=expected_storage_key,
         )
         assert dataset.owner_id == uploader_id
-        assert dataset.status == Statuses.PENDING
+        assert dataset.status == Statuses.PENDING_UPLOAD
 
 
 def test_confirm_upload_triggers_scan_and_returns_202(
@@ -757,7 +757,7 @@ def test_upload_url_accepts_unsupported_format_and_persists_content_type(
             storage_key=expected_storage_key,
             content_type="application/x-custom-dataset",
         )
-        assert dataset.status == Statuses.PENDING
+        assert dataset.status == Statuses.PENDING_UPLOAD
 
 
 def test_upload_url_requires_authentication(client: TestClient):

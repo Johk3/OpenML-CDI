@@ -104,7 +104,7 @@ def _confirm_upload(scan_client: TestClient, dataset_id: uuid.UUID, access_token
     )
 
 
-def test_confirm_upload_promotes_clean_file_and_keeps_dataset_pending(
+def test_confirm_upload_promotes_clean_file_and_marks_dataset_pending_review(
     scan_client: TestClient, db_test_session, monkeypatch
 ):
     uploader_id = uuid.uuid4()
@@ -130,7 +130,7 @@ def test_confirm_upload_promotes_clean_file_and_keeps_dataset_pending(
     assert response.status_code == 202
     db_test_session.expire_all()
     dataset = db_test_session.get(Dataset, dataset_id)
-    assert dataset.status == Statuses.PENDING
+    assert dataset.status == Statuses.PENDING_REVIEW
     assert dataset.dataset_metadata["malware_scan"] == {
         "files": [
             {

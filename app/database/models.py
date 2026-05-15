@@ -13,13 +13,18 @@ class Roles(str, enum.Enum):
 
 
 class Statuses(str, enum.Enum):
+    PENDING_UPLOAD = "pending_upload"
+    UPLOADED = "uploaded"
+    SCANNING = "scanning"
+    PENDING_REVIEW = "pending_review"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    PUBLISHED = "published"
+    INTEGRATION_FAILED = "integration_failed"
     PENDING = "pending"
     CLAIMED = "claimed"
     CONVERTED = "converted"
     QUARANTINED = "quarantined"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    PUBLISHED = "published"
 
 
 class User(Base):
@@ -60,7 +65,7 @@ class Dataset(Base):
     )
     dataset_metadata: Mapped[dict] = mapped_column(JSON, nullable=False)
     status: Mapped[Statuses] = mapped_column(
-        SQLEnum(Statuses), default=Statuses.PENDING, nullable=False
+        SQLEnum(Statuses), default=Statuses.PENDING_UPLOAD, nullable=False
     )
     issue_url: Mapped[str] = mapped_column(Text, default="")
 

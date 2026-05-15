@@ -15,7 +15,7 @@ class DatasetBase(BaseModel):
 
 
 class DatasetCreate(DatasetBase):
-    status: Statuses = Statuses.PENDING
+    status: Statuses = Statuses.PENDING_UPLOAD
 
 
 class Dataset(DatasetBase):
@@ -33,6 +33,7 @@ class DatasetDetail(Dataset):
     download_url: str | None = None
     storage_objects: list[dict[str, Any]] = Field(default_factory=list)
     upload_package: dict[str, Any] | None = None
+    lifecycle: dict[str, Any] = Field(default_factory=dict)
 
 
 class DatasetUploadURLRequest(BaseModel):

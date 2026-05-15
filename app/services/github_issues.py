@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 from github import Github, Auth, GithubException, GithubIntegration
 
 from app.config import GitHubIssuesSettings
-from app.database.models import Dataset
+from app.database.models import Dataset, Statuses
+from app.services.dataset_lifecycle import lifecycle_state
 
 logger = logging.getLogger(__name__)
 
@@ -301,6 +302,19 @@ def create_issue_for_dataset(
         )
         return
 
+    with db_factory() as db:
+        dataset = db.get(Dataset, dataset_id)
+        if dataset is None:
+            logger.warning("Dataset %s not found before creating issue", dataset_id)
+            return
+        if lifecycle_state(dataset) != Statuses.PENDING_REVIEW:
+            logger.info(
+                "GitHub issue creation skipped for dataset %s in lifecycle state %s",
+                dataset_id,
+                lifecycle_state(dataset).value,
+            )
+            return
+
     try:
         html_url = create_issue(
             settings=settings,
@@ -311,10 +325,18 @@ def create_issue_for_dataset(
         )
     except GitHubAPIError:
         logger.exception("Failed to create GitHub issue for dataset %s", dataset_id)
+        _mark_dataset_integration_failed(
+            dataset_id=dataset_id,
+            db_factory=db_factory,
+        )
         return
     except Exception:
         logger.exception(
             "Network error creating GitHub issue for dataset %s", dataset_id
+        )
+        _mark_dataset_integration_failed(
+            dataset_id=dataset_id,
+            db_factory=db_factory,
         )
         return
 
@@ -327,6 +349,19 @@ def create_issue_for_dataset(
         db.commit()
 
     logger.info("GitHub issue created for dataset %s: %s", dataset_id, html_url)
+
+
+def _mark_dataset_integration_failed(
+    *,
+    dataset_id: Any,
+    db_factory: Callable[[], Session],
+) -> None:
+    with db_factory() as db:
+        dataset = db.get(Dataset, dataset_id)
+        if dataset is None:
+            return
+        dataset.status = Statuses.INTEGRATION_FAILED
+        db.commit()
 
 
 def update_issue_for_dataset(

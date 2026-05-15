@@ -637,6 +637,91 @@ def test_unscanned_pending_dataset_cannot_be_approved(client, db_test_session):
     assert db_test_session.get(Dataset, dataset_id).status == Statuses.PENDING
 
 
+def test_non_expert_cannot_approve_dataset(client, db_test_session):
+    owner_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    db_test_session.add(_user(user_id=owner_id, role=Roles.USER))
+    db_test_session.add(
+        Dataset(
+            id=dataset_id,
+            title="Review dataset",
+            owner_id=owner_id,
+            dataset_metadata={
+                "filenames": ["clean.csv"],
+                "objects": [
+                    _object_metadata(
+                        final_object_key="ready/dataset/clean.csv",
+                        scan_state="clean",
+                        download_state="downloadable",
+                    )
+                ],
+            },
+            status=Statuses.PENDING_REVIEW,
+        )
+    )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(owner_id), "type": "access"})
+
+    response = client.post(
+        "/api/datasets/status",
+        params={"dataset_id": str(dataset_id), "status": "approved"},
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Only experts can change dataset status"}
+    db_test_session.expire_all()
+    assert db_test_session.get(Dataset, dataset_id).status == Statuses.PENDING_REVIEW
+
+
+def test_expert_can_approve_review_ready_dataset(client, db_test_session):
+    owner_id = uuid.uuid4()
+    expert_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    db_test_session.add(_user(user_id=owner_id, role=Roles.USER))
+    db_test_session.add(
+        User(
+            id=expert_id,
+            email="expert@example.com",
+            username="expert",
+            first_name="Expert",
+            last_name="User",
+            role=Roles.EXPERT,
+            created_at=datetime.now(timezone.utc),
+        )
+    )
+    db_test_session.add(
+        Dataset(
+            id=dataset_id,
+            title="Review dataset",
+            owner_id=owner_id,
+            dataset_metadata={
+                "filenames": ["clean.csv"],
+                "objects": [
+                    _object_metadata(
+                        final_object_key="ready/dataset/clean.csv",
+                        scan_state="clean",
+                        download_state="downloadable",
+                    )
+                ],
+            },
+            status=Statuses.PENDING_REVIEW,
+        )
+    )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(expert_id), "type": "access"})
+
+    response = client.post(
+        "/api/datasets/status",
+        params={"dataset_id": str(dataset_id), "status": "approved"},
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 200
+    db_test_session.expire_all()
+    assert db_test_session.get(Dataset, dataset_id).status == Statuses.APPROVED
+
+
 def test_expert_default_list_includes_all_datasets(client, db_test_session):
     expert_id = uuid.uuid4()
     owner_id = uuid.uuid4()
