@@ -141,3 +141,25 @@ def test_upload_url_rejects_compressed_package_with_multiple_uploaded_objects(
 
     assert response.status_code == 400
     assert "exactly one ZIP archive" in response.json()["detail"]
+
+
+def test_upload_url_rejects_mismatched_content_type_count(
+    client, db_test_session, tmp_path
+):
+    client.app.state.storage = LocalStorageBackend(tmp_path / "uploads")
+    headers = _auth_headers(db_test_session)
+
+    response = client.post(
+        "/api/datasets/upload-url",
+        headers=headers,
+        json={
+            "name": "Invalid Content Types",
+            "filenames": ["one.csv", "two.csv"],
+            "content_types": ["text/csv"],
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Content type count must match upload target count"
+    }

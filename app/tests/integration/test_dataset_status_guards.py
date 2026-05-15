@@ -1,13 +1,15 @@
 import uuid
 from datetime import datetime, timezone
+from io import BytesIO
+from zipfile import ZipFile
 
 from app.database.models import Dataset, Roles, Statuses, User
 from app.security import create_access_token
 
 
 class _ReadableStorage:
-    def __init__(self):
-        self.objects = {"ready/dataset/clean.csv": b"clean bytes"}
+    def __init__(self, objects: dict[str, bytes] | None = None):
+        self.objects = objects or {"ready/dataset/clean.csv": b"clean bytes"}
         self.opened_keys: list[str] = []
 
     def open(self, storage_key: str, mode: str = "rb"):
@@ -47,6 +49,8 @@ def _object_metadata(
     *,
     object_key: str = "quarantine/batch/clean.csv",
     final_object_key: str | None = None,
+    original_path: str = "clean.csv",
+    content_type: str = "text/csv",
     scan_state: str = "pending",
     download_state: str = "unavailable",
 ) -> dict:
@@ -57,8 +61,8 @@ def _object_metadata(
         "object_key": object_key,
         "quarantine_key": object_key,
         "final_object_key": final_object_key,
-        "original_path": "clean.csv",
-        "content_type": "text/csv",
+        "original_path": original_path,
+        "content_type": content_type,
         "byte_size": 11,
         "checksum": None,
         "etag": "etag",
@@ -190,6 +194,383 @@ def test_download_uses_only_downloadable_final_object(client, db_test_session):
     assert response.status_code == 200
     assert response.content == b"clean bytes"
     assert storage.opened_keys == ["ready/dataset/clean.csv"]
+
+
+def test_download_archives_single_nested_object_path(client, db_test_session):
+    owner_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    storage = _ReadableStorage(
+        {"ready/dataset/folder/sub/clean.csv": b"nested clean bytes"}
+    )
+    client.app.state.storage = storage
+    db_test_session.add(_user(user_id=owner_id))
+    db_test_session.add(
+        Dataset(
+            id=dataset_id,
+            title="Nested single-file dataset",
+            owner_id=owner_id,
+            dataset_metadata={
+                "filenames": ["folder/sub/clean.csv"],
+                "directory_structure": {
+                    "compressed": False,
+                    "representation": "single_object",
+                    "root": "folder",
+                    "paths": ["folder/sub/clean.csv"],
+                    "archive_path": None,
+                    "manifest": {
+                        "version": 1,
+                        "path_count": 1,
+                        "source": "directory_structure.paths",
+                    },
+                },
+                "objects": [
+                    _object_metadata(
+                        object_key="quarantine/batch/folder/sub/clean.csv",
+                        final_object_key="ready/dataset/folder/sub/clean.csv",
+                        original_path="folder/sub/clean.csv",
+                        scan_state="clean",
+                        download_state="downloadable",
+                    )
+                ],
+            },
+            status=Statuses.PENDING,
+        )
+    )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(owner_id), "type": "access"})
+
+    response = client.get(
+        f"/api/datasets/{dataset_id}/download",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    with ZipFile(BytesIO(response.content)) as archive:
+        assert archive.namelist() == ["folder/sub/clean.csv"]
+        assert archive.read("folder/sub/clean.csv") == b"nested clean bytes"
+    assert storage.opened_keys == ["ready/dataset/folder/sub/clean.csv"]
+
+
+def test_download_archives_multi_object_folder_paths(client, db_test_session):
+    owner_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    storage = _ReadableStorage(
+        {
+            "ready/dataset/folder/train/one.csv": b"one",
+            "ready/dataset/folder/test/two.csv": b"two",
+        }
+    )
+    client.app.state.storage = storage
+    db_test_session.add(_user(user_id=owner_id))
+    db_test_session.add(
+        Dataset(
+            id=dataset_id,
+            title="Nested multi-file dataset",
+            owner_id=owner_id,
+            dataset_metadata={
+                "filenames": [
+                    "folder/train/one.csv",
+                    "folder/test/two.csv",
+                ],
+                "objects": [
+                    _object_metadata(
+                        object_key="quarantine/batch/folder/train/one.csv",
+                        final_object_key="ready/dataset/folder/train/one.csv",
+                        original_path="folder/train/one.csv",
+                        scan_state="clean",
+                        download_state="downloadable",
+                    ),
+                    _object_metadata(
+                        object_key="quarantine/batch/folder/test/two.csv",
+                        final_object_key="ready/dataset/folder/test/two.csv",
+                        original_path="folder/test/two.csv",
+                        scan_state="clean",
+                        download_state="downloadable",
+                    ),
+                ],
+            },
+            status=Statuses.PENDING,
+        )
+    )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(owner_id), "type": "access"})
+
+    response = client.get(
+        f"/api/datasets/{dataset_id}/download",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    with ZipFile(BytesIO(response.content)) as archive:
+        assert sorted(archive.namelist()) == [
+            "folder/test/two.csv",
+            "folder/train/one.csv",
+        ]
+        assert archive.read("folder/train/one.csv") == b"one"
+        assert archive.read("folder/test/two.csv") == b"two"
+    assert storage.opened_keys == [
+        "ready/dataset/folder/train/one.csv",
+        "ready/dataset/folder/test/two.csv",
+    ]
+
+
+def test_download_wraps_flat_multi_object_paths_in_dataset_folder(
+    client, db_test_session
+):
+    owner_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    storage = _ReadableStorage(
+        {
+            "ready/dataset/one.csv": b"one",
+            "ready/dataset/two.csv": b"two",
+        }
+    )
+    client.app.state.storage = storage
+    db_test_session.add(_user(user_id=owner_id))
+    db_test_session.add(
+        Dataset(
+            id=dataset_id,
+            title="Flat multi-file dataset",
+            owner_id=owner_id,
+            dataset_metadata={
+                "filenames": ["one.csv", "two.csv"],
+                "objects": [
+                    _object_metadata(
+                        object_key="quarantine/batch/one.csv",
+                        final_object_key="ready/dataset/one.csv",
+                        original_path="one.csv",
+                        scan_state="clean",
+                        download_state="downloadable",
+                    ),
+                    _object_metadata(
+                        object_key="quarantine/batch/two.csv",
+                        final_object_key="ready/dataset/two.csv",
+                        original_path="two.csv",
+                        scan_state="clean",
+                        download_state="downloadable",
+                    ),
+                ],
+            },
+            status=Statuses.PENDING,
+        )
+    )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(owner_id), "type": "access"})
+
+    response = client.get(
+        f"/api/datasets/{dataset_id}/download",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    root = f"dataset_{dataset_id}"
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    with ZipFile(BytesIO(response.content)) as archive:
+        assert sorted(archive.namelist()) == [
+            f"{root}/one.csv",
+            f"{root}/two.csv",
+        ]
+        assert archive.read(f"{root}/one.csv") == b"one"
+        assert archive.read(f"{root}/two.csv") == b"two"
+    assert storage.opened_keys == [
+        "ready/dataset/one.csv",
+        "ready/dataset/two.csv",
+    ]
+
+
+def test_download_streams_compressed_upload_package(client, db_test_session):
+    owner_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    zip_payload = BytesIO()
+    with ZipFile(zip_payload, "w") as archive:
+        archive.writestr("folder/train/one.csv", b"one")
+        archive.writestr("folder/test/two.csv", b"two")
+    storage = _ReadableStorage(
+        {"ready/dataset/Folder_Dataset_files.zip": zip_payload.getvalue()}
+    )
+    client.app.state.storage = storage
+    db_test_session.add(_user(user_id=owner_id))
+    db_test_session.add(
+        Dataset(
+            id=dataset_id,
+            title="Compressed dataset",
+            owner_id=owner_id,
+            dataset_metadata={
+                "filenames": ["Folder_Dataset_files.zip"],
+                "directory_structure": {
+                    "compressed": True,
+                    "representation": "zip",
+                    "root": "folder",
+                    "paths": ["folder/train/one.csv", "folder/test/two.csv"],
+                    "archive_path": "Folder_Dataset_files.zip",
+                    "manifest": {
+                        "version": 1,
+                        "path_count": 2,
+                        "source": "browser-selection",
+                    },
+                },
+                "objects": [
+                    _object_metadata(
+                        object_key="quarantine/batch/Folder_Dataset_files.zip",
+                        final_object_key="ready/dataset/Folder_Dataset_files.zip",
+                        original_path="Folder_Dataset_files.zip",
+                        content_type="application/zip",
+                        scan_state="clean",
+                        download_state="downloadable",
+                    )
+                ],
+            },
+            status=Statuses.PENDING,
+        )
+    )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(owner_id), "type": "access"})
+
+    response = client.get(
+        f"/api/datasets/{dataset_id}/download",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    with ZipFile(BytesIO(response.content)) as archive:
+        assert sorted(archive.namelist()) == [
+            "folder/test/two.csv",
+            "folder/train/one.csv",
+        ]
+    assert storage.opened_keys == ["ready/dataset/Folder_Dataset_files.zip"]
+
+
+def test_download_rejects_duplicate_original_paths_before_packaging(
+    client, db_test_session
+):
+    owner_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    storage = _ReadableStorage(
+        {
+            "ready/dataset/one.csv": b"one",
+            "ready/dataset/two.csv": b"two",
+        }
+    )
+    client.app.state.storage = storage
+    db_test_session.add(_user(user_id=owner_id))
+    db_test_session.add(
+        Dataset(
+            id=dataset_id,
+            title="Duplicate path dataset",
+            owner_id=owner_id,
+            dataset_metadata={
+                "objects": [
+                    _object_metadata(
+                        object_key="quarantine/batch/one.csv",
+                        final_object_key="ready/dataset/one.csv",
+                        original_path="same.csv",
+                        scan_state="clean",
+                        download_state="downloadable",
+                    ),
+                    _object_metadata(
+                        object_key="quarantine/batch/two.csv",
+                        final_object_key="ready/dataset/two.csv",
+                        original_path="same.csv",
+                        scan_state="clean",
+                        download_state="downloadable",
+                    ),
+                ],
+            },
+            status=Statuses.PENDING,
+        )
+    )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(owner_id), "type": "access"})
+
+    response = client.get(
+        f"/api/datasets/{dataset_id}/download",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Duplicate original paths are not allowed"}
+    assert storage.opened_keys == []
+
+
+def test_download_rejects_unsafe_original_paths_before_packaging(
+    client, db_test_session
+):
+    owner_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    storage = _ReadableStorage({"ready/dataset/secret.csv": b"secret"})
+    client.app.state.storage = storage
+    db_test_session.add(_user(user_id=owner_id))
+    db_test_session.add(
+        Dataset(
+            id=dataset_id,
+            title="Unsafe path dataset",
+            owner_id=owner_id,
+            dataset_metadata={
+                "objects": [
+                    _object_metadata(
+                        object_key="quarantine/batch/secret.csv",
+                        final_object_key="ready/dataset/secret.csv",
+                        original_path="../secret.csv",
+                        scan_state="clean",
+                        download_state="downloadable",
+                    )
+                ],
+            },
+            status=Statuses.PENDING,
+        )
+    )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(owner_id), "type": "access"})
+
+    response = client.get(
+        f"/api/datasets/{dataset_id}/download",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "original path cannot be absolute or contain '..'"
+    }
+    assert storage.opened_keys == []
+
+
+def test_download_still_rejects_non_owner(client, db_test_session):
+    owner_id = uuid.uuid4()
+    other_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    client.app.state.storage = _ReadableStorage()
+    db_test_session.add_all([_user(user_id=owner_id), _user(user_id=other_id)])
+    db_test_session.add(
+        Dataset(
+            id=dataset_id,
+            title="Private dataset",
+            owner_id=owner_id,
+            dataset_metadata={
+                "filenames": ["clean.csv"],
+                "objects": [
+                    _object_metadata(
+                        final_object_key="ready/dataset/clean.csv",
+                        scan_state="clean",
+                        download_state="downloadable",
+                    )
+                ],
+            },
+            status=Statuses.PENDING,
+        )
+    )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(other_id), "type": "access"})
+
+    response = client.get(
+        f"/api/datasets/{dataset_id}/download",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Not authorized to access this dataset"}
 
 
 def test_download_rejects_unscanned_quarantine_object(client, db_test_session):

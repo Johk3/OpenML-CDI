@@ -19,8 +19,10 @@ from app.schemas.users import User
 load_dotenv()
 JWT_SECRET = os.getenv("JWT_SECRET", "")
 if JWT_SECRET == "":
-    raise ValueError("""Please supply a JWT secret (Ed25519 private key)
-         using the env var 'JWT_SECRET'""")
+    raise ValueError(
+        "Please supply a JWT secret (Ed25519 private key) "
+        "using the env var 'JWT_SECRET'"
+    )
 
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 

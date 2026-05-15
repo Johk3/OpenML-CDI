@@ -39,7 +39,7 @@ from app.database.models import Dataset as DatasetModel
 import uuid
 from uuid import uuid4
 from typing import Annotated, Literal
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from app.services.scan import scan_uploaded_files
 from app.services.dataset_objects import (
     DatasetObjectValidationError,
@@ -87,7 +87,11 @@ def create_upload_url(
         )
         upload_targets.append(upload_target)
         storage_keys.append(upload_target.storage_key)
-        content_type = payload.content_types[index] if payload.content_types else None
+        content_type = (
+            payload.content_types[index]
+            if payload.content_types and index < len(payload.content_types)
+            else None
+        )
         url = _create_upload_contract_url(
             request=request,
             storage_key=upload_target.storage_key,
@@ -803,7 +807,8 @@ def list_datasets(
             for row in rows
             if _is_visible_in_expert_review_queue(row)
         ]
-        return reviewable[offset : offset + limit]
+        slice_end = offset + limit
+        return reviewable[offset:slice_end]
 
     if scope == "mine" or current_user.role != Roles.EXPERT:
         return dataset_crud.get_datasets_for_user(db=db, user_id=current_user.id)
@@ -1021,38 +1026,102 @@ def download_dataset(
         raise HTTPException(status_code=404, detail="Dataset not found")
 
     downloadable_objects = _downloadable_objects(dataset)
+    storage = request.app.state.storage
 
-    if len(downloadable_objects) > 1:
-        archive = BytesIO()
-        with ZipFile(archive, "w", compression=ZIP_DEFLATED) as zip_file:
-            for storage_key, original_path in downloadable_objects:
-                with request.app.state.storage.open(storage_key, "rb") as f:
-                    zip_file.writestr(original_path, f.read())
-        archive.seek(0)
-        filename = f"dataset_{dataset_id}.zip"
-        return StreamingResponse(
-            archive,
-            media_type="application/zip",
-            headers={"Content-Disposition": f"attachment; filename={filename}"},
+    if _should_archive_download(downloadable_objects):
+        return _archive_download_response(
+            storage=storage,
+            downloadable_objects=downloadable_objects,
+            dataset_id=dataset_id,
         )
 
-    storage_key, original_path = downloadable_objects[0]
-    filename = Path(original_path).name
+    storage_key, original_path, content_type = downloadable_objects[0]
+    filename = PurePosixPath(original_path).name
 
     def iter_file():
-        with request.app.state.storage.open(storage_key, "rb") as f:
+        with storage.open(storage_key, "rb") as f:
             # chunked read
             while chunk := f.read(1024 * 1024):  # 1MB chunks
                 yield chunk
 
     return StreamingResponse(
         iter_file(),
-        media_type="application/octet-stream",
+        media_type=_download_media_type(original_path, content_type),
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 
-def _downloadable_objects(dataset: Dataset) -> list[tuple[str, str]]:
+def _archive_download_response(
+    *,
+    storage,
+    downloadable_objects: list[tuple[str, str, str | None]],
+    dataset_id: uuid.UUID,
+) -> StreamingResponse:
+    archive = BytesIO()
+    archive_root = _synthetic_archive_root(downloadable_objects, dataset_id)
+    with ZipFile(archive, "w", compression=ZIP_DEFLATED) as zip_file:
+        for storage_key, original_path, _content_type in downloadable_objects:
+            with storage.open(storage_key, "rb") as f:
+                zip_file.writestr(
+                    _archive_member_name(original_path, archive_root),
+                    f.read(),
+                )
+    archive.seek(0)
+    filename = f"dataset_{dataset_id}.zip"
+    return StreamingResponse(
+        archive,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+def _synthetic_archive_root(
+    downloadable_objects: list[tuple[str, str, str | None]],
+    dataset_id: uuid.UUID,
+) -> str | None:
+    if len(downloadable_objects) <= 1:
+        return None
+
+    roots = set()
+    for _storage_key, original_path, _content_type in downloadable_objects:
+        parts = PurePosixPath(original_path).parts
+        if len(parts) < 2:
+            return f"dataset_{dataset_id}"
+        roots.add(parts[0])
+
+    if len(roots) == 1:
+        return None
+    return f"dataset_{dataset_id}"
+
+
+def _archive_member_name(original_path: str, archive_root: str | None) -> str:
+    if archive_root is None:
+        return original_path
+    return f"{archive_root}/{original_path}"
+
+
+def _should_archive_download(
+    downloadable_objects: list[tuple[str, str, str | None]],
+) -> bool:
+    if len(downloadable_objects) > 1:
+        return True
+    original_path = downloadable_objects[0][1]
+    return "/" in original_path and not _is_zip_path(original_path)
+
+
+def _download_media_type(original_path: str, content_type: str | None) -> str:
+    if content_type:
+        return content_type
+    if _is_zip_path(original_path):
+        return "application/zip"
+    return "application/octet-stream"
+
+
+def _is_zip_path(original_path: str) -> bool:
+    return PurePosixPath(original_path).suffix.lower() == ".zip"
+
+
+def _downloadable_objects(dataset: Dataset) -> list[tuple[str, str, str | None]]:
     if dataset.status == Statuses.QUARANTINED:
         raise HTTPException(
             status_code=http_status.HTTP_409_CONFLICT,
@@ -1060,15 +1129,24 @@ def _downloadable_objects(dataset: Dataset) -> list[tuple[str, str]]:
         )
 
     metadata = dataset.dataset_metadata or {}
-    objects = get_dataset_objects(metadata)
+    try:
+        objects = get_dataset_objects(metadata)
+    except DatasetObjectValidationError as error:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
     if not objects:
         raise HTTPException(status_code=404, detail="No files found for this dataset")
 
     if "objects" not in metadata:
-        return [(obj["object_key"], obj["original_path"]) for obj in objects]
+        return [
+            (obj["object_key"], obj["original_path"], obj.get("content_type"))
+            for obj in objects
+        ]
 
     downloadable_objects = [
-        (obj["final_object_key"], obj["original_path"])
+        (obj["final_object_key"], obj["original_path"], obj.get("content_type"))
         for obj in objects
         if obj["download_state"] == "downloadable" and obj["final_object_key"]
     ]
