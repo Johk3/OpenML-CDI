@@ -54,44 +54,70 @@ function toFrontendDataset(b: BackendDataset): Dataset {
   };
 }
 
-const STATUS_CONFIG: Record<DatasetStatus, { label: string; icon: React.ReactNode; cls: string }> =
-  {
-    pending: {
-      label: 'Pending Review',
-      icon: <Clock size={13} />,
-      cls: 'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-950/60 dark:text-yellow-300 dark:border-yellow-700',
-    },
-    converted: {
-      label: 'Processing',
-      icon: <Loader2 size={13} className="animate-spin" />,
-      cls: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800',
-    },
-    claimed: {
-      label: 'Verified',
-      icon: <CheckCircle2 size={13} />,
-      cls: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800',
-    },
-    quarantined: {
-      label: 'Quarantined / Failed',
-      icon: <AlertCircle size={13} />,
-      cls: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800',
-    },
-    approved: {
-      label: 'Approved',
-      icon: <CheckCircle2 size={13} />,
-      cls: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-950/40 dark:text-green-300 dark:border-green-800',
-    },
-    rejected: {
-      label: 'Rejected',
-      icon: <XCircle size={13} />,
-      cls: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800',
-    },
-    published: {
-      label: 'Published',
-      icon: <Database size={13} />,
-      cls: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800',
-    },
-  };
+const STATUS_CONFIG: Partial<
+  Record<DatasetStatus, { label: string; icon: React.ReactNode; cls: string }>
+> = {
+  pending_upload: {
+    label: 'Pending Upload',
+    icon: <Clock size={13} />,
+    cls: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800/60 dark:text-slate-300 dark:border-slate-700',
+  },
+  uploaded: {
+    label: 'Upload Verified',
+    icon: <CheckCircle2 size={13} />,
+    cls: 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-950/40 dark:text-cyan-300 dark:border-cyan-800',
+  },
+  scanning: {
+    label: 'Scanning',
+    icon: <Loader2 size={13} className="animate-spin" />,
+    cls: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800',
+  },
+  pending_review: {
+    label: 'Pending Review',
+    icon: <Clock size={13} />,
+    cls: 'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-950/60 dark:text-yellow-300 dark:border-yellow-700',
+  },
+  pending: {
+    label: 'Pending Review',
+    icon: <Clock size={13} />,
+    cls: 'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-950/60 dark:text-yellow-300 dark:border-yellow-700',
+  },
+  converted: {
+    label: 'Processing',
+    icon: <Loader2 size={13} className="animate-spin" />,
+    cls: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800',
+  },
+  claimed: {
+    label: 'Verified',
+    icon: <CheckCircle2 size={13} />,
+    cls: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800',
+  },
+  quarantined: {
+    label: 'Quarantined / Failed',
+    icon: <AlertCircle size={13} />,
+    cls: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800',
+  },
+  approved: {
+    label: 'Approved',
+    icon: <CheckCircle2 size={13} />,
+    cls: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-950/40 dark:text-green-300 dark:border-green-800',
+  },
+  rejected: {
+    label: 'Rejected',
+    icon: <XCircle size={13} />,
+    cls: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800',
+  },
+  published: {
+    label: 'Published',
+    icon: <Database size={13} />,
+    cls: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800',
+  },
+  integration_failed: {
+    label: 'Integration Failed',
+    icon: <AlertCircle size={13} />,
+    cls: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-800',
+  },
+};
 
 const StatusBadge = ({ status }: { status: DatasetStatus }) => {
   const cfg = STATUS_CONFIG[status] || {
@@ -109,13 +135,15 @@ const StatusBadge = ({ status }: { status: DatasetStatus }) => {
   );
 };
 
+const REVIEW_READY_STATUSES: DatasetStatus[] = ['pending_review', 'pending'];
+
 export const ExpertQueuePage: React.FC = () => {
   const navigate = useNavigate();
   const { user, isLoading: userLoading } = useUserContext();
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filterStatus, setFilterStatus] = useState<DatasetStatus | 'all'>('pending');
+  const [filterStatus, setFilterStatus] = useState<DatasetStatus | 'all'>('pending_review');
   const [searchQuery, setSearchQuery] = useState('');
 
   const fetchDatasets = () => {
@@ -149,7 +177,11 @@ export const ExpertQueuePage: React.FC = () => {
 
   const filteredDatasets = useMemo(() => {
     return datasets.filter((ds) => {
-      if (filterStatus !== 'all' && ds.status !== filterStatus) return false;
+      if (filterStatus === 'pending_review' && !REVIEW_READY_STATUSES.includes(ds.status)) {
+        return false;
+      }
+      if (filterStatus !== 'all' && filterStatus !== 'pending_review' && ds.status !== filterStatus)
+        return false;
       if (searchQuery && !ds.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       return true;
     });
@@ -204,7 +236,7 @@ export const ExpertQueuePage: React.FC = () => {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="pending">Pending Review</SelectItem>
+                <SelectItem value="pending_review">Pending Review</SelectItem>
                 <SelectItem value="quarantined">Quarantined / Failed Scan</SelectItem>
                 <SelectItem value="approved">Approved</SelectItem>
                 <SelectItem value="rejected">Rejected</SelectItem>
@@ -313,7 +345,7 @@ export const ExpertQueuePage: React.FC = () => {
                         </Link>
                       </Button>
 
-                      {['pending', 'quarantined'].includes(dataset.status) && (
+                      {[...REVIEW_READY_STATUSES, 'quarantined'].includes(dataset.status) && (
                         <>
                           <Button
                             variant="default"

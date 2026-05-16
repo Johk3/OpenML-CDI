@@ -18,13 +18,44 @@ export interface TokenResponse {
 }
 
 export type DatasetStatus =
+  | 'pending_upload'
+  | 'uploaded'
+  | 'scanning'
+  | 'pending_review'
   | 'pending'
   | 'claimed'
   | 'converted'
   | 'quarantined'
   | 'approved'
   | 'rejected'
-  | 'published';
+  | 'published'
+  | 'integration_failed';
+
+export interface DatasetLifecycleSummary {
+  state: DatasetStatus | string;
+  upload: {
+    uploaded: boolean;
+    scanning: boolean;
+    quarantined: boolean;
+  };
+  review: {
+    ready: boolean;
+    approved: boolean;
+    rejected: boolean;
+    published: boolean;
+  };
+  download: {
+    available: boolean;
+  };
+  github: {
+    state: string;
+    issue_url: string;
+    error_reason?: string | null;
+    message?: string;
+    retryable?: boolean;
+    attempts?: number;
+  };
+}
 
 export interface CroissantVariable {
   name: string;
@@ -92,5 +123,6 @@ export interface Dataset {
     email: string;
   };
   malwareScan?: MalwareScan;
+  lifecycle?: DatasetLifecycleSummary;
   rawMetadata?: Record<string, unknown>;
 }

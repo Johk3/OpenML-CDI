@@ -1,3 +1,5 @@
+import type { DatasetLifecycleSummary } from './auth';
+
 export type UploadRepresentation = 'single_object' | 'multi_object' | 'zip';
 
 export interface UploadDirectoryStructure {
@@ -81,6 +83,10 @@ export interface BackendDataset {
   owner_id: string;
   dataset_metadata: Record<string, unknown>;
   issue_url: string;
+  download_url?: string | null;
+  storage_objects?: Record<string, unknown>[];
+  upload_package?: UploadDirectoryStructure | null;
+  lifecycle?: DatasetLifecycleSummary;
 }
 
 export interface DatasetMultipartUploadResponse {

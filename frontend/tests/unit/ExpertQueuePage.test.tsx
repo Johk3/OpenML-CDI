@@ -30,8 +30,8 @@ describe('ExpertQueuePage', () => {
     vi.mocked(DatasetService.listDatasets).mockResolvedValue([
       {
         id: 'ds-1',
-        title: 'Pending Dataset',
-        status: 'pending',
+        title: 'Review Ready Dataset',
+        status: 'pending_review',
         dataset_metadata: { description: 'Test description 1' },
       } as unknown as BackendDataset,
       {
@@ -72,15 +72,15 @@ describe('ExpertQueuePage', () => {
     expect(DatasetService.listDatasets).toHaveBeenCalledWith({ scope: 'review_queue' });
   });
 
-  it('displays pending dataset by default', async () => {
+  it('displays pending review dataset by default', async () => {
     setupExpertUser();
     renderWithRouter(<ExpertQueuePage />, { userContext: expertUserContext });
     await waitFor(() => {
-      expect(screen.getByText('Pending Dataset')).toBeInTheDocument();
+      expect(screen.getByText('Review Ready Dataset')).toBeInTheDocument();
     });
   });
 
-  it('does not display quarantined dataset by default due to pending filter', async () => {
+  it('does not display quarantined dataset by default due to pending review filter', async () => {
     setupExpertUser();
     renderWithRouter(<ExpertQueuePage />, { userContext: expertUserContext });
     await waitFor(() => {
@@ -92,13 +92,13 @@ describe('ExpertQueuePage', () => {
     setupExpertUser();
     renderWithRouter(<ExpertQueuePage />, { userContext: expertUserContext });
 
-    await screen.findByText('Pending Dataset');
+    await screen.findByText('Review Ready Dataset');
 
     const searchInput = screen.getByPlaceholderText('Search datasets...');
-    fireEvent.change(searchInput, { target: { value: 'Pending' } });
+    fireEvent.change(searchInput, { target: { value: 'Review Ready' } });
 
     await waitFor(() => {
-      expect(screen.getByText('Pending Dataset')).toBeInTheDocument();
+      expect(screen.getByText('Review Ready Dataset')).toBeInTheDocument();
     });
   });
 
@@ -107,7 +107,7 @@ describe('ExpertQueuePage', () => {
     vi.mocked(DatasetService.updateStatus).mockResolvedValue({} as never);
     renderWithRouter(<ExpertQueuePage />, { userContext: expertUserContext });
 
-    await screen.findByText('Pending Dataset');
+    await screen.findByText('Review Ready Dataset');
 
     const approveButton = screen.getByText('Approve');
     fireEvent.click(approveButton);

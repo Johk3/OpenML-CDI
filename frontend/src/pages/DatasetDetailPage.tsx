@@ -7,6 +7,7 @@ import {
   FileText,
   Users,
   Calendar,
+  CheckCircle2,
   Shield,
   MessageSquare,
   Link as LinkIcon,
@@ -25,6 +26,7 @@ import {
   CroissantDistribution,
   CroissantMetadata,
   Dataset,
+  DatasetLifecycleSummary,
   DatasetStatus,
   MalwareScan,
 } from '../types/auth';
@@ -55,6 +57,150 @@ type BackendDatasetWithPackage = BackendDataset & {
 
 type DatasetWithUploadPackage = Dataset & {
   uploadPackage?: UploadDirectoryStructure;
+};
+
+type LifecycleTone = 'default' | 'success' | 'warning' | 'danger' | 'info';
+
+const lifecycleStateCopy: Record<
+  string,
+  { label: string; description: string; stage: string; tone: LifecycleTone }
+> = {
+  pending_upload: {
+    label: 'Waiting for upload verification',
+    description: 'The upload record exists, but the backend has not verified the uploaded files.',
+    stage: 'Upload verification',
+    tone: 'warning',
+  },
+  uploaded: {
+    label: 'Upload verified',
+    description: 'The uploaded files are stored and ready for the malware scan.',
+    stage: 'Upload verification',
+    tone: 'info',
+  },
+  scanning: {
+    label: 'Malware scan in progress',
+    description: 'The backend is checking the uploaded files before review can begin.',
+    stage: 'Scan',
+    tone: 'info',
+  },
+  pending_review: {
+    label: 'Ready for expert review',
+    description: 'The dataset passed upload and scan checks and is waiting for expert review.',
+    stage: 'Review',
+    tone: 'warning',
+  },
+  pending: {
+    label: 'Pending expert review',
+    description: 'The dataset is waiting for expert review.',
+    stage: 'Review',
+    tone: 'warning',
+  },
+  approved: {
+    label: 'Approved',
+    description: 'An expert approved this dataset for publication.',
+    stage: 'Review',
+    tone: 'success',
+  },
+  converted: {
+    label: 'Approved',
+    description: 'An expert approved this dataset for publication.',
+    stage: 'Review',
+    tone: 'success',
+  },
+  rejected: {
+    label: 'Rejected',
+    description: 'An expert rejected this dataset.',
+    stage: 'Review',
+    tone: 'danger',
+  },
+  published: {
+    label: 'Published',
+    description: 'The dataset is published and available in its final state.',
+    stage: 'Publication',
+    tone: 'success',
+  },
+  claimed: {
+    label: 'Published',
+    description: 'The dataset is published and available in its final state.',
+    stage: 'Publication',
+    tone: 'success',
+  },
+  quarantined: {
+    label: 'Quarantined',
+    description: 'The dataset is blocked because the malware scan found a problem.',
+    stage: 'Scan',
+    tone: 'danger',
+  },
+  integration_failed: {
+    label: 'Blocked by integration failure',
+    description: 'The upload passed local checks, but a required integration did not complete.',
+    stage: 'GitHub',
+    tone: 'danger',
+  },
+};
+
+const lifecycleToneClasses: Record<LifecycleTone, string> = {
+  default: 'bg-muted text-muted-foreground border-border',
+  success:
+    'bg-green-50 text-green-700 border-green-200 dark:bg-green-950/40 dark:text-green-300 dark:border-green-800',
+  warning:
+    'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-950/60 dark:text-yellow-300 dark:border-yellow-700',
+  danger:
+    'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800',
+  info: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800',
+};
+
+const getLifecycleStateCopy = (state?: string) =>
+  state && lifecycleStateCopy[state]
+    ? lifecycleStateCopy[state]
+    : {
+        label: state || 'Unknown',
+        description: 'The dataset lifecycle state is not available.',
+        stage: 'Lifecycle',
+        tone: 'default' as const,
+      };
+
+const getGitHubLifecycleCopy = (github?: DatasetLifecycleSummary['github']) => {
+  if (!github) return 'GitHub integration status is not available.';
+  if (github.state === 'linked') return 'GitHub integration linked.';
+  if (github.state === 'pending') return 'GitHub integration creation is pending.';
+  if (github.state === 'failed') {
+    return 'GitHub integration could not be created. Please ask an expert to check the GitHub integration settings.';
+  }
+  if (github.state === 'not_ready') {
+    return 'GitHub integration will be created after upload review is ready.';
+  }
+  return github.message || 'GitHub integration status is unknown.';
+};
+
+const getReviewLifecycleCopy = (
+  lifecycle: DatasetLifecycleSummary | undefined,
+  isExpert: boolean,
+) => {
+  if (!lifecycle) return 'Review state is not available.';
+  if (lifecycle.review.ready) {
+    return isExpert
+      ? 'Approve or reject this dataset from the review queue.'
+      : 'An expert can now review this dataset.';
+  }
+  if (lifecycle.review.approved) return 'This dataset has been approved.';
+  if (lifecycle.review.rejected) return 'This dataset has been rejected.';
+  return 'Review will start after upload verification and malware scan are complete.';
+};
+
+const statusLabel: Partial<Record<DatasetStatus, string>> = {
+  pending_upload: 'Waiting for Upload',
+  uploaded: 'Upload Verified',
+  scanning: 'Scanning',
+  pending_review: 'Pending Expert Review',
+  pending: 'Pending Expert Review',
+  converted: 'Approved',
+  claimed: 'Published',
+  quarantined: 'Quarantined',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  published: 'Published',
+  integration_failed: 'Integration Failed',
 };
 
 type ApiErrorPayload = {
@@ -222,6 +368,7 @@ function toFrontendDataset(b: BackendDatasetWithPackage): DatasetWithUploadPacka
     uploadPackage,
     contact: contact,
     malwareScan: metadata.malware_scan as MalwareScan,
+    lifecycle: b.lifecycle,
     rawMetadata: b.dataset_metadata,
   };
 }
@@ -387,15 +534,10 @@ export const DatasetDetailPage: React.FC = () => {
   }
 
   const { croissantMetadata } = dataset;
-  const statusLabel: Record<DatasetStatus, string> = {
-    pending: 'Pending Expert Review',
-    converted: 'Ongoing Processing',
-    claimed: 'Verified & Published',
-    quarantined: 'Processing Error',
-    approved: 'Approved',
-    rejected: 'Rejected',
-    published: 'Published',
-  };
+  const lifecycle = dataset.lifecycle;
+  const lifecycleCopy = getLifecycleStateCopy(lifecycle?.state || dataset.status);
+  const isExpert = user.role === 'expert';
+  const canDownloadDataset = Boolean(lifecycle?.download.available);
 
   return (
     <motion.div
@@ -442,7 +584,7 @@ export const DatasetDetailPage: React.FC = () => {
 
         <div className="flex gap-3 shrink-0">
           <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-primary/10 text-primary border border-primary/20">
-            {statusLabel[dataset.status]}
+            {statusLabel[dataset.status] || lifecycleCopy.label}
           </span>
         </div>
       </div>
@@ -648,24 +790,30 @@ export const DatasetDetailPage: React.FC = () => {
                         : 'Single object'}
                   </span>
                 )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                  onClick={async () => {
-                    const { blob, filename } = await DatasetService.downloadDataset(dataset.id);
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = filename;
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
-                    window.URL.revokeObjectURL(url);
-                  }}
-                >
-                  <Download size={14} /> Download Dataset
-                </Button>
+                {canDownloadDataset ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={async () => {
+                      const { blob, filename } = await DatasetService.downloadDataset(dataset.id);
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = filename;
+                      document.body.appendChild(a);
+                      a.click();
+                      a.remove();
+                      window.URL.revokeObjectURL(url);
+                    }}
+                  >
+                    <Download size={14} /> Download Dataset
+                  </Button>
+                ) : (
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Dataset files are not ready for download.
+                  </span>
+                )}
               </div>
               <div className="bg-muted/10 rounded-xl border p-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
@@ -748,6 +896,101 @@ export const DatasetDetailPage: React.FC = () => {
 
         {/* Sidebar Column */}
         <div className="space-y-6">
+          <Card className="border-primary/10 shadow-sm">
+            <CardHeader className="pb-3 border-b bg-muted/20">
+              <CardTitle>
+                <h2 className="text-base flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4" /> Dataset Lifecycle
+                </h2>
+              </CardTitle>
+              <CardDescription>
+                Upload, scan, review, publication, and integration state.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-4 space-y-4 text-sm">
+              <div className="space-y-2">
+                <span
+                  className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${lifecycleToneClasses[lifecycleCopy.tone]}`}
+                >
+                  {lifecycleCopy.label}
+                </span>
+                <p className="text-muted-foreground">{lifecycleCopy.description}</p>
+                <p className="text-xs font-medium text-foreground">{lifecycleCopy.stage}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded-lg border bg-muted/10 p-3">
+                  <p className="font-semibold">Upload verification</p>
+                  <p className="text-muted-foreground">
+                    {lifecycle?.upload.uploaded ? 'Complete' : 'Waiting'}
+                  </p>
+                </div>
+                <div className="rounded-lg border bg-muted/10 p-3">
+                  <p className="font-semibold">Scan</p>
+                  <p className="text-muted-foreground">
+                    {lifecycle?.upload.quarantined
+                      ? 'Quarantined'
+                      : lifecycle?.upload.scanning
+                        ? 'In progress'
+                        : lifecycle?.upload.uploaded
+                          ? 'Complete'
+                          : 'Waiting'}
+                  </p>
+                </div>
+                <div className="rounded-lg border bg-muted/10 p-3">
+                  <p className="font-semibold">Review</p>
+                  <p className="text-muted-foreground">
+                    {lifecycle?.review.rejected
+                      ? 'Rejected'
+                      : lifecycle?.review.approved
+                        ? 'Approved'
+                        : lifecycle?.review.ready
+                          ? 'Ready'
+                          : 'Waiting'}
+                  </p>
+                </div>
+                <div className="rounded-lg border bg-muted/10 p-3">
+                  <p className="font-semibold">Download</p>
+                  <p className="text-muted-foreground">
+                    {canDownloadDataset ? 'Available' : 'Unavailable'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-lg border bg-muted/10 p-3 space-y-1">
+                <p className="font-semibold">GitHub integration</p>
+                <p className="text-muted-foreground">{getGitHubLifecycleCopy(lifecycle?.github)}</p>
+                {lifecycle?.github.issue_url ? (
+                  <a
+                    href={lifecycle.github.issue_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                  >
+                    View on GitHub <ExternalLink size={10} />
+                  </a>
+                ) : null}
+              </div>
+
+              <div className="rounded-lg border bg-muted/10 p-3 space-y-2">
+                <p className="font-semibold">Review action</p>
+                <p className="text-muted-foreground">
+                  {getReviewLifecycleCopy(lifecycle, isExpert)}
+                </p>
+                {isExpert && lifecycle?.review.ready ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-1"
+                    onClick={() => navigate('/expert-queue')}
+                  >
+                    Open review queue
+                  </Button>
+                ) : null}
+              </div>
+            </CardContent>
+          </Card>
+
           <Card className="border-primary/10 shadow-sm">
             <CardHeader className="pb-3 border-b bg-muted/20">
               <CardTitle className="text-base flex items-center gap-2">

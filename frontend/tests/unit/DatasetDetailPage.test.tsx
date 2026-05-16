@@ -1,8 +1,9 @@
 import { screen } from '@testing-library/react';
-import { vi } from 'vitest';
+import { beforeEach, vi } from 'vitest';
 import { navigateTo } from '../utils';
 import { mockDatasetService } from '../mocks/datasetService';
 import type { BackendDataset } from '@/types/dataset';
+import { useUserContext } from '@/hooks/useUserContext';
 
 vi.mock('@/hooks/useUserContext', () => ({
   useUserContext: vi.fn(() => ({
@@ -12,7 +13,88 @@ vi.mock('@/hooks/useUserContext', () => ({
   })),
 }));
 
+const mockUseUserContext = vi.mocked(useUserContext);
+
+const setUserRole = (role: 'expert' | 'user') => {
+  mockUseUserContext.mockReturnValue({
+    user: {
+      id: 'test-user',
+      email: 'test@example.com',
+      username: 'test-user',
+      first_name: 'Test',
+      last_name: 'User',
+      role,
+      is_verified: true,
+      created_at: '2026-04-01T00:00:00Z',
+      datasets: [],
+    },
+    isLoading: false,
+    isError: false,
+  });
+};
+
+const lifecycle = (
+  state: string,
+  overrides: Partial<NonNullable<BackendDataset['lifecycle']>> = {},
+): NonNullable<BackendDataset['lifecycle']> => ({
+  state,
+  upload: {
+    uploaded: !['pending_upload'].includes(state),
+    scanning: state === 'scanning',
+    quarantined: state === 'quarantined',
+  },
+  review: {
+    ready: state === 'pending_review',
+    approved: ['approved', 'published'].includes(state),
+    rejected: state === 'rejected',
+    published: state === 'published',
+  },
+  download: {
+    available: ['approved', 'published', 'pending_review'].includes(state),
+  },
+  github: {
+    state: state === 'pending_review' ? 'pending' : 'not_ready',
+    issue_url: '',
+    error_reason: null,
+    message:
+      state === 'pending_review'
+        ? 'GitHub discussion creation is pending.'
+        : 'GitHub discussion will be created after upload review is ready.',
+    retryable: false,
+    attempts: 0,
+  },
+  ...overrides,
+});
+
+const datasetWithLifecycle = (
+  state: string,
+  overrides: Partial<BackendDataset> = {},
+): BackendDataset =>
+  ({
+    id: `ds-${state}`,
+    title: `${state} Dataset`,
+    status: state,
+    created_at: '2026-04-01T00:00:00Z',
+    owner_id: 'test-user',
+    issue_url: '',
+    dataset_metadata: {
+      description: `${state} dataset description`,
+      filenames: ['file.csv'],
+      malware_scan: {
+        engine: 'clamav',
+        files: [{ file: 'file.csv', status: state === 'quarantined' ? 'infected' : 'clean' }],
+      },
+    },
+    lifecycle: lifecycle(state),
+    ...overrides,
+  }) as BackendDataset;
+
 describe('DatasetDetailPage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setUserRole('expert');
+  });
+
   it('should render the loading state first', async () => {
     navigateTo('/datasets/ds-1');
     expect(screen.getByText(/loading dataset details.../i)).toBeInTheDocument();
@@ -147,16 +229,20 @@ describe('DatasetDetailPage', () => {
   });
 
   it('should render warning when malware scan is missing', async () => {
-    const { mockDatasetService } = await import('../mocks/datasetService');
     mockDatasetService.getDataset.mockResolvedValueOnce({
       id: 'ds-no-scan',
       title: 'No Scan Dataset',
       status: 'pending',
       created_at: '2026-04-01T00:00:00Z',
+      owner_id: 'test-user',
+      issue_url: '',
       dataset_metadata: {
         description: 'Dataset without scan info',
         filenames: ['file.csv'],
       },
+      lifecycle: lifecycle('pending_upload', {
+        download: { available: false },
+      }),
     } as unknown as BackendDataset);
 
     navigateTo('/datasets/ds-no-scan');
@@ -165,6 +251,84 @@ describe('DatasetDetailPage', () => {
 
     // Assert Malware Scan Unavailable warning
     expect(screen.getByText(/malware scan unavailable/i)).toBeInTheDocument();
+  });
+
+  it.each([
+    ['pending_upload', /waiting for upload verification/i, /upload verification/i],
+    ['scanning', /malware scan in progress/i, /scan/i],
+    ['pending_review', /ready for expert review/i, /review/i],
+    ['approved', /approved/i, /review/i],
+    ['rejected', /rejected/i, /review/i],
+    ['quarantined', /quarantined/i, /scan/i],
+    ['integration_failed', /blocked by integration failure/i, /github/i],
+  ])('renders lifecycle state %s from backend fields', async (state, stateText, stageText) => {
+    mockDatasetService.getDataset.mockResolvedValueOnce(datasetWithLifecycle(state));
+
+    navigateTo(`/datasets/ds-${state}`);
+
+    expect(await screen.findByRole('heading', { name: /dataset lifecycle/i })).toBeInTheDocument();
+    expect(screen.getAllByText(stateText).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(stageText).length).toBeGreaterThan(0);
+  });
+
+  it('hides dataset download when lifecycle marks files unavailable', async () => {
+    mockDatasetService.getDataset.mockResolvedValueOnce(
+      datasetWithLifecycle('scanning', {
+        lifecycle: lifecycle('scanning', {
+          download: { available: false },
+        }),
+      }),
+    );
+
+    navigateTo('/datasets/ds-scanning');
+
+    expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /download dataset/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/dataset files are not ready for download/i)).toBeInTheDocument();
+  });
+
+  it('shows expert action copy when review is ready', async () => {
+    mockDatasetService.getDataset.mockResolvedValueOnce(datasetWithLifecycle('pending_review'));
+    navigateTo('/datasets/ds-pending-review');
+
+    expect(await screen.findByText(/approve or reject this dataset from the review queue/i));
+  });
+
+  it('shows uploader review copy without expert actions when review is ready', async () => {
+    setUserRole('user');
+    mockDatasetService.getDataset.mockResolvedValueOnce(datasetWithLifecycle('pending_review'));
+    navigateTo('/datasets/ds-pending-review-uploader');
+
+    expect(await screen.findByText(/an expert can now review this dataset/i)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/approve or reject this dataset from the review queue/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it('uses lifecycle GitHub state copy without exposing raw provider errors', async () => {
+    mockDatasetService.getDataset.mockResolvedValueOnce(
+      datasetWithLifecycle('integration_failed', {
+        lifecycle: lifecycle('integration_failed', {
+          github: {
+            state: 'failed',
+            issue_url: '',
+            error_reason: 'permission_error',
+            message:
+              'GitHub discussion could not be created. Please ask an expert to check the GitHub integration settings.',
+            retryable: false,
+            attempts: 1,
+          },
+          download: { available: false },
+        }),
+      }),
+    );
+
+    navigateTo('/datasets/ds-integration-failed');
+
+    expect(
+      await screen.findByText(/please ask an expert to check the github integration settings/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/permission_error/i)).not.toBeInTheDocument();
   });
 
   it('should render error state for not found dataset', async () => {
