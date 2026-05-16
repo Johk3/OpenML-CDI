@@ -78,4 +78,101 @@ describe('AuthProvider', () => {
 
     await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['users', 'me'] }));
   });
+
+  it('throws a field-specific GitHub profile conflict message', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          gcTime: Infinity,
+        },
+      },
+    });
+    vi.mocked(publicClient.get).mockRejectedValue({
+      response: {
+        data: {
+          error: {
+            code: 'github_profile_conflict',
+            message:
+              'This GitHub account uses an email address that is already connected to another OpenML account.',
+            field: 'email',
+          },
+        },
+      },
+    });
+
+    let authContext: AuthContextValue | undefined;
+    const Capture = captureAuthContext((value) => {
+      authContext = value;
+    });
+
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <Capture />
+          </AuthProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    if (!authContext) {
+      throw new Error('Auth context was not captured');
+    }
+
+    await expect(authContext.loginWithGithub('github-code', 'oauth-state')).rejects.toThrow(
+      'This GitHub account uses an email address that is already connected to another OpenML account.',
+    );
+  });
+
+  it.each([
+    [
+      'username',
+      'This GitHub account uses a username that is already connected to another OpenML account.',
+    ],
+    ['github_id', 'This GitHub account is already connected to another OpenML account.'],
+  ])('throws mapped GitHub profile conflict message for %s', async (field, expectedMessage) => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          gcTime: Infinity,
+        },
+      },
+    });
+    vi.mocked(publicClient.get).mockRejectedValue({
+      response: {
+        data: {
+          error: {
+            code: 'github_profile_conflict',
+            message: 'Unable to sync GitHub profile with local account',
+            field,
+          },
+        },
+      },
+    });
+
+    let authContext: AuthContextValue | undefined;
+    const Capture = captureAuthContext((value) => {
+      authContext = value;
+    });
+
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <Capture />
+          </AuthProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    if (!authContext) {
+      throw new Error('Auth context was not captured');
+    }
+
+    await expect(authContext.loginWithGithub('github-code', 'oauth-state')).rejects.toThrow(
+      expectedMessage,
+    );
+  });
 });

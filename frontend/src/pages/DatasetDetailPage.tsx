@@ -57,6 +57,39 @@ type DatasetWithUploadPackage = Dataset & {
   uploadPackage?: UploadDirectoryStructure;
 };
 
+type ApiErrorPayload = {
+  error?: {
+    message?: string;
+    reason?: string | null;
+    retryable?: boolean;
+  };
+  detail?: string | { message?: string; reason?: string | null; retryable?: boolean };
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function parseDiscussionFetchFailure(error: unknown): {
+  message: string;
+  reason: string | null;
+  retryable: boolean;
+} {
+  const fallback = 'GitHub discussion is temporarily unavailable.';
+  if (!isRecord(error) || !isRecord(error.response) || !isRecord(error.response.data)) {
+    return { message: fallback, reason: null, retryable: true };
+  }
+
+  const payload = error.response.data as ApiErrorPayload;
+  const detail = typeof payload.detail === 'object' ? payload.detail : undefined;
+  const errorBody = payload.error || detail;
+  return {
+    message: errorBody?.message || fallback,
+    reason: errorBody?.reason || null,
+    retryable: Boolean(errorBody?.retryable ?? true),
+  };
+}
+
 function parseDistribution(value: unknown): CroissantDistribution[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -256,9 +289,16 @@ export const DatasetDetailPage: React.FC = () => {
     try {
       const data = await DatasetService.getGitHubDiscussion(id);
       setDiscussion(data);
-    } catch (Error) {
-      // Dont display an error to user
-      console.log(Error);
+    } catch (error) {
+      const failure = parseDiscussionFetchFailure(error);
+      setDiscussion({
+        state: 'unavailable',
+        html_url: '',
+        message: failure.message,
+        error_reason: failure.reason,
+        retryable: failure.retryable,
+        comments: [],
+      });
     } finally {
       setDiscussionLoading(false);
     }
@@ -293,13 +333,17 @@ export const DatasetDetailPage: React.FC = () => {
           ? 'Pending'
           : discussion?.state === 'failed'
             ? 'Failed'
-            : '';
+            : discussion?.state === 'unavailable'
+              ? 'Unavailable'
+              : '';
   const discussionStatusClass =
     discussion?.state === 'open'
       ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
       : discussion?.state === 'failed'
         ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-        : 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400';
+        : discussion?.state === 'unavailable'
+          ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+          : 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400';
 
   if (!user) {
     return (
@@ -740,14 +784,21 @@ export const DatasetDetailPage: React.FC = () => {
                   <p className="text-xs text-muted-foreground">Loading discussion…</p>
                 </div>
               ) : discussion &&
-                (discussion.state === 'pending' || discussion.state === 'failed') ? (
+                (discussion.state === 'pending' ||
+                  discussion.state === 'failed' ||
+                  discussion.state === 'unavailable') ? (
                 <div className="text-center py-6 text-muted-foreground text-sm">
-                  {discussion.state === 'failed' ? (
+                  {discussion.state === 'failed' || discussion.state === 'unavailable' ? (
                     <AlertCircle className="w-8 h-8 mx-auto mb-2 text-destructive" />
                   ) : (
                     <Loader2 className="w-8 h-8 mx-auto mb-2 animate-spin opacity-60" />
                   )}
-                  <p>{discussion.message || 'GitHub discussion creation is pending.'}</p>
+                  <p>
+                    {discussion.message ||
+                      (discussion.state === 'pending'
+                        ? 'GitHub discussion creation is pending.'
+                        : 'GitHub discussion is temporarily unavailable.')}
+                  </p>
                 </div>
               ) : discussion && discussion.state !== 'none' && discussion.comments.length > 0 ? (
                 <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">

@@ -220,6 +220,29 @@ def test_login_redirects_to_github_when_dev_mode_disabled(client, monkeypatch):
     assert location.startswith("https://github.com/login/oauth/authorize")
 
 
+def test_github_login_configuration_error_uses_public_message(client, monkeypatch):
+    monkeypatch.setenv("AUTH_DEV_MODE_APPROVE_ALL_LOGINS", "false")
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.delenv("GITHUB_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GITHUB_SECRET", raising=False)
+    monkeypatch.delenv("GITHUB_REDIRECT", raising=False)
+
+    response = client.get("/api/auth/github/login")
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "error": {
+            "code": "github_oauth_configuration_error",
+            "message": (
+                "GitHub login is not configured correctly. "
+                "Please contact an administrator."
+            ),
+        }
+    }
+    assert "GITHUB_CLIENT_ID" not in response.text
+    assert "GITHUB_SECRET" not in response.text
+
+
 def test_legacy_auth_endpoints_are_removed(client):
     token_response = client.post("/api/auth/token")
     register_response = client.post("/api/auth/register")

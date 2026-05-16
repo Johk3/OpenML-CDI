@@ -4,6 +4,12 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 
+const LOGIN_FALLBACK_ERROR = 'Authentication failed. Please try again.';
+
+function loginErrorUrl(message: string): string {
+  return `/login?error=${encodeURIComponent(message)}`;
+}
+
 export const GitHubCallbackPage: React.FC = () => {
   const { loginWithGithub } = useAuth();
   const navigate = useNavigate();
@@ -21,12 +27,14 @@ export const GitHubCallbackPage: React.FC = () => {
     const state = searchParams.get('state');
 
     if (!code || !state) {
-      navigate('/login?error=No authorization code provided.', { replace: true });
+      navigate(loginErrorUrl('No authorization code provided.'), { replace: true });
       return;
     }
 
-    loginWithGithub(code, state).catch(() => {
-      navigate('/login?error=Authentication failed. Please try again.', { replace: true });
+    loginWithGithub(code, state).catch((error: unknown) => {
+      const message =
+        error instanceof Error && error.message ? error.message : LOGIN_FALLBACK_ERROR;
+      navigate(loginErrorUrl(message), { replace: true });
     });
   }, [loginWithGithub, navigate, searchParams]);
 

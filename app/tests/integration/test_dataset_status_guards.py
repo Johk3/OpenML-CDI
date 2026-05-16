@@ -5,6 +5,7 @@ from zipfile import ZipFile
 
 from app.database.models import Dataset, Roles, Statuses, User
 from app.security import create_access_token
+from app.services.github_issues import GitHubAPIError
 
 
 class _ReadableStorage:
@@ -768,6 +769,54 @@ def test_github_discussion_returns_creation_failure_without_issue_url(
         "error_reason": "permission_error",
         "retryable": False,
         "comments": [],
+    }
+
+
+def test_github_discussion_returns_structured_fetch_failure(
+    client, db_test_session, monkeypatch
+):
+    owner_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    db_test_session.add(_user(user_id=owner_id, role=Roles.USER))
+    db_test_session.add(
+        Dataset(
+            id=dataset_id,
+            title="Linked dataset",
+            owner_id=owner_id,
+            issue_url="https://github.com/openml/openmlupload-test/issues/42",
+            dataset_metadata={"filenames": ["linked.csv"]},
+            status=Statuses.PENDING_REVIEW,
+        )
+    )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(owner_id), "type": "access"})
+
+    def fail_fetch(_settings, _issue_url):
+        raise GitHubAPIError(
+            "GitHub API rate limit exceeded",
+            403,
+            reason="rate_limited",
+            retryable=True,
+        )
+
+    monkeypatch.setattr("app.routers.dataset.get_issue_with_comments", fail_fetch)
+
+    response = client.get(
+        f"/api/datasets/{dataset_id}/github-discussion",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "error": {
+            "code": "github_discussion_fetch_failed",
+            "message": (
+                "GitHub discussion is temporarily unavailable because GitHub "
+                "rate limits were reached."
+            ),
+            "reason": "rate_limited",
+            "retryable": True,
+        }
     }
 
 

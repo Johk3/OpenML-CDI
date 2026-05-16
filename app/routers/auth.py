@@ -2,12 +2,13 @@ import logging
 import os
 import secrets
 import uuid
-from typing import Annotated
+from typing import Annotated, Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
+from requests import exceptions as requests_exceptions
 from requests_oauthlib import OAuth2Session
 from sqlalchemy.orm import Session
 
@@ -47,9 +48,46 @@ DEFAULT_DEV_EMAIL = "dev.user@example.com"
 DEFAULT_DEV_USERNAME = "dev-user"
 DEFAULT_DEV_FIRST_NAME = "Dev"
 DEFAULT_DEV_LAST_NAME = "User"
+GITHUB_OAUTH_CONFIGURATION_MESSAGE = (
+    "GitHub login is not configured correctly. Please contact an administrator."
+)
+GITHUB_OAUTH_RETRY_MESSAGE = "GitHub authentication failed. Please try again."
+GITHUB_PROFILE_FETCH_FAILED_MESSAGE = (
+    "Could not fetch your GitHub profile. Please try again."
+)
+GITHUB_EMAIL_FETCH_FAILED_MESSAGE = (
+    "Could not fetch your GitHub email addresses. Please try again."
+)
+GITHUB_STATE_ERROR_MESSAGE = "Your GitHub sign-in session expired. Please start again."
+GITHUB_PROFILE_CONFLICT_MESSAGES = {
+    "email": (
+        "This GitHub account uses an email address that is already connected "
+        "to another OpenML account."
+    ),
+    "username": (
+        "This GitHub account uses a username that is already connected to "
+        "another OpenML account."
+    ),
+    "github_id": "This GitHub account is already connected to another OpenML account.",
+    "profile": "Unable to sync GitHub profile with a local account.",
+}
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["auth"])
+
+
+class GitHubOAuthConfigurationError(RuntimeError):
+    def __init__(self, missing_values: list[str]):
+        super().__init__("GitHub OAuth settings are incomplete")
+        self.missing_values = missing_values
+
+
+class GitHubOAuthFlowError(RuntimeError):
+    def __init__(self, status_code: int, code: str, message: str):
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = code
+        self.message = message
 
 
 def _is_truthy(raw_value: str | None) -> bool:
@@ -113,6 +151,29 @@ def _delete_oauth_state_cookie(response: Response, *, secure: bool) -> None:
     )
 
 
+def _github_auth_error_response(
+    *,
+    status_code: int,
+    code: str,
+    message: str,
+    secure: bool | None = None,
+    extra: dict[str, Any] | None = None,
+) -> JSONResponse:
+    error_body: dict[str, Any] = {"code": code, "message": message}
+    if extra:
+        error_body.update(extra)
+    response = JSONResponse(status_code=status_code, content={"error": error_body})
+    if secure is not None:
+        _delete_oauth_state_cookie(response, secure=secure)
+    return response
+
+
+def _github_profile_conflict_message(field: str) -> str:
+    return GITHUB_PROFILE_CONFLICT_MESSAGES.get(
+        field, GITHUB_PROFILE_CONFLICT_MESSAGES["profile"]
+    )
+
+
 def _issue_tokens(
     response: Response, user_id: uuid.UUID, db: Session, *, secure: bool
 ) -> dict[str, str]:
@@ -153,14 +214,49 @@ def _resolve_github_oauth_settings() -> tuple[str, str, str]:
     if not github_redirect:
         missing_values.append("GITHUB_REDIRECT")
     if missing_values:
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "Github OAuth settings are incomplete. Missing: "
-                + ", ".join(missing_values)
-            ),
+        logger.error(
+            "GitHub OAuth settings are incomplete",
+            extra={"missing_values": missing_values},
         )
+        raise GitHubOAuthConfigurationError(missing_values)
     return github_client_id, github_secret, github_redirect
+
+
+def _get_github_json(
+    github: OAuth2Session,
+    url: str,
+    *,
+    code: str,
+    message: str,
+) -> Any:
+    try:
+        github_response = github.get(url)
+    except requests_exceptions.RequestException as error:
+        logger.warning(
+            "GitHub OAuth API request failed",
+            extra={"url": url, "error": str(error)},
+        )
+        raise GitHubOAuthFlowError(400, code, message) from error
+
+    if github_response.status_code != 200:
+        logger.warning(
+            "GitHub OAuth API request returned non-200",
+            extra={
+                "url": url,
+                "status_code": github_response.status_code,
+                "body": getattr(github_response, "text", "")[:500],
+            },
+        )
+        raise GitHubOAuthFlowError(400, code, message)
+
+    try:
+        return github_response.json()
+    except ValueError as error:
+        logger.warning(
+            "GitHub OAuth API response was not valid JSON",
+            extra={"url": url},
+        )
+        raise GitHubOAuthFlowError(400, code, message) from error
 
 
 def _sanitize_username(preferred_username: str) -> str:
@@ -356,7 +452,16 @@ def github_login(request: Request):
         _set_oauth_state_cookie(response, state, secure=cookie_secure)
         return response
 
-    github_client_id, _github_secret, github_redirect = _resolve_github_oauth_settings()
+    try:
+        github_client_id, _github_secret, github_redirect = (
+            _resolve_github_oauth_settings()
+        )
+    except GitHubOAuthConfigurationError:
+        return _github_auth_error_response(
+            status_code=500,
+            code="github_oauth_configuration_error",
+            message=GITHUB_OAUTH_CONFIGURATION_MESSAGE,
+        )
     github = OAuth2Session(
         github_client_id,
         scope=["read:user", "user:email", "read:org"],
@@ -410,18 +515,43 @@ def auth_github_callback(
 
     saved_state = request.cookies.get("oauth_state")
     if not saved_state:
-        raise HTTPException(status_code=400, detail="State missing or expired.")
+        return _github_auth_error_response(
+            status_code=400,
+            code="github_oauth_state_missing",
+            message=GITHUB_STATE_ERROR_MESSAGE,
+            secure=cookie_secure,
+        )
 
     query_params = dict(request.query_params)
     code = query_params.get("code")
     state = query_params.get("state")
 
     if not code:
-        raise HTTPException(status_code=400, detail="Code missing.")
+        return _github_auth_error_response(
+            status_code=400,
+            code="github_oauth_code_missing",
+            message=GITHUB_OAUTH_RETRY_MESSAGE,
+            secure=cookie_secure,
+        )
     if state != saved_state:
-        raise HTTPException(status_code=400, detail="State mismatch.")
+        return _github_auth_error_response(
+            status_code=400,
+            code="github_oauth_state_mismatch",
+            message=GITHUB_STATE_ERROR_MESSAGE,
+            secure=cookie_secure,
+        )
 
-    github_client_id, github_secret, github_redirect = _resolve_github_oauth_settings()
+    try:
+        github_client_id, github_secret, github_redirect = (
+            _resolve_github_oauth_settings()
+        )
+    except GitHubOAuthConfigurationError:
+        return _github_auth_error_response(
+            status_code=500,
+            code="github_oauth_configuration_error",
+            message=GITHUB_OAUTH_CONFIGURATION_MESSAGE,
+            secure=cookie_secure,
+        )
     github = OAuth2Session(
         github_client_id,
         state=saved_state,
@@ -434,34 +564,84 @@ def auth_github_callback(
             code=code,
         )
     except Exception as e:
-        logger.error(f"GitHub token exchange failed: {e}")
-        raise HTTPException(status_code=400, detail="Authentication failed.")
-
-    user_response = github.get("https://api.github.com/user")
-    if user_response.status_code != 200:
-        raise HTTPException(
-            status_code=400, detail="Failed to fetch user profile from github"
+        logger.warning("GitHub token exchange failed", extra={"error": str(e)})
+        return _github_auth_error_response(
+            status_code=400,
+            code="github_oauth_token_exchange_failed",
+            message=GITHUB_OAUTH_RETRY_MESSAGE,
+            secure=cookie_secure,
         )
-    user_data = user_response.json()
+
+    try:
+        user_data = _get_github_json(
+            github,
+            "https://api.github.com/user",
+            code="github_profile_fetch_failed",
+            message=GITHUB_PROFILE_FETCH_FAILED_MESSAGE,
+        )
+    except GitHubOAuthFlowError as error:
+        return _github_auth_error_response(
+            status_code=error.status_code,
+            code=error.code,
+            message=error.message,
+            secure=cookie_secure,
+        )
+    if not isinstance(user_data, dict):
+        return _github_auth_error_response(
+            status_code=400,
+            code="github_profile_fetch_failed",
+            message=GITHUB_PROFILE_FETCH_FAILED_MESSAGE,
+            secure=cookie_secure,
+        )
     github_account_id = user_data.get("id")
     github_username = user_data.get("login")
     if github_account_id is None or not github_username:
-        raise HTTPException(status_code=400, detail="Incomplete github user profile")
-
-    emails_response = github.get("https://api.github.com/user/emails")
-    if emails_response.status_code != 200:
-        raise HTTPException(
-            status_code=400, detail="Failed to fetch emails from github"
+        return _github_auth_error_response(
+            status_code=400,
+            code="github_profile_incomplete",
+            message="GitHub did not return a complete profile. Please try again.",
+            secure=cookie_secure,
         )
-    emails_data = emails_response.json()
+
+    try:
+        emails_data = _get_github_json(
+            github,
+            "https://api.github.com/user/emails",
+            code="github_email_fetch_failed",
+            message=GITHUB_EMAIL_FETCH_FAILED_MESSAGE,
+        )
+    except GitHubOAuthFlowError as error:
+        return _github_auth_error_response(
+            status_code=error.status_code,
+            code=error.code,
+            message=error.message,
+            secure=cookie_secure,
+        )
+    if not isinstance(emails_data, list):
+        return _github_auth_error_response(
+            status_code=400,
+            code="github_email_fetch_failed",
+            message=GITHUB_EMAIL_FETCH_FAILED_MESSAGE,
+            secure=cookie_secure,
+        )
 
     primary_email = None
     for email_obj in emails_data:
+        if not isinstance(email_obj, dict):
+            continue
         if email_obj.get("primary") and email_obj.get("verified"):
             primary_email = email_obj.get("email")
             break
     if not primary_email:
-        raise HTTPException(status_code=400, detail="No verified primary email found")
+        return _github_auth_error_response(
+            status_code=400,
+            code="github_verified_email_missing",
+            message=(
+                "GitHub did not return a verified primary email address. "
+                "Please verify an email address on GitHub and try again."
+            ),
+            secure=cookie_secure,
+        )
 
     first_name, last_name = split_github_name(user_data.get("name"))
     github_profile = GitHubProfile(
@@ -479,7 +659,7 @@ def auth_github_callback(
             content={
                 "error": {
                     "code": "github_profile_conflict",
-                    "message": "Unable to sync GitHub profile with local account",
+                    "message": _github_profile_conflict_message(exc.field),
                     "field": exc.field,
                 }
             },

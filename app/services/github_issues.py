@@ -390,13 +390,13 @@ def get_issue_with_comments(
             "comments": comments,
         }
     except GithubException as e:
-        status = e.status
-        msg = (
-            e.data.get("message", str(e))
-            if hasattr(e, "data") and isinstance(e.data, dict)
-            else str(e)
+        raise _github_api_error_from_exception(e)
+    except NETWORK_EXCEPTIONS as e:
+        raise GitHubAPIError(
+            f"Network error fetching GitHub issue: {e}",
+            reason=TRANSIENT_ERROR,
+            retryable=True,
         )
-        raise GitHubAPIError(f"GitHub API returned {status}: {msg}", status)
 
 
 def create_issue_for_dataset(

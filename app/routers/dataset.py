@@ -7,7 +7,7 @@ from fastapi import (
     BackgroundTasks,
     Query,
 )
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
@@ -72,6 +72,36 @@ router = APIRouter(prefix="/datasets", tags=["datasets"])
 logger = logging.getLogger(__name__)
 MULTIPART_UPLOADS_KEY = "multipart_uploads"
 MULTIPART_UPLOAD_THRESHOLD_BYTES = 8 * 1024 * 1024
+GITHUB_DISCUSSION_FETCH_MESSAGES = {
+    "configuration_error": (
+        "GitHub discussion is unavailable because the server is missing its "
+        "GitHub App configuration."
+    ),
+    "authentication_error": (
+        "GitHub discussion is unavailable because the GitHub App could not "
+        "authenticate."
+    ),
+    "permission_error": (
+        "GitHub discussion could not be fetched because the GitHub App does "
+        "not have permission to read the configured repository."
+    ),
+    "rate_limited": (
+        "GitHub discussion is temporarily unavailable because GitHub rate "
+        "limits were reached."
+    ),
+    "transient_error": "GitHub discussion is temporarily unavailable.",
+    "not_found": "GitHub discussion could not be found.",
+    "validation_error": (
+        "GitHub discussion could not be loaded from the saved issue URL."
+    ),
+    "unknown_error": "GitHub discussion could not be loaded.",
+}
+
+
+def _github_discussion_fetch_message(error: GitHubAPIError) -> str:
+    return GITHUB_DISCUSSION_FETCH_MESSAGES.get(
+        error.reason, GITHUB_DISCUSSION_FETCH_MESSAGES["unknown_error"]
+    )
 
 
 @router.post(
@@ -1181,10 +1211,17 @@ def get_github_discussion(
     try:
         return get_issue_with_comments(settings, issue_url)
     except GitHubAPIError as error:
-        raise HTTPException(
+        return JSONResponse(
             status_code=http_status.HTTP_502_BAD_GATEWAY,
-            detail=f"GitHub API error: {error}",
-        ) from error
+            content={
+                "error": {
+                    "code": "github_discussion_fetch_failed",
+                    "message": _github_discussion_fetch_message(error),
+                    "reason": error.reason,
+                    "retryable": error.retryable,
+                }
+            },
+        )
 
 
 @router.post("/title")

@@ -243,6 +243,49 @@ class TestGetIssueWithComments:
         assert result["state"] == "none"
         assert result["comments"] == []
 
+    @patch("app.services.github_issues._get_github_client")
+    def test_github_exception_preserves_public_reason(self, mock_get_client, settings):
+        mock_gh = MagicMock()
+        mock_repo = MagicMock()
+        mock_repo.get_issue.side_effect = GithubException(
+            403, {"message": "API rate limit exceeded"}
+        )
+        mock_gh.get_repo.return_value = mock_repo
+        mock_get_client.return_value = mock_gh
+
+        with pytest.raises(GitHubAPIError) as exc_info:
+            get_issue_with_comments(
+                settings,
+                "https://github.com/openml/openmlupload-test/issues/1",
+            )
+
+        assert exc_info.value.reason == "rate_limited"
+        assert exc_info.value.retryable is True
+        assert "rate limits" in exc_info.value.user_message
+
+    @patch("app.services.github_issues._get_github_client")
+    def test_network_exception_becomes_retryable_transient_error(
+        self, mock_get_client, settings
+    ):
+        mock_gh = MagicMock()
+        mock_repo = MagicMock()
+        mock_repo.get_issue.side_effect = requests_exceptions.Timeout(
+            "github read timed out"
+        )
+        mock_gh.get_repo.return_value = mock_repo
+        mock_get_client.return_value = mock_gh
+
+        with pytest.raises(GitHubAPIError) as exc_info:
+            get_issue_with_comments(
+                settings,
+                "https://github.com/openml/openmlupload-test/issues/1",
+            )
+
+        assert exc_info.value.reason == "transient_error"
+        assert exc_info.value.retryable is True
+        assert "temporarily unavailable" in exc_info.value.user_message
+        assert "github read timed out" in str(exc_info.value)
+
 
 class TestCreateIssueForDataset:
     def test_missing_config_marks_github_issue_failed(self, empty_settings):

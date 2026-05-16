@@ -124,6 +124,28 @@ describe('DatasetDetailPage', () => {
     expect(screen.queryByText(/view on github/i)).not.toBeInTheDocument();
   });
 
+  it('should render GitHub discussion fetch failures', async () => {
+    mockDatasetService.getGitHubDiscussion.mockRejectedValueOnce({
+      response: {
+        data: {
+          error: {
+            code: 'github_discussion_fetch_failed',
+            message: 'GitHub discussion creation is temporarily unavailable.',
+            reason: 'transient_error',
+            retryable: true,
+          },
+        },
+      },
+    });
+
+    navigateTo('/datasets/ds-1');
+
+    expect(
+      await screen.findByText(/github discussion creation is temporarily unavailable/i),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(/^Unavailable$/i).length).toBeGreaterThan(0);
+  });
+
   it('should render warning when malware scan is missing', async () => {
     const { mockDatasetService } = await import('../mocks/datasetService');
     mockDatasetService.getDataset.mockResolvedValueOnce({
