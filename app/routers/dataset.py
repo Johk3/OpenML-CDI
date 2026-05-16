@@ -12,7 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import BadZipFile, ZIP_DEFLATED, ZipFile
 import logging
 from app.database import get_db
 from app.schemas.datasets import (
@@ -428,6 +428,11 @@ def complete_multipart_upload(
             )
             for obj in objects
         ]
+        _validate_zip_upload_manifest(
+            storage=request.app.state.storage,
+            metadata=metadata,
+            objects=updated_objects,
+        )
         metadata = attach_dataset_objects(metadata, updated_objects)
         metadata = _set_multipart_upload_session(
             metadata,
@@ -570,9 +575,15 @@ def confirm_upload(
                     expected_etag=expected_etag,
                 )
             )
+        uploaded_objects = mark_objects_uploaded(objects, verified_objects)
+        _validate_zip_upload_manifest(
+            storage=request.app.state.storage,
+            metadata=metadata,
+            objects=uploaded_objects,
+        )
         metadata = attach_dataset_objects(
             metadata,
-            mark_objects_uploaded(objects, verified_objects),
+            uploaded_objects,
         )
         dataset_crud.update_dataset_metadata(
             db=db, dataset_id=dataset_id, metadata=metadata
@@ -811,6 +822,35 @@ def _validated_complete_parts(
             )
         complete_parts.append({"part_number": part.part_number, "etag": etag})
     return complete_parts
+
+
+def _validate_zip_upload_manifest(
+    *, storage, metadata: dict, objects: list[dict]
+) -> None:
+    package = get_upload_package_metadata(metadata)
+    if not package or package["representation"] != "zip":
+        return
+
+    if len(objects) != 1:
+        raise DatasetObjectValidationError(
+            "Compressed uploads must contain exactly one ZIP archive"
+        )
+
+    expected_paths = sorted(package["paths"])
+    try:
+        with storage.open(objects[0]["object_key"], "rb") as uploaded_zip:
+            zip_payload = uploaded_zip.read()
+        with ZipFile(BytesIO(zip_payload)) as archive:
+            archive_paths = sorted(
+                name for name in archive.namelist() if name and not name.endswith("/")
+            )
+    except BadZipFile as error:
+        raise DatasetObjectValidationError("Uploaded ZIP archive is invalid") from error
+
+    if archive_paths != expected_paths:
+        raise DatasetObjectValidationError(
+            "ZIP archive entries must match directory_structure paths"
+        )
 
 
 def _run_upload_scan(

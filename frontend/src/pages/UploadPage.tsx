@@ -53,8 +53,9 @@ type UploadSessionState =
 const getUploadPath = (file: File) => file.webkitRelativePath || file.name;
 
 const getDirectoryRoot = (paths: string[]) => {
-  const firstPath = paths.find((path) => path.includes('/'));
-  return firstPath?.split('/')[0] ?? null;
+  const firstRoot = paths[0]?.includes('/') ? paths[0].split('/')[0] : null;
+  if (!firstRoot) return null;
+  return paths.every((path) => path.startsWith(`${firstRoot}/`)) ? firstRoot : null;
 };
 
 const buildUploadDirectoryStructure = (
@@ -163,7 +164,15 @@ export const UploadPage: React.FC = () => {
   });
   const selectedPaths = selectedFiles.map(getUploadPath);
   const selectedDirectoryRoot = getDirectoryRoot(selectedPaths);
-  const hasDirectorySelection = selectedDirectoryRoot !== null;
+  const hasDirectorySelection = selectedPaths.some((path) => path.includes('/'));
+  const willCompressSelection = selectedFiles.length > 1;
+  const selectionPackageFeedback = hasDirectorySelection
+    ? willCompressSelection
+      ? 'Directory paths will be preserved inside the ZIP archive.'
+      : 'Directory paths will be preserved.'
+    : willCompressSelection
+      ? 'Files will be packed into one ZIP archive before upload.'
+      : '';
 
   // Concurrency helper for large batches
   const runWithLimit = async <T,>(limit: number, tasks: (() => Promise<T>)[]): Promise<T[]> => {
@@ -328,9 +337,14 @@ export const UploadPage: React.FC = () => {
         setCurrentChunk(0);
         setTotalChunks(1);
         setUploadSessionState('uploading');
-        await DatasetService.uploadFileToPresignedUrl(contract.url, file, (event) => {
-          updateProgress(index, event.loaded);
-        });
+        await DatasetService.uploadFileToPresignedUrl(
+          contract.url,
+          file,
+          (event) => {
+            updateProgress(index, event.loaded);
+          },
+          contract.headers,
+        );
         updateProgress(index, file.size);
       };
 
@@ -487,7 +501,9 @@ export const UploadPage: React.FC = () => {
                     <div className="flex-1 overflow-hidden">
                       <p className="font-semibold text-sm truncate">
                         {hasDirectorySelection
-                          ? `Folder "${selectedDirectoryRoot}" selected`
+                          ? selectedDirectoryRoot
+                            ? `Folder "${selectedDirectoryRoot}" selected`
+                            : 'Multiple folders selected'
                           : `${selectedFiles.length} file${selectedFiles.length > 1 ? 's' : ''} selected`}
                       </p>
                       <p className="text-xs text-muted-foreground">
@@ -495,7 +511,7 @@ export const UploadPage: React.FC = () => {
                           2,
                         )}{' '}
                         MB total
-                        {hasDirectorySelection ? ' - Directory paths will be preserved.' : ''}
+                        {selectionPackageFeedback ? ` - ${selectionPackageFeedback}` : ''}
                       </p>
                     </div>
                     <Button

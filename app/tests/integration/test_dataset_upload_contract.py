@@ -143,6 +143,32 @@ def test_upload_url_rejects_compressed_package_with_multiple_uploaded_objects(
     assert "exactly one ZIP archive" in response.json()["detail"]
 
 
+def test_upload_url_rejects_invalid_directory_manifest(
+    client, db_test_session, tmp_path
+):
+    client.app.state.storage = LocalStorageBackend(tmp_path / "uploads")
+    headers = _auth_headers(db_test_session)
+
+    response = client.post(
+        "/api/datasets/upload-url",
+        headers=headers,
+        json={
+            "name": "Invalid Folder Dataset",
+            "filenames": ["Folder_Dataset_files.zip"],
+            "directory_structure": {
+                "compressed": True,
+                "paths": ["dataset/train/one.csv", "dataset/test/two.csv"],
+                "manifest": {"version": 1, "path_count": 1},
+            },
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "directory_structure manifest path_count must match paths"
+    }
+
+
 def test_upload_url_rejects_mismatched_content_type_count(
     client, db_test_session, tmp_path
 ):

@@ -133,12 +133,20 @@ def normalize_directory_structure(
     if not isinstance(directory_structure, dict):
         raise DatasetObjectValidationError("directory_structure must be an object")
 
+    raw_compressed = directory_structure.get("compressed", False)
+    if not isinstance(raw_compressed, bool):
+        raise DatasetObjectValidationError(
+            "directory_structure compressed must be a boolean"
+        )
+
     raw_paths = directory_structure.get("paths")
     if not isinstance(raw_paths, list) or not raw_paths:
         raise DatasetObjectValidationError("directory_structure paths must be a list")
+    if not all(isinstance(path, str) for path in raw_paths):
+        raise DatasetObjectValidationError("directory_structure paths must be strings")
 
     try:
-        paths = [_normalize_original_path(str(path)) for path in raw_paths]
+        paths = [_normalize_original_path(path) for path in raw_paths]
     except DatasetObjectValidationError as error:
         message = str(error).replace("original path", "directory_structure paths")
         raise DatasetObjectValidationError(message) from error
@@ -146,11 +154,13 @@ def normalize_directory_structure(
     _reject_duplicates(paths, "directory structure paths")
 
     root = directory_structure.get("root")
-    if root is None or str(root).strip() == "":
+    if root is not None and not isinstance(root, str):
+        raise DatasetObjectValidationError("directory_structure root must be a string")
+    if root is None or root.strip() == "":
         normalized_root = _common_root(paths)
     else:
         try:
-            normalized_root = _normalize_original_path(str(root))
+            normalized_root = _normalize_original_path(root)
         except DatasetObjectValidationError as error:
             message = str(error).replace("original path", "directory_structure root")
             raise DatasetObjectValidationError(message) from error
@@ -168,7 +178,7 @@ def normalize_directory_structure(
         )
 
     return _build_directory_structure(
-        compressed=bool(directory_structure.get("compressed", False)),
+        compressed=raw_compressed,
         paths=paths,
         uploaded_paths=uploaded_paths,
         root=normalized_root,
@@ -387,8 +397,12 @@ def _build_directory_structure(
             raise DatasetObjectValidationError(
                 "Compressed uploads must contain exactly one ZIP archive"
             )
+        if archive_path is not None and not isinstance(archive_path, str):
+            raise DatasetObjectValidationError(
+                "directory_structure archive_path must be a string"
+            )
         normalized_archive_path = (
-            _normalize_original_path(str(archive_path))
+            _normalize_original_path(archive_path)
             if archive_path is not None
             else uploaded_paths[0]
         )
@@ -433,15 +447,41 @@ def _normalize_manifest(manifest: Any, path_count: int) -> dict[str, Any]:
 
     source = "directory_structure.paths"
     if isinstance(manifest, dict):
+        raw_version = manifest.get("version")
+        if raw_version is not None:
+            if (
+                not _is_int(raw_version)
+                or raw_version != UPLOAD_PACKAGE_MANIFEST_VERSION
+            ):
+                raise DatasetObjectValidationError(
+                    "directory_structure manifest version is invalid"
+                )
+
+        raw_path_count = manifest.get("path_count")
+        if raw_path_count is not None:
+            if not _is_int(raw_path_count) or raw_path_count != path_count:
+                raise DatasetObjectValidationError(
+                    "directory_structure manifest path_count must match paths"
+                )
+
         raw_source = manifest.get("source")
-        if raw_source is not None and str(raw_source).strip():
-            source = str(raw_source).strip()
+        if raw_source is not None:
+            if not isinstance(raw_source, str):
+                raise DatasetObjectValidationError(
+                    "directory_structure manifest source must be a string"
+                )
+            if raw_source.strip():
+                source = raw_source.strip()
 
     return {
         "version": UPLOAD_PACKAGE_MANIFEST_VERSION,
         "path_count": path_count,
         "source": source,
     }
+
+
+def _is_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def _legacy_dataset_objects(metadata: dict[str, Any]) -> list[dict[str, Any]]:

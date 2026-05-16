@@ -520,6 +520,25 @@ describe('DatasetService direct uploads', () => {
     expect(apiClientMock.put).not.toHaveBeenCalled();
   });
 
+  it('merges upload contract headers into direct PUT requests', async () => {
+    const DatasetService = await importDatasetService();
+    const file = createFile('small');
+    const uploadUrl = 'https://signed.example/object/small.csv';
+    axiosPutMock.mockResolvedValue({ headers: {} });
+
+    await DatasetService.uploadFileToPresignedUrl(uploadUrl, file, undefined, {
+      'x-amz-checksum-sha256': 'checksum',
+    });
+
+    expect(axiosPutMock).toHaveBeenCalledWith(uploadUrl, file, {
+      headers: {
+        'Content-Type': 'text/csv',
+        'x-amz-checksum-sha256': 'checksum',
+      },
+      onUploadProgress: undefined,
+    });
+  });
+
   it('does not choose multipart for local backend upload URLs even when the file is large', async () => {
     const DatasetService = await importDatasetService();
     const file = new File([new Uint8Array(9 * 1024 * 1024)], 'large.zip', {

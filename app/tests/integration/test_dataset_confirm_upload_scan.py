@@ -1,6 +1,8 @@
 import uuid
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
+from zipfile import ZipFile
 
 import app.services.scan as scan_service
 import pytest
@@ -104,6 +106,14 @@ def _confirm_upload(scan_client: TestClient, dataset_id: uuid.UUID, access_token
     )
 
 
+def _zip_bytes(entries: dict[str, bytes]) -> bytes:
+    payload = BytesIO()
+    with ZipFile(payload, "w") as archive:
+        for path, content in entries.items():
+            archive.writestr(path, content)
+    return payload.getvalue()
+
+
 def test_confirm_upload_promotes_clean_file_and_marks_dataset_pending_review(
     scan_client: TestClient, db_test_session, monkeypatch
 ):
@@ -153,6 +163,50 @@ def test_confirm_upload_promotes_clean_file_and_marks_dataset_pending_review(
     assert Path(fake_client.scanned_paths[0]).name.endswith("_clean.csv")
     quarantine_dir = Path(scan_client.app.state.settings.storage.quarantine_dir)
     assert not list(quarantine_dir.glob("*"))
+
+
+def test_confirm_upload_rejects_zip_entries_that_do_not_match_manifest(
+    scan_client: TestClient, db_test_session, monkeypatch
+):
+    uploader_id = uuid.uuid4()
+    access_token = _create_access_token_for_user(db_test_session, uploader_id)
+    zip_payload = _zip_bytes({"dataset/unexpected.csv": b"wrong"})
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    upload_response = scan_client.post(
+        "/api/datasets/upload-url",
+        headers=headers,
+        json={
+            "name": "Folder Dataset",
+            "filenames": ["Folder_Dataset_files.zip"],
+            "content_types": ["application/zip"],
+            "byte_sizes": [len(zip_payload)],
+            "directory_structure": {
+                "compressed": True,
+                "root": "dataset",
+                "paths": ["dataset/train/one.csv", "dataset/test/two.csv"],
+                "archive_path": "Folder_Dataset_files.zip",
+                "manifest": {"version": 1, "path_count": 2},
+            },
+        },
+    )
+    assert upload_response.status_code == 201
+    body = upload_response.json()
+    dataset_id = uuid.UUID(body["id"])
+    storage_key = body["upload_contracts"][0]["object_key"]
+    scan_client.app.state.storage.write_bytes(storage_key, zip_payload)
+    fake_client = _FakeClamDClient({"ignored": ("OK", None)})
+    _patch_clamd(monkeypatch, fake_client)
+
+    response = _confirm_upload(scan_client, dataset_id, access_token)
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "ZIP archive entries must match directory_structure paths"
+    }
+    assert fake_client.scanned_paths == []
+    db_test_session.expire_all()
+    assert db_test_session.get(Dataset, dataset_id) is None
 
 
 def test_confirm_upload_deletes_dataset_when_file_is_infected(

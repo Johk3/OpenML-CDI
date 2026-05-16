@@ -47,6 +47,8 @@ The browser currently uses a ZIP package for any multi-file or folder selection.
 ```
 
 For ZIP uploads, `objects[0].original_path` is the ZIP archive path. The original submitted paths live in `directory_structure.paths`; this is the manifest the UI and later download/reconstruction code use to describe the dataset layout.
+The manifest version must be `1`, and `manifest.path_count` must match the number of preserved paths.
+When the upload is confirmed, the backend checks the ZIP entries against `directory_structure.paths` before scanning so the archive contents cannot diverge from the manifest.
 
 Multi-object uploads are accepted when the client uploads one storage object per submitted file. In that case:
 

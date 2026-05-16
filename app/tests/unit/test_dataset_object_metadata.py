@@ -147,12 +147,60 @@ def test_normalize_directory_structure_rejects_duplicate_manifest_paths():
         )
 
 
+def test_normalize_directory_structure_rejects_non_string_manifest_paths():
+    with pytest.raises(DatasetObjectValidationError, match="paths must be strings"):
+        normalize_directory_structure(
+            {
+                "compressed": True,
+                "paths": ["dataset/data.csv", 123],
+            },
+            original_paths=["Dataset_files.zip"],
+        )
+
+
 def test_normalize_directory_structure_rejects_unsafe_manifest_paths():
     with pytest.raises(DatasetObjectValidationError, match="cannot be absolute"):
         normalize_directory_structure(
             {
                 "compressed": True,
                 "paths": ["dataset/data.csv", "../secret.csv"],
+            },
+            original_paths=["Dataset_files.zip"],
+        )
+
+
+def test_normalize_directory_structure_rejects_non_boolean_compressed_flag():
+    with pytest.raises(
+        DatasetObjectValidationError, match="compressed must be a boolean"
+    ):
+        normalize_directory_structure(
+            {
+                "compressed": "true",
+                "paths": ["dataset/data.csv"],
+            },
+            original_paths=["Dataset_files.zip"],
+        )
+
+
+def test_normalize_directory_structure_rejects_manifest_version_mismatch():
+    with pytest.raises(DatasetObjectValidationError, match="manifest version"):
+        normalize_directory_structure(
+            {
+                "compressed": True,
+                "paths": ["dataset/data.csv"],
+                "manifest": {"version": 2, "path_count": 1},
+            },
+            original_paths=["Dataset_files.zip"],
+        )
+
+
+def test_normalize_directory_structure_rejects_manifest_path_count_mismatch():
+    with pytest.raises(DatasetObjectValidationError, match="manifest path_count"):
+        normalize_directory_structure(
+            {
+                "compressed": True,
+                "paths": ["dataset/data.csv", "dataset/labels.csv"],
+                "manifest": {"version": 1, "path_count": 1},
             },
             original_paths=["Dataset_files.zip"],
         )

@@ -108,6 +108,21 @@ describe('UploadPage', () => {
       expect(screen.getByText('dataset/test/two.csv')).toBeInTheDocument();
     });
 
+    it('displays compression feedback for multi-file selections', () => {
+      const changeButton = screen.getByText('Change');
+      fireEvent.click(changeButton);
+
+      const fileInput = document.getElementById('file-input') as HTMLInputElement;
+      const files = [
+        new File(['one'], 'one.csv', { type: 'text/csv' }),
+        new File(['two'], 'two.csv', { type: 'text/csv' }),
+      ];
+      fireEvent.change(fileInput, { target: { files } });
+
+      expect(screen.getByText('2 files selected')).toBeInTheDocument();
+      expect(screen.getByText(/will be packed into one ZIP archive/i)).toBeInTheDocument();
+    });
+
     describe('when the user clicks "Change" file', () => {
       beforeEach(() => {
         const changeButton = screen.getByText('Change');
@@ -240,6 +255,32 @@ describe('UploadPage', () => {
       );
     });
 
+    it('uses a null package root when selected folders do not share one root', async () => {
+      fireEvent.click(screen.getByText('Change'));
+
+      const fileInput = document.getElementById('file-input') as HTMLInputElement;
+      const files = [
+        fileWithRelativePath('one', 'one.csv', 'cats/train/one.csv', 'text/csv'),
+        fileWithRelativePath('two', 'two.csv', 'dogs/test/two.csv', 'text/csv'),
+      ];
+      fireEvent.change(fileInput, { target: { files } });
+
+      fireEvent.click(screen.getByText(/Upload Dataset/i));
+
+      await waitFor(() => {
+        expect(mockDatasetService.requestUploadUrl).toHaveBeenCalled();
+      });
+
+      expect(mockDatasetService.requestUploadUrl).toHaveBeenCalledWith(
+        expect.objectContaining({
+          directory_structure: expect.objectContaining({
+            root: null,
+            paths: ['cats/train/one.csv', 'dogs/test/two.csv'],
+          }),
+        }),
+      );
+    });
+
     it('uses multipart upload controls while a large file is uploading', async () => {
       fireEvent.click(screen.getByText('Change'));
       const fileInput = document.getElementById('file-input') as HTMLInputElement;
@@ -286,6 +327,7 @@ describe('UploadPage', () => {
         'http://example.com/presigned',
         expect.any(File),
         expect.any(Function),
+        { 'Content-Type': 'text/csv' },
       );
       expect(mockDatasetService.uploadFileMultipart).not.toHaveBeenCalled();
     });
@@ -390,6 +432,7 @@ describe('UploadPage', () => {
         'http://localhost:8000/api/datasets/upload/datasets/batch/data.csv',
         expect.any(File),
         expect.any(Function),
+        { 'Content-Type': 'text/csv' },
       );
       expect(mockDatasetService.uploadFileMultipart).not.toHaveBeenCalled();
     });

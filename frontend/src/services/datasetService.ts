@@ -217,9 +217,13 @@ export const DatasetService = {
     presignedUrl: string,
     file: File,
     onProgress?: (progressEvent: AxiosProgressEvent) => void,
+    headers: Record<string, string> = {},
   ) => {
     const uploadConfig = {
-      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+        ...headers,
+      },
       onUploadProgress: onProgress,
     };
 
