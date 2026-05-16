@@ -10,6 +10,7 @@ LEGACY_STATUS_MAP = {
     Statuses.CLAIMED: Statuses.PUBLISHED,
     Statuses.CONVERTED: Statuses.APPROVED,
 }
+GITHUB_ISSUE_METADATA_KEY = "github_issue"
 
 ALLOWED_TRANSITIONS = {
     Statuses.PENDING_UPLOAD: {
@@ -142,10 +143,11 @@ def lifecycle_summary(dataset: Any) -> dict[str, Any]:
         "download": {
             "available": clean_downloadable,
         },
-        "github": {
-            "state": _github_state(state=state, issue_url=issue_url),
-            "issue_url": issue_url,
-        },
+        "github": _github_summary(
+            state=state,
+            issue_url=issue_url,
+            metadata=metadata,
+        ),
     }
 
 
@@ -191,6 +193,57 @@ def _github_state(*, state: Statuses, issue_url: str) -> str:
     }:
         return "pending"
     return "not_ready"
+
+
+def _github_summary(
+    *,
+    state: Statuses,
+    issue_url: str,
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
+    github_issue = metadata.get(GITHUB_ISSUE_METADATA_KEY)
+    if isinstance(github_issue, dict):
+        metadata_status = github_issue.get("status")
+        metadata_issue_url = str(github_issue.get("issue_url") or "")
+        summary_state = (
+            str(metadata_status)
+            if metadata_status in {"pending", "failed", "linked"}
+            else _github_state(state=state, issue_url=issue_url)
+        )
+        return {
+            "state": summary_state,
+            "issue_url": issue_url or metadata_issue_url,
+            "error_reason": github_issue.get("error_reason"),
+            "message": github_issue.get("message")
+            or _default_github_message(summary_state),
+            "retryable": bool(github_issue.get("retryable", False)),
+            "attempts": _safe_attempts(github_issue.get("attempts")),
+        }
+
+    summary_state = _github_state(state=state, issue_url=issue_url)
+    return {
+        "state": summary_state,
+        "issue_url": issue_url,
+        "error_reason": None,
+        "message": _default_github_message(summary_state),
+        "retryable": False,
+        "attempts": 0,
+    }
+
+
+def _safe_attempts(value: Any) -> int:
+    return value if isinstance(value, int) and value >= 0 else 0
+
+
+def _default_github_message(state: str) -> str:
+    messages = {
+        "linked": "GitHub discussion linked.",
+        "pending": "GitHub discussion creation is pending.",
+        "failed": "GitHub discussion could not be created.",
+        "not_ready": "GitHub discussion will be created after upload review is ready.",
+        "none": "GitHub discussion is not available.",
+    }
+    return messages.get(state, "GitHub discussion status is unknown.")
 
 
 def _safe_dataset_objects(metadata: dict[str, Any]) -> list[dict[str, Any]]:

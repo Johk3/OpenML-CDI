@@ -710,6 +710,9 @@ export const DatasetService = {
         state: string;
         html_url: string;
         title?: string;
+        message?: string;
+        error_reason?: string | null;
+        retryable?: boolean;
         comments: {
           id: number;
           author: string;

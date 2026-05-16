@@ -1,16 +1,66 @@
 # service for creating and reading GitHub issues linked to datasets.
 
 import logging
+import time
 from typing import Any, Callable
 
 from sqlalchemy.orm import Session
 from github import Github, Auth, GithubException, GithubIntegration
+from requests import exceptions as requests_exceptions
 
 from app.config import GitHubIssuesSettings
 from app.database.models import Dataset, Statuses
 from app.services.dataset_lifecycle import lifecycle_state
 
 logger = logging.getLogger(__name__)
+GITHUB_ISSUE_METADATA_KEY = "github_issue"
+GITHUB_ISSUE_MAX_ATTEMPTS = 3
+GITHUB_ISSUE_RETRY_BASE_SECONDS = 0.5
+
+CONFIGURATION_ERROR = "configuration_error"
+AUTHENTICATION_ERROR = "authentication_error"
+PERMISSION_ERROR = "permission_error"
+RATE_LIMITED = "rate_limited"
+TRANSIENT_ERROR = "transient_error"
+VALIDATION_ERROR = "validation_error"
+NOT_FOUND_ERROR = "not_found"
+UNKNOWN_ERROR = "unknown_error"
+
+USER_MESSAGES = {
+    CONFIGURATION_ERROR: (
+        "GitHub discussion could not be created because the server is "
+        "missing its GitHub App configuration."
+    ),
+    AUTHENTICATION_ERROR: (
+        "GitHub discussion could not be created because the GitHub App "
+        "could not authenticate."
+    ),
+    PERMISSION_ERROR: (
+        "GitHub discussion could not be created because the GitHub App "
+        "does not have permission to create issues in the configured repository."
+    ),
+    RATE_LIMITED: (
+        "GitHub discussion creation is delayed because GitHub rate limits "
+        "were reached."
+    ),
+    TRANSIENT_ERROR: (
+        "GitHub discussion creation is temporarily unavailable. The upload "
+        "is saved and can be retried."
+    ),
+    VALIDATION_ERROR: (
+        "GitHub discussion could not be created because GitHub rejected the "
+        "issue request."
+    ),
+    NOT_FOUND_ERROR: (
+        "GitHub discussion could not be created because the configured "
+        "repository was not found."
+    ),
+    UNKNOWN_ERROR: (
+        "Something went wrong while creating the GitHub discussion. The upload "
+        "is saved, but the discussion could not be linked."
+    ),
+}
+NETWORK_EXCEPTIONS = (requests_exceptions.RequestException, TimeoutError)
 
 PRIVATE_METADATA_FIELDS = {
     "name",
@@ -35,15 +85,32 @@ PRIVATE_METADATA_FIELDS = {
 class GitHubAPIError(RuntimeError):
     """Raised when the GitHub API returns an error response."""
 
-    def __init__(self, message: str, status_code: int | None = None):
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        *,
+        reason: str = UNKNOWN_ERROR,
+        retryable: bool = False,
+        user_message: str | None = None,
+    ):
         super().__init__(message)
         self.status_code = status_code
+        self.reason = reason
+        self.retryable = retryable
+        self.user_message = user_message or USER_MESSAGES.get(
+            reason, USER_MESSAGES[UNKNOWN_ERROR]
+        )
 
 
 def get_installation_token(settings: GitHubIssuesSettings) -> str:
     """Acquire a GitHub App installation access token."""
     if not settings.app_id or not settings.install_id or not settings.private_key:
-        raise GitHubAPIError("GitHub App credentials are not fully configured")
+        raise GitHubAPIError(
+            "GitHub App credentials are not fully configured",
+            reason=CONFIGURATION_ERROR,
+            retryable=False,
+        )
 
     auth = Auth.AppAuth(settings.app_id, settings.private_key)
     integration = GithubIntegration(auth=auth)
@@ -52,16 +119,81 @@ def get_installation_token(settings: GitHubIssuesSettings) -> str:
         access = integration.get_access_token(settings.install_id)
         return access.token
     except GithubException as e:
-        raise GitHubAPIError(
-            f"Failed to authenticate as GitHub App: {e.data.get('message', str(e))}",
-            e.status,
-        )
+        raise _github_api_error_from_exception(e)
 
 
 def _get_github_client(settings: GitHubIssuesSettings) -> Github:
     """Initialize a PyGithub client using GitHub App authentication."""
     token = get_installation_token(settings)
     return Github(auth=Auth.Token(token))
+
+
+def _github_exception_message(error: GithubException) -> str:
+    if hasattr(error, "data") and isinstance(error.data, dict):
+        return str(error.data.get("message", str(error)))
+    return str(error)
+
+
+def _is_rate_limit_error(status: int | None, message: str) -> bool:
+    message_lower = message.lower()
+    return status == 429 or (
+        status == 403
+        and ("rate limit" in message_lower or "rate-limit" in message_lower)
+    )
+
+
+def _github_api_error_from_exception(error: GithubException) -> GitHubAPIError:
+    status = error.status
+    message = _github_exception_message(error)
+
+    if status == 401:
+        return GitHubAPIError(
+            "GitHub token is invalid or expired",
+            status,
+            reason=AUTHENTICATION_ERROR,
+            retryable=False,
+        )
+    if _is_rate_limit_error(status, message):
+        return GitHubAPIError(
+            "GitHub API rate limit exceeded",
+            status,
+            reason=RATE_LIMITED,
+            retryable=True,
+        )
+    if status == 403:
+        return GitHubAPIError(
+            "GitHub permission denied",
+            status,
+            reason=PERMISSION_ERROR,
+            retryable=False,
+        )
+    if status == 404:
+        return GitHubAPIError(
+            "GitHub repository not found",
+            status,
+            reason=NOT_FOUND_ERROR,
+            retryable=False,
+        )
+    if status == 422:
+        return GitHubAPIError(
+            f"GitHub rejected the request: {message}",
+            status,
+            reason=VALIDATION_ERROR,
+            retryable=False,
+        )
+    if status is not None and status >= 500:
+        return GitHubAPIError(
+            f"GitHub API temporary failure: {message}",
+            status,
+            reason=TRANSIENT_ERROR,
+            retryable=True,
+        )
+    return GitHubAPIError(
+        f"GitHub API returned {status}: {message}",
+        status,
+        reason=UNKNOWN_ERROR,
+        retryable=True,
+    )
 
 
 def _build_issue_body(
@@ -161,25 +293,7 @@ def create_issue(
         )
         return issue.html_url
     except GithubException as e:
-        status = e.status
-        msg = (
-            e.data.get("message", str(e))
-            if hasattr(e, "data") and isinstance(e.data, dict)
-            else str(e)
-        )
-        if status == 401:
-            raise GitHubAPIError("GitHub token is invalid or expired", status)
-        if status == 403:
-            raise GitHubAPIError(
-                "GitHub API rate limit exceeded or permission denied", status
-            )
-        if status == 404:
-            raise GitHubAPIError("GitHub repository not found", status)
-        if status == 422:
-            raise GitHubAPIError(f"GitHub rejected the request: {msg}", status)
-        if status == 429:
-            raise GitHubAPIError("GitHub API rate limit exceeded", status)
-        raise GitHubAPIError(f"GitHub API returned {status}: {msg}", status)
+        raise _github_api_error_from_exception(e)
 
 
 def update_issue(
@@ -210,15 +324,14 @@ def update_issue(
 
         issue.edit(title=issue_title, body=body)
     except GithubException as e:
-        status = e.status
-        msg = (
-            e.data.get("message", str(e))
-            if hasattr(e, "data") and isinstance(e.data, dict)
-            else str(e)
+        error = _github_api_error_from_exception(e)
+        raise GitHubAPIError(
+            f"GitHub API error during update: {_github_exception_message(e)}",
+            error.status_code,
+            reason=error.reason,
+            retryable=error.retryable,
+            user_message=error.user_message,
         )
-        if status in (401, 403, 404, 422, 429):
-            raise GitHubAPIError(f"GitHub API error during update: {msg}", status)
-        raise GitHubAPIError(f"GitHub API returned {status}: {msg}", status)
 
 
 def _parse_owner_repo_number(issue_url: str) -> tuple[str, str, int] | None:
@@ -294,14 +407,10 @@ def create_issue_for_dataset(
     settings: GitHubIssuesSettings,
     app_base_url: str,
     db_factory: Callable[[], Session],
+    max_attempts: int = GITHUB_ISSUE_MAX_ATTEMPTS,
+    retry_sleep: Callable[[float], None] = time.sleep,
 ) -> None:
     """Background task: create a GitHub issue and persist the URL on the dataset."""
-    if not settings.app_id or not settings.install_id or not settings.private_key:
-        logger.info(
-            "GitHub issue creation skipped, GitHub App credentials not fully configured"
-        )
-        return
-
     with db_factory() as db:
         dataset = db.get(Dataset, dataset_id)
         if dataset is None:
@@ -315,52 +424,152 @@ def create_issue_for_dataset(
             )
             return
 
-    try:
-        html_url = create_issue(
-            settings=settings,
-            dataset_id=str(dataset_id),
-            title=title,
-            metadata=metadata,
-            app_base_url=app_base_url,
+    if not settings.app_id or not settings.install_id or not settings.private_key:
+        logger.info(
+            "GitHub issue creation skipped, GitHub App credentials not fully configured"
         )
-    except GitHubAPIError:
-        logger.exception("Failed to create GitHub issue for dataset %s", dataset_id)
-        _mark_dataset_integration_failed(
+        _persist_dataset_github_issue_state(
             dataset_id=dataset_id,
             db_factory=db_factory,
-        )
-        return
-    except Exception:
-        logger.exception(
-            "Network error creating GitHub issue for dataset %s", dataset_id
-        )
-        _mark_dataset_integration_failed(
-            dataset_id=dataset_id,
-            db_factory=db_factory,
+            state=_github_issue_failure_state(
+                reason=CONFIGURATION_ERROR,
+                retryable=False,
+                attempts=0,
+            ),
         )
         return
 
-    with db_factory() as db:
-        dataset = db.get(Dataset, dataset_id)
-        if dataset is None:
-            logger.warning("Dataset %s not found when persisting issue URL", dataset_id)
+    _persist_dataset_github_issue_state(
+        dataset_id=dataset_id,
+        db_factory=db_factory,
+        state={
+            "status": "pending",
+            "error_reason": None,
+            "message": "GitHub discussion creation is pending.",
+            "retryable": False,
+            "attempts": 0,
+        },
+    )
+
+    attempts = max(1, max_attempts)
+    last_error: GitHubAPIError | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            html_url = create_issue(
+                settings=settings,
+                dataset_id=str(dataset_id),
+                title=title,
+                metadata=metadata,
+                app_base_url=app_base_url,
+            )
+        except GitHubAPIError as error:
+            last_error = error
+            logger.warning(
+                "Failed to create GitHub issue for dataset %s: %s",
+                dataset_id,
+                error,
+            )
+        except NETWORK_EXCEPTIONS as error:
+            last_error = GitHubAPIError(
+                f"Network error creating GitHub issue: {error}",
+                reason=TRANSIENT_ERROR,
+                retryable=True,
+            )
+            logger.warning(
+                "Network error creating GitHub issue for dataset %s: %s",
+                dataset_id,
+                error,
+            )
+        except Exception as error:
+            last_error = GitHubAPIError(
+                f"Unexpected error creating GitHub issue: {error}",
+                reason=UNKNOWN_ERROR,
+                retryable=False,
+            )
+            logger.exception(
+                "Unexpected error creating GitHub issue for dataset %s",
+                dataset_id,
+            )
+        else:
+            _persist_dataset_github_issue_state(
+                dataset_id=dataset_id,
+                db_factory=db_factory,
+                state={
+                    "status": "linked",
+                    "issue_url": html_url,
+                    "error_reason": None,
+                    "message": "GitHub discussion linked.",
+                    "retryable": False,
+                    "attempts": attempt,
+                },
+                issue_url=html_url,
+            )
+            logger.info("GitHub issue created for dataset %s: %s", dataset_id, html_url)
             return
-        dataset.issue_url = html_url
-        db.commit()
 
-    logger.info("GitHub issue created for dataset %s: %s", dataset_id, html_url)
+        if not last_error.retryable or attempt == attempts:
+            break
+
+        retry_sleep(_retry_delay_seconds(attempt))
+
+    if last_error is None:
+        last_error = GitHubAPIError(
+            "GitHub issue creation failed",
+            reason=UNKNOWN_ERROR,
+            retryable=True,
+        )
+
+    _persist_dataset_github_issue_state(
+        dataset_id=dataset_id,
+        db_factory=db_factory,
+        state=_github_issue_failure_state(
+            reason=last_error.reason,
+            retryable=last_error.retryable,
+            attempts=attempt,
+            message=last_error.user_message,
+        ),
+    )
 
 
-def _mark_dataset_integration_failed(
+def _retry_delay_seconds(attempt: int) -> float:
+    return GITHUB_ISSUE_RETRY_BASE_SECONDS * (2 ** (attempt - 1))
+
+
+def _github_issue_failure_state(
+    *,
+    reason: str,
+    retryable: bool,
+    attempts: int,
+    message: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "status": "failed",
+        "error_reason": reason,
+        "message": message or USER_MESSAGES.get(reason, USER_MESSAGES[UNKNOWN_ERROR]),
+        "retryable": retryable,
+        "attempts": attempts,
+    }
+
+
+def _persist_dataset_github_issue_state(
     *,
     dataset_id: Any,
     db_factory: Callable[[], Session],
+    state: dict[str, Any],
+    issue_url: str | None = None,
 ) -> None:
     with db_factory() as db:
         dataset = db.get(Dataset, dataset_id)
         if dataset is None:
+            logger.warning(
+                "Dataset %s not found when persisting GitHub state", dataset_id
+            )
             return
-        dataset.status = Statuses.INTEGRATION_FAILED
+        dataset_metadata = dict(dataset.dataset_metadata or {})
+        dataset_metadata[GITHUB_ISSUE_METADATA_KEY] = state
+        dataset.dataset_metadata = dataset_metadata
+        if issue_url is not None:
+            dataset.issue_url = issue_url
         db.commit()
 
 

@@ -1123,6 +1123,18 @@ def get_github_discussion(
 
     issue_url = dataset.issue_url if dataset else ""
     if not issue_url:
+        github_state = lifecycle_summary(dataset)["github"] if dataset else {}
+        state = github_state.get("state")
+        if state in {"pending", "failed"}:
+            return {
+                "state": state,
+                "html_url": "",
+                "title": "",
+                "message": github_state.get("message", ""),
+                "error_reason": github_state.get("error_reason"),
+                "retryable": github_state.get("retryable", False),
+                "comments": [],
+            }
         return {"state": "none", "html_url": "", "comments": []}
 
     settings = request.app.state.settings.github_issues

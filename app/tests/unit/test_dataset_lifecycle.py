@@ -111,3 +111,56 @@ def test_lifecycle_summary_exposes_github_integration_failure():
 
     assert summary["state"] == "integration_failed"
     assert summary["github"]["state"] == "failed"
+
+
+def test_lifecycle_summary_exposes_github_issue_pending_metadata():
+    dataset = _dataset(
+        status=Statuses.PENDING_REVIEW,
+        metadata={
+            "github_issue": {
+                "status": "pending",
+                "message": "GitHub discussion creation is pending.",
+                "retryable": False,
+                "attempts": 0,
+            }
+        },
+    )
+
+    summary = lifecycle_summary(dataset)
+
+    assert summary["state"] == "pending_review"
+    assert summary["github"] == {
+        "state": "pending",
+        "issue_url": "",
+        "error_reason": None,
+        "message": "GitHub discussion creation is pending.",
+        "retryable": False,
+        "attempts": 0,
+    }
+
+
+def test_lifecycle_summary_exposes_github_issue_failure_metadata():
+    dataset = _dataset(
+        status=Statuses.PENDING_REVIEW,
+        metadata={
+            "github_issue": {
+                "status": "failed",
+                "error_reason": "permission_error",
+                "message": (
+                    "GitHub discussion could not be created because the "
+                    "GitHub App does not have permission to create issues "
+                    "in the configured repository."
+                ),
+                "retryable": False,
+                "attempts": 1,
+            }
+        },
+    )
+
+    summary = lifecycle_summary(dataset)
+
+    assert summary["state"] == "pending_review"
+    assert summary["github"]["state"] == "failed"
+    assert summary["github"]["error_reason"] == "permission_error"
+    assert summary["github"]["retryable"] is False
+    assert "permission" in summary["github"]["message"]

@@ -106,6 +106,24 @@ describe('DatasetDetailPage', () => {
     expect(screen.getByText(/CLEAN/)).toBeInTheDocument();
   });
 
+  it('should render GitHub issue creation failure status', async () => {
+    mockDatasetService.getGitHubDiscussion.mockResolvedValueOnce({
+      state: 'failed',
+      html_url: '',
+      message:
+        'GitHub discussion could not be created because the GitHub App does not have permission.',
+      error_reason: 'permission_error',
+      retryable: false,
+      comments: [],
+    });
+
+    navigateTo('/datasets/ds-1');
+
+    expect(await screen.findByText(/github discussion could not be created/i)).toBeInTheDocument();
+    expect(screen.getByText(/failed/i)).toBeInTheDocument();
+    expect(screen.queryByText(/view on github/i)).not.toBeInTheDocument();
+  });
+
   it('should render warning when malware scan is missing', async () => {
     const { mockDatasetService } = await import('../mocks/datasetService');
     mockDatasetService.getDataset.mockResolvedValueOnce({

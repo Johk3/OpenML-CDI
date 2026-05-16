@@ -722,6 +722,55 @@ def test_expert_can_approve_review_ready_dataset(client, db_test_session):
     assert db_test_session.get(Dataset, dataset_id).status == Statuses.APPROVED
 
 
+def test_github_discussion_returns_creation_failure_without_issue_url(
+    client, db_test_session
+):
+    owner_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    db_test_session.add(_user(user_id=owner_id, role=Roles.USER))
+    db_test_session.add(
+        Dataset(
+            id=dataset_id,
+            title="Review dataset",
+            owner_id=owner_id,
+            dataset_metadata={
+                "github_issue": {
+                    "status": "failed",
+                    "error_reason": "permission_error",
+                    "message": (
+                        "GitHub discussion could not be created because "
+                        "the GitHub App does not have permission."
+                    ),
+                    "retryable": False,
+                    "attempts": 1,
+                }
+            },
+            status=Statuses.PENDING_REVIEW,
+        )
+    )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(owner_id), "type": "access"})
+
+    response = client.get(
+        f"/api/datasets/{dataset_id}/github-discussion",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "state": "failed",
+        "html_url": "",
+        "title": "",
+        "message": (
+            "GitHub discussion could not be created because "
+            "the GitHub App does not have permission."
+        ),
+        "error_reason": "permission_error",
+        "retryable": False,
+        "comments": [],
+    }
+
+
 def test_expert_default_list_includes_all_datasets(client, db_test_session):
     expert_id = uuid.uuid4()
     owner_id = uuid.uuid4()

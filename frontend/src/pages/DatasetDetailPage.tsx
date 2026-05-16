@@ -242,6 +242,9 @@ export const DatasetDetailPage: React.FC = () => {
   type DiscussionData = {
     state: string;
     html_url: string;
+    message?: string;
+    error_reason?: string | null;
+    retryable?: boolean;
     comments: GitHubComment[];
   };
 
@@ -277,6 +280,26 @@ export const DatasetDetailPage: React.FC = () => {
     const days = Math.floor(hours / 24);
     return `${days}d ago`;
   };
+
+  const discussionLinked = Boolean(
+    discussion?.html_url && (discussion.state === 'open' || discussion.state === 'closed'),
+  );
+  const discussionStatusLabel =
+    discussion?.state === 'open'
+      ? 'Open'
+      : discussion?.state === 'closed'
+        ? 'Closed'
+        : discussion?.state === 'pending'
+          ? 'Pending'
+          : discussion?.state === 'failed'
+            ? 'Failed'
+            : '';
+  const discussionStatusClass =
+    discussion?.state === 'open'
+      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+      : discussion?.state === 'failed'
+        ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+        : 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400';
 
   if (!user) {
     return (
@@ -690,22 +713,20 @@ export const DatasetDetailPage: React.FC = () => {
                 {discussion && discussion.state !== 'none' ? (
                   <span className="flex items-center gap-2 mt-1">
                     <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                        discussion.state === 'open'
-                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                          : 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400'
-                      }`}
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${discussionStatusClass}`}
                     >
-                      {discussion.state === 'open' ? 'Open' : 'Closed'}
+                      {discussionStatusLabel}
                     </span>
-                    <a
-                      href={discussion.html_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-primary hover:underline flex items-center gap-1 text-xs"
-                    >
-                      View on GitHub <ExternalLink size={10} />
-                    </a>
+                    {discussionLinked ? (
+                      <a
+                        href={discussion.html_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline flex items-center gap-1 text-xs"
+                      >
+                        View on GitHub <ExternalLink size={10} />
+                      </a>
+                    ) : null}
                   </span>
                 ) : (
                   'Issue comments from GitHub'
@@ -717,6 +738,16 @@ export const DatasetDetailPage: React.FC = () => {
                 <div className="flex flex-col items-center py-6 gap-2">
                   <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                   <p className="text-xs text-muted-foreground">Loading discussion…</p>
+                </div>
+              ) : discussion &&
+                (discussion.state === 'pending' || discussion.state === 'failed') ? (
+                <div className="text-center py-6 text-muted-foreground text-sm">
+                  {discussion.state === 'failed' ? (
+                    <AlertCircle className="w-8 h-8 mx-auto mb-2 text-destructive" />
+                  ) : (
+                    <Loader2 className="w-8 h-8 mx-auto mb-2 animate-spin opacity-60" />
+                  )}
+                  <p>{discussion.message || 'GitHub discussion creation is pending.'}</p>
                 </div>
               ) : discussion && discussion.state !== 'none' && discussion.comments.length > 0 ? (
                 <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">

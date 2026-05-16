@@ -3,6 +3,7 @@ from datetime import datetime
 import pytest
 
 from github import GithubException
+from requests import exceptions as requests_exceptions
 
 from app.config import GitHubIssuesSettings
 from app.database.models import Statuses
@@ -154,8 +155,46 @@ class TestCreateIssue:
             403, {"message": "API rate limit exceeded"}
         )
 
-        with pytest.raises(GitHubAPIError, match="rate limit"):
+        with pytest.raises(GitHubAPIError, match="rate limit") as exc_info:
             create_issue(settings, "ds-1", "Test", {}, "http://localhost:8000")
+
+        assert exc_info.value.reason == "rate_limited"
+        assert exc_info.value.retryable is True
+
+    @patch("app.services.github_issues._get_github_client")
+    def test_permission_403(self, mock_get_client, settings):
+        mock_get_client.side_effect = GithubException(
+            403, {"message": "Resource not accessible by integration"}
+        )
+
+        with pytest.raises(GitHubAPIError, match="permission") as exc_info:
+            create_issue(settings, "ds-1", "Test", {}, "http://localhost:8000")
+
+        assert exc_info.value.reason == "permission_error"
+        assert exc_info.value.retryable is False
+        assert "permission" in exc_info.value.user_message
+
+    @patch("app.services.github_issues._get_github_client")
+    def test_validation_422(self, mock_get_client, settings):
+        mock_get_client.side_effect = GithubException(
+            422, {"message": "Validation Failed"}
+        )
+
+        with pytest.raises(GitHubAPIError, match="rejected") as exc_info:
+            create_issue(settings, "ds-1", "Test", {}, "http://localhost:8000")
+
+        assert exc_info.value.reason == "validation_error"
+        assert exc_info.value.retryable is False
+
+    @patch("app.services.github_issues._get_github_client")
+    def test_transient_api_error(self, mock_get_client, settings):
+        mock_get_client.side_effect = GithubException(500, {"message": "Server Error"})
+
+        with pytest.raises(GitHubAPIError, match="temporary") as exc_info:
+            create_issue(settings, "ds-1", "Test", {}, "http://localhost:8000")
+
+        assert exc_info.value.reason == "transient_error"
+        assert exc_info.value.retryable is True
 
     @patch("app.services.github_issues._get_github_client")
     def test_network_error(self, mock_get_client, settings):
@@ -206,9 +245,16 @@ class TestGetIssueWithComments:
 
 
 class TestCreateIssueForDataset:
-    def test_skips_when_no_token(self, empty_settings):
-        """Should not call GitHub when token is empty."""
-        mock_db_factory = MagicMock()
+    def test_missing_config_marks_github_issue_failed(self, empty_settings):
+        mock_dataset = MagicMock()
+        mock_dataset.status = Statuses.PENDING_REVIEW
+        mock_dataset.dataset_metadata = {}
+        mock_db = MagicMock()
+        mock_db.get.return_value = mock_dataset
+        mock_db.__enter__ = MagicMock(return_value=mock_db)
+        mock_db.__exit__ = MagicMock(return_value=False)
+        mock_db_factory = MagicMock(return_value=mock_db)
+
         create_issue_for_dataset(
             dataset_id="ds-1",
             title="Test",
@@ -217,7 +263,19 @@ class TestCreateIssueForDataset:
             app_base_url="http://localhost:8000",
             db_factory=mock_db_factory,
         )
-        mock_db_factory.assert_not_called()
+
+        assert mock_dataset.status == Statuses.PENDING_REVIEW
+        assert mock_dataset.dataset_metadata["github_issue"] == {
+            "status": "failed",
+            "error_reason": "configuration_error",
+            "message": (
+                "GitHub discussion could not be created because the server "
+                "is missing its GitHub App configuration."
+            ),
+            "retryable": False,
+            "attempts": 0,
+        }
+        mock_db.commit.assert_called_once()
 
     @patch("app.services.github_issues.create_issue")
     def test_persists_url(self, mock_create, settings):
@@ -248,11 +306,29 @@ class TestCreateIssueForDataset:
             mock_dataset.issue_url
             == "https://github.com/openml/openmlupload-test/issues/5"
         )
-        mock_db.commit.assert_called_once()
+        assert mock_dataset.status == Statuses.PENDING_REVIEW
+        assert mock_dataset.dataset_metadata["github_issue"] == {
+            "status": "linked",
+            "issue_url": "https://github.com/openml/openmlupload-test/issues/5",
+            "error_reason": None,
+            "message": "GitHub discussion linked.",
+            "retryable": False,
+            "attempts": 1,
+        }
+        assert mock_db.commit.call_count == 2
 
     @patch("app.services.github_issues.create_issue")
     def test_handles_api_error_gracefully(self, mock_create, settings):
-        mock_create.side_effect = GitHubAPIError("rate limit", 403)
+        mock_create.side_effect = GitHubAPIError(
+            "rate limit",
+            403,
+            reason="rate_limited",
+            retryable=True,
+            user_message=(
+                "GitHub discussion creation is delayed because GitHub "
+                "rate limits were reached."
+            ),
+        )
         mock_dataset = MagicMock()
         mock_dataset.status = Statuses.PENDING_REVIEW
         mock_dataset.dataset_metadata = {}
@@ -271,8 +347,134 @@ class TestCreateIssueForDataset:
             app_base_url="http://localhost:8000",
             db_factory=mock_db_factory,
         )
-        assert mock_dataset.status == "integration_failed"
-        mock_db.commit.assert_called_once()
+        assert mock_dataset.status == Statuses.PENDING_REVIEW
+        assert mock_dataset.dataset_metadata["github_issue"] == {
+            "status": "failed",
+            "error_reason": "rate_limited",
+            "message": (
+                "GitHub discussion creation is delayed because GitHub "
+                "rate limits were reached."
+            ),
+            "retryable": True,
+            "attempts": 3,
+        }
+        assert mock_create.call_count == 3
+        assert mock_db.commit.call_count == 2
+
+    @patch("app.services.github_issues.create_issue")
+    def test_retries_transient_failure_before_persisting_url(
+        self, mock_create, settings
+    ):
+        mock_create.side_effect = [
+            GitHubAPIError(
+                "temporary unavailable",
+                500,
+                reason="transient_error",
+                retryable=True,
+                user_message=(
+                    "GitHub discussion creation is temporarily unavailable. "
+                    "The upload is saved and can be retried."
+                ),
+            ),
+            "https://github.com/openml/openmlupload-test/issues/6",
+        ]
+        mock_dataset = MagicMock()
+        mock_dataset.issue_url = ""
+        mock_dataset.status = Statuses.PENDING_REVIEW
+        mock_dataset.dataset_metadata = {}
+        mock_db = MagicMock()
+        mock_db.get.return_value = mock_dataset
+        mock_db.__enter__ = MagicMock(return_value=mock_db)
+        mock_db.__exit__ = MagicMock(return_value=False)
+        mock_db_factory = MagicMock(return_value=mock_db)
+
+        create_issue_for_dataset(
+            dataset_id="ds-1",
+            title="Test",
+            metadata={},
+            settings=settings,
+            app_base_url="http://localhost:8000",
+            db_factory=mock_db_factory,
+            retry_sleep=lambda _seconds: None,
+        )
+
+        assert (
+            mock_dataset.issue_url
+            == "https://github.com/openml/openmlupload-test/issues/6"
+        )
+        assert mock_dataset.dataset_metadata["github_issue"]["status"] == "linked"
+        assert mock_dataset.dataset_metadata["github_issue"]["attempts"] == 2
+        assert mock_create.call_count == 2
+
+    @patch("app.services.github_issues.create_issue")
+    def test_retries_known_network_error(self, mock_create, settings):
+        mock_create.side_effect = requests_exceptions.ConnectionError("offline")
+        mock_dataset = MagicMock()
+        mock_dataset.status = Statuses.PENDING_REVIEW
+        mock_dataset.dataset_metadata = {}
+        mock_db = MagicMock()
+        mock_db.get.return_value = mock_dataset
+        mock_db.__enter__ = MagicMock(return_value=mock_db)
+        mock_db.__exit__ = MagicMock(return_value=False)
+        mock_db_factory = MagicMock(return_value=mock_db)
+
+        create_issue_for_dataset(
+            dataset_id="ds-1",
+            title="Test",
+            metadata={},
+            settings=settings,
+            app_base_url="http://localhost:8000",
+            db_factory=mock_db_factory,
+            retry_sleep=lambda _seconds: None,
+        )
+
+        assert mock_dataset.dataset_metadata["github_issue"] == {
+            "status": "failed",
+            "error_reason": "transient_error",
+            "message": (
+                "GitHub discussion creation is temporarily unavailable. "
+                "The upload is saved and can be retried."
+            ),
+            "retryable": True,
+            "attempts": 3,
+        }
+        assert mock_create.call_count == 3
+
+    @patch("app.services.github_issues.create_issue")
+    def test_unknown_exception_is_not_retried_or_reported_as_network(
+        self, mock_create, settings
+    ):
+        mock_create.side_effect = ValueError("bad local state")
+        mock_dataset = MagicMock()
+        mock_dataset.status = Statuses.PENDING_REVIEW
+        mock_dataset.dataset_metadata = {}
+        mock_db = MagicMock()
+        mock_db.get.return_value = mock_dataset
+        mock_db.__enter__ = MagicMock(return_value=mock_db)
+        mock_db.__exit__ = MagicMock(return_value=False)
+        mock_db_factory = MagicMock(return_value=mock_db)
+
+        create_issue_for_dataset(
+            dataset_id="ds-1",
+            title="Test",
+            metadata={},
+            settings=settings,
+            app_base_url="http://localhost:8000",
+            db_factory=mock_db_factory,
+            retry_sleep=lambda _seconds: None,
+        )
+
+        assert mock_dataset.dataset_metadata["github_issue"] == {
+            "status": "failed",
+            "error_reason": "unknown_error",
+            "message": (
+                "Something went wrong while creating the GitHub discussion. "
+                "The upload is saved, but the discussion could not be linked."
+            ),
+            "retryable": False,
+            "attempts": 1,
+        }
+        assert mock_create.call_count == 1
 
 
 class TestUpdateIssue:
