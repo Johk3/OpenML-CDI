@@ -55,15 +55,13 @@ class FailingSession:
 
 def test_repository_permission_client_uses_expected_github_endpoint_and_headers():
     session = RecordingSession(FakeResponse(200, {"role_name": "maintain"}))
-    client = GitHubRepositoryPermissionClient(
-        session, owner="openml", repo="openmlupload"
-    )
+    client = GitHubRepositoryPermissionClient(session)
 
     assert client.get_repository_permission("octocat") == {"role_name": "maintain"}
     assert session.requests == [
         {
             "url": (
-                "https://api.github.com/repos/openml/openmlupload"
+                "https://api.github.com/repos/koevoet1221/openmlupload-testing"
                 "/collaborators/octocat/permission"
             ),
             "headers": {
@@ -74,21 +72,30 @@ def test_repository_permission_client_uses_expected_github_endpoint_and_headers(
     ]
 
 
+def test_repository_permission_client_defaults_to_openml_upload_testing(monkeypatch):
+    monkeypatch.setenv("GITHUB_PERMISSION_OWNER", "wrong-owner")
+    monkeypatch.setenv("GITHUB_PERMISSION_REPO", "wrong-repo")
+    session = RecordingSession(FakeResponse(200, {"role_name": "maintain"}))
+    client = GitHubRepositoryPermissionClient(session)
+
+    assert client.get_repository_permission("octocat") == {"role_name": "maintain"}
+    assert session.requests[0]["url"] == (
+        "https://api.github.com/repos/koevoet1221/openmlupload-testing"
+        "/collaborators/octocat/permission"
+    )
+
+
 def test_repository_permission_client_applies_auth_header_when_token_provided():
     session = RecordingSession(FakeResponse(200, {"role_name": "maintain"}))
     # We pass session explicitly to the client even with a token for testing
-    client = GitHubRepositoryPermissionClient(
-        session, owner="openml", repo="openmlupload", token="gh-app-token"
-    )
+    client = GitHubRepositoryPermissionClient(session, token="gh-app-token")
 
     assert client.get_repository_permission("octocat") == {"role_name": "maintain"}
     assert session.requests[0]["headers"]["Authorization"] == "Bearer gh-app-token"
 
 
 def test_repository_permission_client_wraps_http_errors_as_lookup_failures():
-    client = GitHubRepositoryPermissionClient(
-        FailingSession(), owner="openml", repo="openmlupload"
-    )
+    client = GitHubRepositoryPermissionClient(FailingSession())
 
     try:
         client.get_repository_permission("octocat")

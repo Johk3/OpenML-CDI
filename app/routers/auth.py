@@ -334,15 +334,11 @@ def _sync_oauth_user_role(
     user: User,
     github_username: str,
     github_session: OAuth2Session | None = None,
-    owner: str | None = None,
-    repo: str | None = None,
     settings: GitHubIssuesSettings | None = None,
 ) -> User:
     resolved_role = resolve_github_repository_role(
         github_username,
         session=github_session,
-        owner=owner,
-        repo=repo,
         settings=settings,
     )
 
@@ -355,8 +351,6 @@ def _sync_oauth_user_role(
             "user_id": str(user.id),
             "github_username": github_username,
             "assigned_role": resolved_role.value,
-            "owner": owner,
-            "repo": repo,
         },
     )
     return user
@@ -506,8 +500,6 @@ def auth_github_callback(
             db=db,
             user=user,
             github_username=username,
-            owner=settings.github_issues.owner,
-            repo=settings.github_issues.repo,
             settings=settings.github_issues,
         )
         _delete_oauth_state_cookie(response, secure=cookie_secure)
@@ -675,8 +667,6 @@ def auth_github_callback(
         user=user,
         github_username=github_username,
         github_session=github,
-        owner=settings.github_issues.owner,
-        repo=settings.github_issues.repo,
         settings=settings.github_issues,
     )
 

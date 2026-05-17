@@ -1,4 +1,4 @@
-import { createBrowserRouter, RouteObject } from 'react-router-dom';
+import { createBrowserRouter, Navigate, RouteObject } from 'react-router-dom';
 import App from '../App';
 import { UploadPage } from '../pages/UploadPage';
 import { MyDatasetsPage } from '../pages/MyDatasetsPage';
@@ -11,7 +11,6 @@ import { MainLayout } from '../components/MainLayout';
 import { CroissantMetadataPage } from '../pages/CroissantMetadataPage';
 import { AccountPage } from '../pages/AccountPage';
 import { ProtectedRoute } from '../components/ProtectedRoute';
-import { UserPage } from '../pages/UserPage';
 import { Providers } from '../providers/Providers';
 
 import { ExpertQueuePage } from '../pages/ExpertQueuePage';
@@ -83,11 +82,7 @@ export const routes: RouteObject[] = [
       },
       {
         path: 'profile',
-        element: (
-          <ProtectedRoute>
-            <UserPage />
-          </ProtectedRoute>
-        ),
+        element: <Navigate to="/account" replace />,
       },
       {
         path: '*',

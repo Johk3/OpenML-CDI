@@ -14,8 +14,10 @@ import {
   X,
   ShieldAlert,
   Search,
+  MessageSquare,
+  ExternalLink,
 } from 'lucide-react';
-import { Dataset, DatasetStatus } from '../types/auth';
+import { Dataset, DatasetLifecycleSummary, DatasetStatus } from '../types/auth';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import {
@@ -30,7 +32,87 @@ import { useUserContext } from '@/hooks/useUserContext';
 import { DatasetService } from '@/services/datasetService';
 import { BackendDataset } from '@/types/dataset';
 
-function toFrontendDataset(b: BackendDataset): Dataset {
+type ReviewQueueDataset = Dataset & {
+  issueUrl: string;
+};
+
+type GitHubQueueState = {
+  state: 'linked' | 'pending' | 'failed' | 'not_ready';
+  label: string;
+  message: string;
+  issueUrl: string;
+  cls: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function githubStateFromMetadata(
+  githubIssue: unknown,
+  fallbackIssueUrl: string,
+): DatasetLifecycleSummary['github'] | undefined {
+  if (!isRecord(githubIssue)) return undefined;
+
+  const status = stringValue(githubIssue.status);
+  return {
+    state: ['linked', 'pending', 'failed'].includes(status) ? status : 'not_ready',
+    issue_url: stringValue(githubIssue.issue_url) || fallbackIssueUrl,
+    error_reason: stringValue(githubIssue.error_reason) || null,
+    message: stringValue(githubIssue.message),
+    retryable: Boolean(githubIssue.retryable),
+    attempts: typeof githubIssue.attempts === 'number' ? githubIssue.attempts : 0,
+  };
+}
+
+function getGitHubQueueState(dataset: ReviewQueueDataset): GitHubQueueState {
+  const github =
+    dataset.lifecycle?.github ??
+    githubStateFromMetadata(dataset.rawMetadata?.github_issue, dataset.issueUrl);
+  const state = github?.state === 'linked' || dataset.issueUrl ? 'linked' : github?.state;
+  const normalizedState =
+    state === 'linked' || state === 'pending' || state === 'failed' ? state : 'not_ready';
+  const issueUrl = github?.issue_url || dataset.issueUrl;
+  const fallbackMessages = {
+    linked: 'GitHub discussion linked.',
+    pending: 'GitHub discussion creation is pending.',
+    failed: 'GitHub discussion could not be created.',
+    not_ready: 'GitHub discussion will be created after upload review is ready.',
+  };
+
+  const config = {
+    linked: {
+      label: 'GitHub linked',
+      cls: 'bg-green-50 border-green-200 text-green-700 dark:bg-green-950/30 dark:border-green-900/50 dark:text-green-300',
+    },
+    pending: {
+      label: 'GitHub pending',
+      cls: 'bg-yellow-50 border-yellow-200 text-yellow-700 dark:bg-yellow-950/30 dark:border-yellow-900/50 dark:text-yellow-300',
+    },
+    failed: {
+      label: 'GitHub failed',
+      cls: 'bg-red-50 border-red-200 text-red-700 dark:bg-red-950/30 dark:border-red-900/50 dark:text-red-300',
+    },
+    not_ready: {
+      label: 'GitHub not ready',
+      cls: 'bg-slate-50 border-slate-200 text-slate-700 dark:bg-slate-900/40 dark:border-slate-800 dark:text-slate-300',
+    },
+  };
+
+  return {
+    state: normalizedState,
+    label: config[normalizedState].label,
+    message: github?.message || fallbackMessages[normalizedState],
+    issueUrl,
+    cls: config[normalizedState].cls,
+  };
+}
+
+function toFrontendDataset(b: BackendDataset): ReviewQueueDataset {
   const metadata = b.dataset_metadata || {};
   let description = '';
   const descriptionValue = metadata.description;
@@ -51,6 +133,9 @@ function toFrontendDataset(b: BackendDataset): Dataset {
     date: b.created_at ? b.created_at.slice(0, 10) : 'Unknown',
     status: (b.status || 'pending') as DatasetStatus,
     malwareScan: metadata.malware_scan as Dataset['malwareScan'],
+    lifecycle: b.lifecycle,
+    rawMetadata: metadata,
+    issueUrl: b.issue_url || '',
   };
 }
 
@@ -140,7 +225,7 @@ const REVIEW_READY_STATUSES: DatasetStatus[] = ['pending_review', 'pending'];
 export const ExpertQueuePage: React.FC = () => {
   const navigate = useNavigate();
   const { user, isLoading: userLoading } = useUserContext();
-  const [datasets, setDatasets] = useState<Dataset[]>([]);
+  const [datasets, setDatasets] = useState<ReviewQueueDataset[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<DatasetStatus | 'all'>('pending_review');
@@ -241,6 +326,7 @@ export const ExpertQueuePage: React.FC = () => {
                 <SelectItem value="approved">Approved</SelectItem>
                 <SelectItem value="rejected">Rejected</SelectItem>
                 <SelectItem value="published">Published</SelectItem>
+                <SelectItem value="integration_failed">Integration Failed</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -277,6 +363,7 @@ export const ExpertQueuePage: React.FC = () => {
                 malwareScan.files?.some((f) => f.status === 'infected' || f.status === 'error');
               const scanSkipped =
                 malwareScan && malwareScan.files?.some((f) => f.message?.includes('unavailable'));
+              const githubState = getGitHubQueueState(dataset);
 
               return (
                 <Card
@@ -305,6 +392,36 @@ export const ExpertQueuePage: React.FC = () => {
                       <p className="text-sm text-foreground/80 line-clamp-2">
                         {dataset.description}
                       </p>
+
+                      <div
+                        className={`mt-2 p-3 rounded-md border flex items-start justify-between gap-3 text-sm ${githubState.cls}`}
+                      >
+                        <div className="flex items-start gap-2.5 min-w-0">
+                          <MessageSquare size={16} className="mt-0.5 shrink-0" />
+                          <div className="min-w-0">
+                            <span className="font-semibold block mb-0.5">{githubState.label}</span>
+                            <span className="block text-xs leading-5">{githubState.message}</span>
+                          </div>
+                        </div>
+                        {githubState.issueUrl && githubState.state === 'linked' && (
+                          <Button
+                            asChild
+                            variant="outline"
+                            size="sm"
+                            className="h-8 shrink-0 bg-background/80"
+                          >
+                            <a
+                              href={githubState.issueUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              aria-label={`Open GitHub discussion for ${dataset.title}`}
+                            >
+                              <ExternalLink size={14} className="mr-1.5" />
+                              Open
+                            </a>
+                          </Button>
+                        )}
+                      </div>
 
                       {/* Malware Scan Alerts */}
                       {(isQuarantined || hasMalwareIssue || scanSkipped) && (

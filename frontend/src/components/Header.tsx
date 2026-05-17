@@ -104,7 +104,7 @@ export const Header: React.FC = () => {
               <>
                 <span
                   className="text-xs text-muted-foreground flex items-center gap-1.5 font-medium cursor-pointer hover:text-primary transition-colors"
-                  onClick={() => navigate('/profile')}
+                  onClick={() => navigate('/account')}
                 >
                   <UserIcon size={14} className="text-primary" />
                   {displayName}

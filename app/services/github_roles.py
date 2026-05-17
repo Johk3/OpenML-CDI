@@ -1,5 +1,4 @@
 import logging
-import os
 from typing import Protocol
 from urllib.parse import quote
 
@@ -11,11 +10,9 @@ from app.config import GitHubIssuesSettings
 
 logger = logging.getLogger(__name__)
 
-GITHUB_PERMISSION_OWNER_ENV = "GITHUB_PERMISSION_OWNER"
-GITHUB_PERMISSION_REPO_ENV = "GITHUB_PERMISSION_REPO"
 GITHUB_API_VERSION = "2022-11-28"
-DEFAULT_GITHUB_PERMISSION_OWNER = "openml"
-DEFAULT_GITHUB_PERMISSION_REPO = "openmlupload"
+DEFAULT_GITHUB_PERMISSION_OWNER = "koevoet1221"
+DEFAULT_GITHUB_PERMISSION_REPO = "openmlupload-testing"
 # All collaborator roles now qualify for expert status
 MAINTAINER_ROLE_NAMES = {"read", "triage", "write", "maintain", "admin"}
 
@@ -35,8 +32,6 @@ class GitHubRepositoryPermissionClient:
         session=None,
         *,
         token: str | None = None,
-        owner: str | None = None,
-        repo: str | None = None,
         api_base_url: str = "https://api.github.com",
     ):
         # If a token is provided (App token), we use a fresh session to avoid
@@ -50,14 +45,8 @@ class GitHubRepositoryPermissionClient:
             self.token = None
             self.auth_method = "user_session" if session else "unauthenticated"
 
-        self.owner = (
-            owner
-            or os.getenv(GITHUB_PERMISSION_OWNER_ENV, DEFAULT_GITHUB_PERMISSION_OWNER)
-        ).strip()
-        self.repo = (
-            repo
-            or os.getenv(GITHUB_PERMISSION_REPO_ENV, DEFAULT_GITHUB_PERMISSION_REPO)
-        ).strip()
+        self.owner = DEFAULT_GITHUB_PERMISSION_OWNER
+        self.repo = DEFAULT_GITHUB_PERMISSION_REPO
         self.api_base_url = api_base_url.rstrip("/")
 
     def _get_headers(self) -> dict:
@@ -164,8 +153,6 @@ class GitHubRepositoryRoleResolver:
 def resolve_github_repository_role(
     username: str,
     session=None,
-    owner: str | None = None,
-    repo: str | None = None,
     settings: GitHubIssuesSettings | None = None,
 ) -> Roles:
     token = None
@@ -184,7 +171,5 @@ def resolve_github_repository_role(
     # If we have an App token, we use it with a fresh session to avoid conflicts
     # with the user's OAuth session.
     client_session = session if not token else None
-    client = GitHubRepositoryPermissionClient(
-        client_session, token=token, owner=owner, repo=repo
-    )
+    client = GitHubRepositoryPermissionClient(client_session, token=token)
     return GitHubRepositoryRoleResolver(client).resolve_role(username)

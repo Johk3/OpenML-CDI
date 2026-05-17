@@ -47,6 +47,15 @@ describe('Header component', () => {
 
       expect(mockNavigate).toHaveBeenCalledWith('/');
     });
+
+    it('navigates to account when the signed-in user summary is clicked', async () => {
+      const user = userEvent.setup();
+      renderWithRouter(<Header />);
+
+      await user.click(screen.getByText('Test User'));
+
+      expect(mockNavigate).toHaveBeenCalledWith('/account');
+    });
   });
 
   describe('dark mode toggle', () => {

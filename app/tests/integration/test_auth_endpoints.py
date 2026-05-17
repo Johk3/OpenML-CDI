@@ -173,6 +173,32 @@ def test_login_assigns_expert_for_github_maintainer(
     assert me_response.json()["role"] == "expert"
 
 
+def test_login_role_lookup_is_not_tied_to_dataset_issue_repo(client, monkeypatch):
+    monkeypatch.setenv("GITHUB_ISSUES_OWNER", "some-other-owner")
+    monkeypatch.setenv("GITHUB_ISSUES_REPO", "some-other-repo")
+    role_lookup_kwargs: list[dict] = []
+
+    def fake_resolve_role(_username: str, **kwargs) -> Roles:
+        role_lookup_kwargs.append(kwargs)
+        return Roles.USER
+
+    monkeypatch.setattr(
+        "app.routers.auth.resolve_github_repository_role", fake_resolve_role
+    )
+
+    _login_user(
+        client,
+        monkeypatch,
+        email="repo-source@example.com",
+        username="repo-source-user",
+    )
+
+    assert role_lookup_kwargs
+    assert role_lookup_kwargs[0].get("owner") is None
+    assert role_lookup_kwargs[0].get("repo") is None
+    assert role_lookup_kwargs[0]["settings"] is not None
+
+
 def test_login_downgrades_expert_after_github_permission_removal(
     client, db_test_session, monkeypatch
 ):

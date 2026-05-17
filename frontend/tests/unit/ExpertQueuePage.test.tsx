@@ -116,4 +116,57 @@ describe('ExpertQueuePage', () => {
       expect(DatasetService.updateStatus).toHaveBeenCalledWith('ds-1', 'approved');
     });
   });
+
+  it('exposes GitHub integration state for experts in the review queue', async () => {
+    vi.mocked(DatasetService.listDatasets).mockResolvedValue([
+      {
+        id: 'ds-linked',
+        title: 'Linked Discussion Dataset',
+        status: 'pending_review',
+        created_at: '2026-04-01T00:00:00Z',
+        issue_url: 'https://github.com/openml/openmlupload-test/issues/5',
+        dataset_metadata: {
+          description: 'Linked GitHub discussion.',
+          github_issue: {
+            status: 'linked',
+            issue_url: 'https://github.com/openml/openmlupload-test/issues/5',
+            message: 'GitHub discussion linked.',
+            retryable: false,
+            attempts: 1,
+          },
+        },
+      } as unknown as BackendDataset,
+      {
+        id: 'ds-failed',
+        title: 'Failed Discussion Dataset',
+        status: 'pending_review',
+        created_at: '2026-04-02T00:00:00Z',
+        issue_url: '',
+        dataset_metadata: {
+          description: 'GitHub discussion failed.',
+          github_issue: {
+            status: 'failed',
+            error_reason: 'permission_error',
+            message:
+              'GitHub discussion could not be created because the GitHub App does not have permission.',
+            retryable: false,
+            attempts: 1,
+          },
+        },
+      } as unknown as BackendDataset,
+    ]);
+
+    renderWithRouter(<ExpertQueuePage />, { userContext: expertUserContext });
+
+    expect(await screen.findByText('Linked Discussion Dataset')).toBeInTheDocument();
+    expect(screen.getByText('GitHub linked')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /open github discussion/i })).toHaveAttribute(
+      'href',
+      'https://github.com/openml/openmlupload-test/issues/5',
+    );
+    expect(screen.getByText('Failed Discussion Dataset')).toBeInTheDocument();
+    expect(screen.getByText('GitHub failed')).toBeInTheDocument();
+    expect(screen.getByText(/GitHub discussion could not be created/i)).toBeInTheDocument();
+    expect(screen.queryByText(/permission_error/i)).not.toBeInTheDocument();
+  });
 });

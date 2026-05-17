@@ -164,6 +164,9 @@ GitHub profile sync behavior:
   - `email` from the verified primary GitHub email
   - `username` from GitHub `login`
   - `first_name` and `last_name` from GitHub `name`
+- role assignment is based on collaborator permission in
+  `koevoet1221/openmlupload-testing`; any collaborator role maps to `expert`,
+  and non-collaborators map to `user`
 - this prevents duplicate local users when GitHub profile fields change
 
 Conflict response (`409 Conflict`):
