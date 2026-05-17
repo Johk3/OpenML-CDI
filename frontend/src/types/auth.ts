@@ -46,6 +46,9 @@ export interface DatasetLifecycleSummary {
   };
   download: {
     available: boolean;
+    review_only?: boolean;
+    final_approved?: boolean;
+    message?: string;
   };
   github: {
     state: string;

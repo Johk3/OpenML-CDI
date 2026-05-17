@@ -990,7 +990,8 @@ export const DatasetDetailPage: React.FC = () => {
                 <div className="rounded-lg border bg-muted/10 p-3">
                   <p className="font-semibold">Download</p>
                   <p className="text-muted-foreground">
-                    {canDownloadDataset ? 'Available' : 'Unavailable'}
+                    {lifecycle?.download.message ||
+                      (canDownloadDataset ? 'Available' : 'Unavailable')}
                   </p>
                 </div>
               </div>

@@ -58,6 +58,139 @@ def test_legacy_pending_clean_dataset_maps_to_pending_review():
     assert lifecycle_state(dataset) == Statuses.PENDING_REVIEW
 
 
+def test_pending_clean_dataset_without_promotion_stays_in_scanning_state():
+    dataset = _dataset(
+        status=Statuses.PENDING,
+        metadata={
+            "objects": [
+                {
+                    "backend": "s3",
+                    "provider": "s3",
+                    "bucket": "datasets",
+                    "object_key": "quarantine/batch/clean.csv",
+                    "quarantine_key": "quarantine/batch/clean.csv",
+                    "final_object_key": "ready/dataset/clean.csv",
+                    "original_path": "clean.csv",
+                    "content_type": "text/csv",
+                    "byte_size": 11,
+                    "checksum": None,
+                    "etag": "etag",
+                    "upload_state": "uploaded",
+                    "scan_state": "clean",
+                    "download_state": "downloadable",
+                }
+            ]
+        },
+    )
+
+    assert lifecycle_state(dataset) == Statuses.SCANNING
+
+
+def test_lifecycle_summary_marks_pending_review_download_as_review_only():
+    dataset = _dataset(
+        status=Statuses.PENDING_REVIEW,
+        metadata={
+            "objects": [
+                {
+                    "backend": "s3",
+                    "provider": "s3",
+                    "bucket": "datasets",
+                    "object_key": "quarantine/batch/clean.csv",
+                    "quarantine_key": "quarantine/batch/clean.csv",
+                    "final_object_key": "ready/dataset/clean.csv",
+                    "original_path": "clean.csv",
+                    "content_type": "text/csv",
+                    "byte_size": 11,
+                    "checksum": None,
+                    "etag": "etag",
+                    "upload_state": "promoted",
+                    "scan_state": "clean",
+                    "download_state": "downloadable",
+                }
+            ]
+        },
+    )
+
+    summary = lifecycle_summary(dataset)
+
+    assert summary["download"] == {
+        "available": True,
+        "review_only": True,
+        "final_approved": False,
+        "message": "Download is available for review; expert approval is pending.",
+    }
+
+
+def test_lifecycle_summary_blocks_rejected_clean_download_signal():
+    dataset = _dataset(
+        status=Statuses.REJECTED,
+        metadata={
+            "objects": [
+                {
+                    "backend": "s3",
+                    "provider": "s3",
+                    "bucket": "datasets",
+                    "object_key": "quarantine/batch/clean.csv",
+                    "quarantine_key": "quarantine/batch/clean.csv",
+                    "final_object_key": "ready/dataset/clean.csv",
+                    "original_path": "clean.csv",
+                    "content_type": "text/csv",
+                    "byte_size": 11,
+                    "checksum": None,
+                    "etag": "etag",
+                    "upload_state": "promoted",
+                    "scan_state": "clean",
+                    "download_state": "downloadable",
+                }
+            ]
+        },
+    )
+
+    summary = lifecycle_summary(dataset)
+
+    assert summary["download"] == {
+        "available": False,
+        "review_only": False,
+        "final_approved": False,
+        "message": "Dataset files are not ready for download.",
+    }
+
+
+def test_lifecycle_summary_requires_promoted_object_for_download_signal():
+    dataset = _dataset(
+        status=Statuses.PENDING_REVIEW,
+        metadata={
+            "objects": [
+                {
+                    "backend": "s3",
+                    "provider": "s3",
+                    "bucket": "datasets",
+                    "object_key": "quarantine/batch/clean.csv",
+                    "quarantine_key": "quarantine/batch/clean.csv",
+                    "final_object_key": "ready/dataset/clean.csv",
+                    "original_path": "clean.csv",
+                    "content_type": "text/csv",
+                    "byte_size": 11,
+                    "checksum": None,
+                    "etag": "etag",
+                    "upload_state": "uploaded",
+                    "scan_state": "clean",
+                    "download_state": "downloadable",
+                }
+            ]
+        },
+    )
+
+    summary = lifecycle_summary(dataset)
+
+    assert summary["download"] == {
+        "available": False,
+        "review_only": False,
+        "final_approved": False,
+        "message": "Dataset files are not ready for download.",
+    }
+
+
 def test_system_can_move_pending_upload_to_scanning():
     dataset = _dataset(status=Statuses.PENDING_UPLOAD)
 

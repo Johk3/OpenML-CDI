@@ -53,6 +53,11 @@ EXPERT_TRANSITION_TARGETS = {
     Statuses.REJECTED,
     Statuses.PUBLISHED,
 }
+DOWNLOADABLE_STATES = {
+    Statuses.PENDING_REVIEW,
+    Statuses.APPROVED,
+    Statuses.PUBLISHED,
+}
 
 
 class DatasetLifecycleError(ValueError):
@@ -87,7 +92,11 @@ def lifecycle_state(dataset: Any) -> Statuses:
         download_states = {str(obj.get("download_state")) for obj in objects}
         upload_states = {str(obj.get("upload_state")) for obj in objects}
 
-        if scan_states <= {"clean"} and download_states <= {"downloadable"}:
+        if (
+            scan_states <= {"clean"}
+            and download_states <= {"downloadable"}
+            and upload_states <= {"promoted"}
+        ):
             return Statuses.PENDING_REVIEW
         if scan_states & {"infected", "error", "missing"}:
             return Statuses.QUARANTINED
@@ -110,11 +119,18 @@ def lifecycle_summary(dataset: Any) -> dict[str, Any]:
     metadata = dict(dataset.dataset_metadata or {})
     objects = _safe_dataset_objects(metadata)
     clean_downloadable = bool(objects) and all(
-        obj.get("scan_state") == "clean"
+        obj.get("upload_state") == "promoted"
+        and obj.get("scan_state") == "clean"
         and obj.get("download_state") == "downloadable"
         and obj.get("final_object_key")
         for obj in objects
     )
+    download_available = clean_downloadable and state in DOWNLOADABLE_STATES
+    review_only_download = download_available and state == Statuses.PENDING_REVIEW
+    final_approved_download = download_available and state in {
+        Statuses.APPROVED,
+        Statuses.PUBLISHED,
+    }
     issue_url = getattr(dataset, "issue_url", "") or ""
 
     return {
@@ -141,7 +157,14 @@ def lifecycle_summary(dataset: Any) -> dict[str, Any]:
             "quarantined": state == Statuses.QUARANTINED,
         },
         "download": {
-            "available": clean_downloadable,
+            "available": download_available,
+            "review_only": review_only_download,
+            "final_approved": final_approved_download,
+            "message": _download_message(
+                available=download_available,
+                review_only=review_only_download,
+                final_approved=final_approved_download,
+            ),
         },
         "github": _github_summary(
             state=state,
@@ -149,6 +172,21 @@ def lifecycle_summary(dataset: Any) -> dict[str, Any]:
             metadata=metadata,
         ),
     }
+
+
+def _download_message(
+    *,
+    available: bool,
+    review_only: bool,
+    final_approved: bool,
+) -> str:
+    if not available:
+        return "Dataset files are not ready for download."
+    if review_only:
+        return "Download is available for review; expert approval is pending."
+    if final_approved:
+        return "Download is available from the expert-approved dataset."
+    return "Download is available."
 
 
 def assert_lifecycle_transition_allowed(

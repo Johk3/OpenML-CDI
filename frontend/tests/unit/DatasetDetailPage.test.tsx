@@ -51,6 +51,14 @@ const lifecycle = (
   },
   download: {
     available: ['approved', 'published', 'pending_review'].includes(state),
+    review_only: state === 'pending_review',
+    final_approved: ['approved', 'published'].includes(state),
+    message:
+      state === 'pending_review'
+        ? 'Download is available for review; expert approval is pending.'
+        : ['approved', 'published'].includes(state)
+          ? 'Download is available from the expert-approved dataset.'
+          : 'Dataset files are not ready for download.',
   },
   github: {
     state: state === 'pending_review' ? 'pending' : 'not_ready',
@@ -292,6 +300,15 @@ describe('DatasetDetailPage', () => {
     navigateTo('/datasets/ds-pending-review');
 
     expect(await screen.findByText(/approve or reject this dataset from the review queue/i));
+  });
+
+  it('marks pending review downloads as not final approved', async () => {
+    mockDatasetService.getDataset.mockResolvedValueOnce(datasetWithLifecycle('pending_review'));
+    navigateTo('/datasets/ds-pending-review-download');
+
+    expect(
+      await screen.findByText(/download is available for review; expert approval is pending/i),
+    ).toBeInTheDocument();
   });
 
   it('shows uploader review copy without expert actions when review is ready', async () => {

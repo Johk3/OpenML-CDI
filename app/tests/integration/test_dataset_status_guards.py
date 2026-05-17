@@ -17,6 +17,9 @@ class _ReadableStorage:
         self.opened_keys.append(storage_key)
         return _ReadContext(self.objects[storage_key])
 
+    def object_exists(self, storage_key: str) -> bool:
+        return storage_key in self.objects
+
 
 class _ReadContext:
     def __init__(self, payload: bytes):

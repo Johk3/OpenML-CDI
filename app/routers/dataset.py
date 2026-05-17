@@ -96,6 +96,11 @@ GITHUB_DISCUSSION_FETCH_MESSAGES = {
     ),
     "unknown_error": "GitHub discussion could not be loaded.",
 }
+DOWNLOADABLE_LIFECYCLE_STATES = {
+    Statuses.PENDING_REVIEW,
+    Statuses.APPROVED,
+    Statuses.PUBLISHED,
+}
 
 
 def _github_discussion_fetch_message(error: GitHubAPIError) -> str:
@@ -505,13 +510,6 @@ def complete_multipart_upload(
         storage_keys=[payload.object_key],
     )
     if _scan_result_failed(scan_result):
-        _delete_failed_upload(
-            request=request,
-            db=db,
-            dataset_id=dataset_id,
-            storage_keys=[payload.object_key],
-            scan_result=scan_result,
-        )
         raise HTTPException(
             status_code=_scan_failure_status_code(scan_result),
             detail=_scan_failure_detail(scan_result),
@@ -640,13 +638,6 @@ def confirm_upload(
         storage_keys=storage_keys,
     )
     if _scan_result_failed(scan_result):
-        _delete_failed_upload(
-            request=request,
-            db=db,
-            dataset_id=dataset_id,
-            storage_keys=storage_keys,
-            scan_result=scan_result,
-        )
         raise HTTPException(
             status_code=_scan_failure_status_code(scan_result),
             detail=_scan_failure_detail(scan_result),
@@ -970,7 +961,7 @@ def _dataset_detail_response(dataset: DatasetModel) -> DatasetDetail:
     metadata = dict(dataset.dataset_metadata or {})
     storage_objects = get_dataset_objects(metadata)
     lifecycle = lifecycle_summary(dataset)
-    has_downloadable_files = bool(storage_keys_from_metadata(metadata))
+    download_available = bool(lifecycle["download"]["available"])
     return DatasetDetail(
         id=dataset.id,
         title=dataset.title,
@@ -981,7 +972,7 @@ def _dataset_detail_response(dataset: DatasetModel) -> DatasetDetail:
         status=dataset.status,
         dataset_url=f"/datasets/{dataset.id}",
         download_url=(
-            f"/api/datasets/{dataset.id}/download" if has_downloadable_files else None
+            f"/api/datasets/{dataset.id}/download" if download_available else None
         ),
         storage_objects=storage_objects,
         upload_package=get_upload_package_metadata(metadata),
@@ -1257,6 +1248,10 @@ def download_dataset(
 
     downloadable_objects = _downloadable_objects(dataset)
     storage = request.app.state.storage
+    _ensure_download_objects_exist(
+        storage=storage,
+        downloadable_objects=downloadable_objects,
+    )
 
     if _should_archive_download(downloadable_objects):
         return _archive_download_response(
@@ -1347,17 +1342,44 @@ def _download_media_type(original_path: str, content_type: str | None) -> str:
     return "application/octet-stream"
 
 
+def _ensure_download_objects_exist(
+    *,
+    storage,
+    downloadable_objects: list[tuple[str, str, str | None]],
+) -> None:
+    try:
+        missing = [
+            storage_key
+            for storage_key, _original_path, _content_type in downloadable_objects
+            if not storage.object_exists(storage_key)
+        ]
+    except StorageError as error:
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Dataset file storage is unavailable",
+        ) from error
+
+    if missing:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="Dataset file is missing from storage",
+        )
+
+
+def _is_object_downloadable(obj: dict) -> bool:
+    return (
+        obj["upload_state"] == "promoted"
+        and obj["scan_state"] == "clean"
+        and obj["download_state"] == "downloadable"
+        and bool(obj["final_object_key"])
+    )
+
+
 def _is_zip_path(original_path: str) -> bool:
     return PurePosixPath(original_path).suffix.lower() == ".zip"
 
 
 def _downloadable_objects(dataset: Dataset) -> list[tuple[str, str, str | None]]:
-    if dataset.status == Statuses.QUARANTINED:
-        raise HTTPException(
-            status_code=http_status.HTTP_409_CONFLICT,
-            detail="Dataset files are not available for download",
-        )
-
     metadata = dataset.dataset_metadata or {}
     try:
         objects = get_dataset_objects(metadata)
@@ -1369,21 +1391,20 @@ def _downloadable_objects(dataset: Dataset) -> list[tuple[str, str, str | None]]
     if not objects:
         raise HTTPException(status_code=404, detail="No files found for this dataset")
 
-    if "objects" not in metadata:
-        return [
-            (obj["object_key"], obj["original_path"], obj.get("content_type"))
-            for obj in objects
-        ]
+    if lifecycle_state(dataset) not in DOWNLOADABLE_LIFECYCLE_STATES:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail="Dataset files are not available for download",
+        )
+
+    if not all(_is_object_downloadable(obj) for obj in objects):
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail="Dataset files are not available for download",
+        )
 
     downloadable_objects = [
         (obj["final_object_key"], obj["original_path"], obj.get("content_type"))
         for obj in objects
-        if obj["download_state"] == "downloadable" and obj["final_object_key"]
     ]
-    if downloadable_objects:
-        return downloadable_objects
-
-    raise HTTPException(
-        status_code=http_status.HTTP_409_CONFLICT,
-        detail="Dataset files are not available for download",
-    )
+    return downloadable_objects

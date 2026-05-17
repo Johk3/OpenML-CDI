@@ -209,7 +209,7 @@ def test_confirm_upload_rejects_zip_entries_that_do_not_match_manifest(
     assert db_test_session.get(Dataset, dataset_id) is None
 
 
-def test_confirm_upload_deletes_dataset_when_file_is_infected(
+def test_confirm_upload_marks_dataset_quarantined_when_file_is_infected(
     scan_client: TestClient, db_test_session, monkeypatch
 ):
     uploader_id = uuid.uuid4()
@@ -237,7 +237,11 @@ def test_confirm_upload_deletes_dataset_when_file_is_infected(
     assert response.status_code == 400
     assert response.json() == {"detail": "Uploaded file failed malware scan"}
     db_test_session.expire_all()
-    assert db_test_session.get(Dataset, dataset_id) is None
+    dataset = db_test_session.get(Dataset, dataset_id)
+    assert dataset.status == Statuses.QUARANTINED
+    assert dataset.dataset_metadata["malware_scan"]["files"][0]["status"] == "infected"
+    assert dataset.dataset_metadata["objects"][0]["scan_state"] == "infected"
+    assert dataset.dataset_metadata["objects"][0]["download_state"] == "unavailable"
     final_path = (
         Path(scan_client.app.state.settings.storage.local_upload_dir)
         / "ready"
@@ -249,7 +253,7 @@ def test_confirm_upload_deletes_dataset_when_file_is_infected(
     assert not list(quarantine_dir.glob("*"))
 
 
-def test_confirm_upload_deletes_dataset_when_clamd_is_unavailable(
+def test_confirm_upload_marks_dataset_quarantined_when_clamd_is_unavailable(
     scan_client: TestClient, db_test_session, monkeypatch
 ):
     uploader_id = uuid.uuid4()
@@ -276,7 +280,11 @@ def test_confirm_upload_deletes_dataset_when_clamd_is_unavailable(
     assert response.status_code == 503
     assert response.json() == {"detail": "Upload scan could not be completed"}
     db_test_session.expire_all()
-    assert db_test_session.get(Dataset, dataset_id) is None
+    dataset = db_test_session.get(Dataset, dataset_id)
+    assert dataset.status == Statuses.QUARANTINED
+    assert dataset.dataset_metadata["malware_scan"]["files"][0]["status"] == "error"
+    assert dataset.dataset_metadata["objects"][0]["scan_state"] == "error"
+    assert dataset.dataset_metadata["objects"][0]["download_state"] == "unavailable"
     final_path = (
         Path(scan_client.app.state.settings.storage.local_upload_dir)
         / "ready"
