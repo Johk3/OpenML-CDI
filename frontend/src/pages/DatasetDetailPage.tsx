@@ -381,6 +381,8 @@ export const DatasetDetailPage: React.FC = () => {
   const [dataset, setDataset] = useState<DatasetWithUploadPackage | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
   const [showAllFiles, setShowAllFiles] = useState(false);
 
   useEffect(() => {
@@ -492,6 +494,41 @@ export const DatasetDetailPage: React.FC = () => {
           ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
           : 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400';
 
+  const publishDataset = async () => {
+    if (!dataset || publishing) return;
+
+    setPublishing(true);
+    setActionError(null);
+    try {
+      await DatasetService.updateStatus(dataset.id, 'published');
+      setDataset((current) => {
+        if (!current) return current;
+
+        return {
+          ...current,
+          status: 'published',
+          lifecycle: current.lifecycle
+            ? {
+                ...current.lifecycle,
+                state: 'published',
+                review: {
+                  ...current.lifecycle.review,
+                  approved: true,
+                  published: true,
+                  ready: false,
+                  rejected: false,
+                },
+              }
+            : current.lifecycle,
+        };
+      });
+    } catch {
+      setActionError('Failed to publish dataset.');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
   if (!user) {
     return (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="container py-12">
@@ -538,6 +575,7 @@ export const DatasetDetailPage: React.FC = () => {
   const lifecycleCopy = getLifecycleStateCopy(lifecycle?.state || dataset.status);
   const isExpert = user.role === 'expert';
   const canDownloadDataset = Boolean(lifecycle?.download.available);
+  const canPublishDataset = isExpert && (lifecycle?.state || dataset.status) === 'approved';
 
   return (
     <motion.div
@@ -986,6 +1024,26 @@ export const DatasetDetailPage: React.FC = () => {
                   >
                     Open review queue
                   </Button>
+                ) : null}
+                {canPublishDataset ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-1"
+                    onClick={publishDataset}
+                    disabled={publishing}
+                  >
+                    {publishing ? (
+                      <>
+                        <Loader2 className="mr-2 h-3 w-3 animate-spin" /> Publishing
+                      </>
+                    ) : (
+                      'Publish dataset'
+                    )}
+                  </Button>
+                ) : null}
+                {actionError ? (
+                  <p className="text-xs font-medium text-destructive">{actionError}</p>
                 ) : null}
               </div>
             </CardContent>

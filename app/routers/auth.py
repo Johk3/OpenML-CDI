@@ -648,8 +648,8 @@ def auth_github_callback(
         github_id=str(github_account_id),
         email=primary_email,
         username=github_username,
-        first_name=first_name or DEFAULT_DEV_FIRST_NAME,
-        last_name=last_name or DEFAULT_DEV_LAST_NAME,
+        first_name=first_name or github_username,
+        last_name=last_name,
     )
     try:
         user = sync_user_from_github_profile(db, github_profile)

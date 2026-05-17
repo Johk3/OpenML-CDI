@@ -117,6 +117,39 @@ def test_github_callback_syncs_existing_user_and_me_returns_latest_profile(
     assert me_response.json()["last_name"] == "Name"
 
 
+def test_github_callback_keeps_last_name_empty_for_single_word_profile_name(
+    client, db_test_session, monkeypatch
+):
+    _mock_github_oauth(
+        monkeypatch,
+        user_payload={
+            "id": 24680,
+            "login": "single-name-login",
+            "name": "Madonna",
+        },
+        emails_payload=[
+            {
+                "email": "single.name@example.com",
+                "primary": True,
+                "verified": True,
+            }
+        ],
+    )
+
+    callback_response = client.get(
+        "/api/auth/github/callback?code=fake-code&state=fake-state",
+        cookies={"oauth_state": "fake-state"},
+    )
+
+    assert callback_response.status_code == 200
+    db_test_session.expire_all()
+    synced_user = db_test_session.query(models.User).one()
+    assert synced_user.email == "single.name@example.com"
+    assert synced_user.username == "single-name-login"
+    assert synced_user.first_name == "Madonna"
+    assert synced_user.last_name == ""
+
+
 def test_github_callback_links_legacy_email_user_without_creating_duplicate(
     client, db_test_session, monkeypatch
 ):

@@ -91,6 +91,24 @@ describe('UploadPage', () => {
       expect(screen.getByText('1 file selected')).toBeInTheDocument();
     });
 
+    it('prefills contact fields from the signed-in GitHub profile', () => {
+      expect(screen.getByLabelText(/First Name/i)).toHaveValue('Test');
+      expect(screen.getByLabelText(/Last Name/i)).toHaveValue('User');
+      expect(screen.getByLabelText(/Email Address/i)).toHaveValue('test@test.com');
+
+      expect(document.querySelector('label[for="first-name"] .text-destructive')).toBeNull();
+      expect(document.querySelector('label[for="last-name"] .text-destructive')).toBeNull();
+      expect(document.querySelector('label[for="email-address"] .text-destructive')).toBeNull();
+    });
+
+    it('shows required indicators only for empty contact fields', () => {
+      fireEvent.change(screen.getByLabelText(/First Name/i), { target: { value: '' } });
+
+      expect(document.querySelector('label[for="first-name"] .text-destructive')).not.toBeNull();
+      expect(document.querySelector('label[for="last-name"] .text-destructive')).toBeNull();
+      expect(document.querySelector('label[for="email-address"] .text-destructive')).toBeNull();
+    });
+
     it('displays folder-specific selection feedback when directory paths are present', () => {
       const changeButton = screen.getByText('Change');
       fireEvent.click(changeButton);

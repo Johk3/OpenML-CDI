@@ -7,16 +7,25 @@ import { cn } from '@/lib/utils';
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label: string;
   error?: string;
+  showRequiredIndicator?: boolean;
 }
 
-export const Input: React.FC<InputProps> = ({ label, error, className, id, ...props }) => {
+export const Input: React.FC<InputProps> = ({
+  label,
+  error,
+  className,
+  id,
+  showRequiredIndicator,
+  ...props
+}) => {
   const inputId = id || label.toLowerCase().replace(/\s+/g, '-');
+  const shouldShowRequiredIndicator = showRequiredIndicator ?? props.required;
 
   return (
     <div className="flex flex-col gap-1.5">
       <Label htmlFor={inputId}>
         {label}
-        {props.required && <span className="text-destructive ml-1">*</span>}
+        {shouldShowRequiredIndicator && <span className="text-destructive ml-1">*</span>}
       </Label>
       <ShadcnInput
         id={inputId}

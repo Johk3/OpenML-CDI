@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, vi } from 'vitest';
 import { navigateTo } from '../utils';
 import { mockDatasetService } from '../mocks/datasetService';
@@ -303,6 +303,21 @@ describe('DatasetDetailPage', () => {
     expect(
       screen.queryByText(/approve or reject this dataset from the review queue/i),
     ).not.toBeInTheDocument();
+  });
+
+  it('lets experts publish approved datasets from the lifecycle panel', async () => {
+    mockDatasetService.getDataset.mockResolvedValueOnce(datasetWithLifecycle('approved'));
+    mockDatasetService.updateStatus.mockResolvedValueOnce({} as never);
+
+    navigateTo('/datasets/ds-approved');
+
+    const publishButton = await screen.findByRole('button', { name: /publish dataset/i });
+    fireEvent.click(publishButton);
+
+    await waitFor(() => {
+      expect(mockDatasetService.updateStatus).toHaveBeenCalledWith('ds-approved', 'published');
+    });
+    expect(await screen.findByText(/the dataset is published and available/i)).toBeInTheDocument();
   });
 
   it('uses lifecycle GitHub state copy without exposing raw provider errors', async () => {

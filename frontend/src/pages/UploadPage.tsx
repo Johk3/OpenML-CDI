@@ -162,6 +162,18 @@ export const UploadPage: React.FC = () => {
     lastName: '',
     email: '',
   });
+
+  React.useEffect(() => {
+    if (!user) return;
+
+    setFormData((current) => ({
+      ...current,
+      firstName: current.firstName.trim() ? current.firstName : user.first_name.trim(),
+      lastName: current.lastName.trim() ? current.lastName : user.last_name.trim(),
+      email: current.email.trim() ? current.email : user.email.trim(),
+    }));
+  }, [user]);
+
   const selectedPaths = selectedFiles.map(getUploadPath);
   const selectedDirectoryRoot = getDirectoryRoot(selectedPaths);
   const hasDirectorySelection = selectedPaths.some((path) => path.includes('/'));
@@ -569,6 +581,7 @@ export const UploadPage: React.FC = () => {
                       label="First Name"
                       placeholder="John"
                       required
+                      showRequiredIndicator={!formData.firstName.trim()}
                       value={formData.firstName}
                       onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
                     />
@@ -576,6 +589,7 @@ export const UploadPage: React.FC = () => {
                       label="Last Name"
                       placeholder="Porquilious"
                       required
+                      showRequiredIndicator={!formData.lastName.trim()}
                       value={formData.lastName}
                       onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
                     />
@@ -585,6 +599,7 @@ export const UploadPage: React.FC = () => {
                     type="email"
                     placeholder="john.porquilious@example.com"
                     required
+                    showRequiredIndicator={!formData.email.trim()}
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   />
