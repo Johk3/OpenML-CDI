@@ -863,6 +863,62 @@ def test_expert_default_list_includes_all_datasets(client, db_test_session):
     }
 
 
+def test_list_datasets_includes_lifecycle_download_visibility(client, db_test_session):
+    expert_id = uuid.uuid4()
+    owner_id = uuid.uuid4()
+    downloadable_id = uuid.uuid4()
+    rejected_id = uuid.uuid4()
+    clean_object = _object_metadata(
+        final_object_key="ready/dataset/clean.csv",
+        scan_state="clean",
+        download_state="downloadable",
+    )
+    db_test_session.add_all(
+        [
+            _user(user_id=expert_id, role=Roles.EXPERT),
+            _user(user_id=owner_id),
+            Dataset(
+                id=downloadable_id,
+                title="Downloadable pending",
+                owner_id=owner_id,
+                dataset_metadata={
+                    "filenames": ["clean.csv"],
+                    "objects": [clean_object],
+                },
+                status=Statuses.PENDING,
+            ),
+            Dataset(
+                id=rejected_id,
+                title="Rejected clean",
+                owner_id=owner_id,
+                dataset_metadata={
+                    "filenames": ["clean.csv"],
+                    "objects": [clean_object],
+                },
+                status=Statuses.REJECTED,
+            ),
+        ]
+    )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(expert_id), "type": "access"})
+
+    response = client.get(
+        "/api/datasets/list",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 200
+    datasets = {dataset["id"]: dataset for dataset in response.json()}
+    downloadable = datasets[str(downloadable_id)]
+    rejected = datasets[str(rejected_id)]
+    assert downloadable["lifecycle"]["state"] == "pending_review"
+    assert downloadable["lifecycle"]["download"]["available"] is True
+    assert downloadable["download_url"] == (f"/api/datasets/{downloadable_id}/download")
+    assert rejected["lifecycle"]["state"] == "rejected"
+    assert rejected["lifecycle"]["download"]["available"] is False
+    assert rejected["download_url"] is None
+
+
 def test_regular_user_default_list_only_includes_owned_datasets(
     client, db_test_session
 ):

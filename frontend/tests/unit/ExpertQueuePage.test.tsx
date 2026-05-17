@@ -117,6 +117,21 @@ describe('ExpertQueuePage', () => {
     });
   });
 
+  it('calls updateStatus when reject button is clicked', async () => {
+    setupExpertUser();
+    vi.mocked(DatasetService.updateStatus).mockResolvedValue({} as never);
+    renderWithRouter(<ExpertQueuePage />, { userContext: expertUserContext });
+
+    await screen.findByText('Review Ready Dataset');
+
+    const rejectButton = screen.getByText('Reject');
+    fireEvent.click(rejectButton);
+
+    await waitFor(() => {
+      expect(DatasetService.updateStatus).toHaveBeenCalledWith('ds-1', 'rejected');
+    });
+  });
+
   it('exposes GitHub integration state for experts in the review queue', async () => {
     vi.mocked(DatasetService.listDatasets).mockResolvedValue([
       {

@@ -28,6 +28,11 @@ class Dataset(DatasetBase):
         frozen = True  # no changes
 
 
+class DatasetListItem(Dataset):
+    download_url: str | None = None
+    lifecycle: dict[str, Any] = Field(default_factory=dict)
+
+
 class DatasetDetail(Dataset):
     dataset_url: str
     download_url: str | None = None

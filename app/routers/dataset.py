@@ -20,6 +20,7 @@ from app.schemas.datasets import (
     DatasetConfirmUploadRequest,
     DatasetCreate,
     DatasetDetail,
+    DatasetListItem,
     DatasetMultipartCompleteRequest,
     DatasetMultipartObjectRequest,
     DatasetMultipartPartsResponse,
@@ -980,7 +981,25 @@ def _dataset_detail_response(dataset: DatasetModel) -> DatasetDetail:
     )
 
 
-@router.get("/list", response_model=list[Dataset])
+def _dataset_list_response(dataset: DatasetModel) -> DatasetListItem:
+    lifecycle = lifecycle_summary(dataset)
+    download_available = bool(lifecycle["download"]["available"])
+    return DatasetListItem(
+        id=dataset.id,
+        title=dataset.title,
+        dataset_metadata=dict(dataset.dataset_metadata or {}),
+        owner_id=dataset.owner_id,
+        issue_url=dataset.issue_url or "",
+        created_at=dataset.created_at,
+        status=dataset.status,
+        download_url=(
+            f"/api/datasets/{dataset.id}/download" if download_available else None
+        ),
+        lifecycle=lifecycle,
+    )
+
+
+@router.get("/list", response_model=list[DatasetListItem])
 def list_datasets(
     current_user: Annotated[User, Depends(get_current_active_user)],
     scope: Literal["mine", "review_queue"] | None = Query(default=None),
@@ -1001,7 +1020,7 @@ def list_datasets(
             )
         rows = db.query(DatasetModel).order_by(DatasetModel.created_at.desc()).all()
         reviewable = [
-            Dataset.model_validate(row)
+            _dataset_list_response(row)
             for row in rows
             if _is_visible_in_expert_review_queue(row)
         ]
@@ -1009,9 +1028,17 @@ def list_datasets(
         return reviewable[offset:slice_end]
 
     if scope == "mine" or current_user.role != Roles.EXPERT:
-        return dataset_crud.get_datasets_for_user(db=db, user_id=current_user.id)
+        return [
+            _dataset_list_response(dataset)
+            for dataset in dataset_crud.get_datasets_for_user(
+                db=db, user_id=current_user.id
+            )
+        ]
 
-    return dataset_crud.get_all_datasets(db=db, offset=offset, limit=limit)
+    return [
+        _dataset_list_response(dataset)
+        for dataset in dataset_crud.get_all_datasets(db=db, offset=offset, limit=limit)
+    ]
 
 
 @router.get("/get", response_model=DatasetDetail)
