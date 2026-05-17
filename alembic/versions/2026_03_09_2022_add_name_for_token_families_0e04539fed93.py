@@ -24,7 +24,6 @@ def upgrade() -> None:
     op.create_table('token_family_names',
     sa.Column('family_id', sa.Uuid(), nullable=False),
     sa.Column('family_name', sa.String(length=255), nullable=False),
-    sa.ForeignKeyConstraint(['family_id'], ['refresh_tokens.family_id'], ),
     sa.PrimaryKeyConstraint('family_id')
     )
     # ### end Alembic commands ###

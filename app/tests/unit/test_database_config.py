@@ -1,4 +1,5 @@
 from app.database import _database_connect_args
+from app.database import models
 
 
 def test_database_connect_args_keep_sqlite_thread_check_disabled():
@@ -14,3 +15,7 @@ def test_database_connect_args_omit_sqlite_options_for_postgres():
         )
         == {}
     )
+
+
+def test_token_family_name_is_not_bound_to_non_unique_refresh_token_family_id():
+    assert not models.TokenFamilyName.__table__.c.family_id.foreign_keys

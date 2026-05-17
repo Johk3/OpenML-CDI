@@ -37,6 +37,7 @@ services:
       - /bin/sh
       - -c
       - |
+        set -e
         alembic upgrade head
         exec uvicorn app.main:app --host 0.0.0.0 --port 8000
     volumes:
@@ -75,7 +76,7 @@ services:
       - app-network
 
   clamd:
-    image: clamav/clamav:stable
+    image: clamav/clamav-debian:stable
     restart: unless-stopped
     networks:
       - app-network

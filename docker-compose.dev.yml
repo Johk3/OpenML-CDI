@@ -8,12 +8,12 @@ services:
       - "8000:8000"
     volumes:
       - ./app:/backend/app # bind mount — edits reflect immediately
-      - ./.env:/backend/.env
       - ./app/data:/backend/app/data
       - ./alembic.ini:/backend/alembic.ini
       - ./alembic:/backend/alembic
     environment:
       - ENVIRONMENT=development
+      - JWT_SECRET=dev-only-change-me
       - AUTH_DEV_MODE_APPROVE_ALL_LOGINS=true
       - COOKIE_SECURE=false
       - STORAGE_BACKEND=s3
@@ -32,6 +32,13 @@ services:
         condition: service_started
       minio-init:
         condition: service_completed_successfully
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        alembic upgrade head
+        exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     networks:
       - app-network
 
@@ -46,12 +53,12 @@ services:
       - ./frontend:/app # bind mount source code
       - frontend-node-modules:/app/node_modules # isolate node_modules
     environment:
-      - VITE_API_URL=http://localhost:5173
+      - VITE_API_BASE_URL=http://localhost:8000
     networks:
       - app-network
 
   clamd:
-    image: clamav/clamav:stable
+    image: clamav/clamav-debian:stable
     restart: unless-stopped
     networks:
       - app-network

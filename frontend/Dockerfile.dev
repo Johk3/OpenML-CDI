@@ -2,7 +2,7 @@ FROM node:25-slim
 
 WORKDIR /app
 
-RUN corepack enable pnpm
+RUN npm install -g pnpm@latest
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 RUN pnpm install --frozen-lockfile

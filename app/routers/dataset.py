@@ -620,7 +620,12 @@ def confirm_upload(
         dataset_crud.update_dataset_status(
             db=db, dataset_id=dataset_id, status=Statuses.UPLOADED
         )
-    except (DatasetObjectValidationError, StorageError, ValueError) as error:
+    except StorageError as error:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
+    except (DatasetObjectValidationError, ValueError) as error:
         _delete_failed_upload(
             request=request,
             db=db,

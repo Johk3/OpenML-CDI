@@ -97,6 +97,39 @@ def _assert_dataset_object(
     assert obj["download_state"] == "unavailable"
 
 
+def _clean_scan_result(file_name: str = "data.csv") -> dict:
+    return {
+        "files": [{"status": "clean", "engine": "clamav", "file": file_name}],
+        "engine": "clamav",
+    }
+
+
+def _downloadable_dataset_object(
+    *,
+    object_key: str,
+    final_object_key: str,
+    original_path: str,
+    content_type: str | None = None,
+    byte_size: int | None = None,
+) -> dict:
+    return {
+        "backend": "local",
+        "provider": "local",
+        "bucket": "uploads",
+        "object_key": object_key,
+        "quarantine_key": object_key,
+        "final_object_key": final_object_key,
+        "original_path": original_path,
+        "content_type": content_type,
+        "byte_size": byte_size,
+        "checksum": None,
+        "etag": None,
+        "upload_state": "promoted",
+        "scan_state": "clean",
+        "download_state": "downloadable",
+    }
+
+
 @pytest.fixture
 def db_session_factory(tmp_path: Path):
     db_path = tmp_path / "upload_url_test.db"
@@ -248,9 +281,17 @@ def test_confirm_upload_triggers_scan_and_returns_202(
 
     scan_calls = []
 
+    def fake_scan(**kwargs):
+        scan_calls.append(kwargs)
+        return _clean_scan_result("data.csv")
+
     monkeypatch.setattr(
         "app.routers.dataset.scan_uploaded_files",
-        lambda **kwargs: scan_calls.append(kwargs),
+        fake_scan,
+    )
+    monkeypatch.setattr(
+        "app.routers.dataset.create_issue_for_dataset",
+        lambda **_kwargs: None,
     )
 
     response = client.post(
@@ -260,7 +301,7 @@ def test_confirm_upload_triggers_scan_and_returns_202(
 
     assert response.status_code == 202
     assert response.json() == {
-        "message": "Upload confirmed, scan started",
+        "message": "Upload confirmed and scan finished",
         "dataset_url": f"/datasets/{dataset_id}",
     }
     assert len(scan_calls) == 1
@@ -311,9 +352,18 @@ def test_confirm_upload_marks_dataset_objects_uploaded(
 
     client.app.state.storage.write_bytes(storage_key, b"a,b\n1,2\n")
     scan_calls = []
+
+    def fake_scan(**kwargs):
+        scan_calls.append(kwargs)
+        return _clean_scan_result("data.csv")
+
     monkeypatch.setattr(
         "app.routers.dataset.scan_uploaded_files",
-        lambda **kwargs: scan_calls.append(kwargs),
+        fake_scan,
+    )
+    monkeypatch.setattr(
+        "app.routers.dataset.create_issue_for_dataset",
+        lambda **_kwargs: None,
     )
 
     response = client.post(
@@ -367,7 +417,8 @@ def test_dataset_detail_endpoint_returns_owner_view(
     assert body["id"] == str(dataset_id)
     assert body["title"] == "Detail dataset"
     assert body["dataset_url"] == f"/datasets/{dataset_id}"
-    assert body["download_url"] == f"/api/datasets/{dataset_id}/download"
+    assert body["download_url"] is None
+    assert body["lifecycle"]["download"]["available"] is False
     assert body["dataset_metadata"]["filenames"] == ["folder/detail.csv"]
     assert body["storage_objects"][0]["original_path"] == "folder/detail.csv"
     assert body["storage_objects"][0]["object_key"] == storage_key
@@ -452,6 +503,10 @@ def test_download_multiple_dataset_objects_preserves_directory_structure(
     access_token = _create_access_token_for_user(db_session_factory, uploader_id)
     dataset_id = uuid.uuid4()
     storage_keys = ["datasets/batch/train/data.csv", "datasets/batch/test/data.csv"]
+    final_storage_keys = [
+        "ready/dataset/train/data.csv",
+        "ready/dataset/test/data.csv",
+    ]
     filenames = ["dataset/train/data.csv", "dataset/test/data.csv"]
 
     with db_session_factory() as db:
@@ -463,14 +518,34 @@ def test_download_multiple_dataset_objects_preserves_directory_structure(
                 dataset_metadata={
                     "filenames": filenames,
                     "storage_keys": storage_keys,
+                    "objects": [
+                        _downloadable_dataset_object(
+                            object_key=storage_keys[0],
+                            final_object_key=final_storage_keys[0],
+                            original_path=filenames[0],
+                            content_type="text/csv",
+                            byte_size=20,
+                        ),
+                        _downloadable_dataset_object(
+                            object_key=storage_keys[1],
+                            final_object_key=final_storage_keys[1],
+                            original_path=filenames[1],
+                            content_type="text/csv",
+                            byte_size=19,
+                        ),
+                    ],
                 },
-                status=Statuses.PENDING,
+                status=Statuses.PENDING_REVIEW,
             )
         )
         db.commit()
 
-    client.app.state.storage.write_bytes(storage_keys[0], b"split,value\ntrain,1\n")
-    client.app.state.storage.write_bytes(storage_keys[1], b"split,value\ntest,2\n")
+    client.app.state.storage.write_bytes(
+        final_storage_keys[0], b"split,value\ntrain,1\n"
+    )
+    client.app.state.storage.write_bytes(
+        final_storage_keys[1], b"split,value\ntest,2\n"
+    )
 
     response = client.get(
         f"/api/datasets/{dataset_id}/download",
@@ -673,9 +748,18 @@ def test_confirm_upload_verifies_s3_object_and_blocks_scan_on_failure(
     dataset_id = uuid.UUID(create_response.json()["id"])
     storage_key = create_response.json()["upload_contracts"][0]["object_key"]
     scan_calls = []
+
+    def fake_scan(**kwargs):
+        scan_calls.append(kwargs)
+        return _clean_scan_result("data.csv")
+
     monkeypatch.setattr(
         "app.routers.dataset.scan_uploaded_files",
-        lambda **kwargs: scan_calls.append(kwargs),
+        fake_scan,
+    )
+    monkeypatch.setattr(
+        "app.routers.dataset.create_issue_for_dataset",
+        lambda **_kwargs: None,
     )
 
     failed_response = client.post(
@@ -691,6 +775,8 @@ def test_confirm_upload_verifies_s3_object_and_blocks_scan_on_failure(
         "expected_content_type": "text/csv",
         "expected_etag": None,
     }
+    with db_session_factory() as db:
+        assert db.get(Dataset, dataset_id) is not None
 
     storage.objects[storage_key] = ObjectMetadata(
         backend="s3",

@@ -88,16 +88,10 @@ class RefreshToken(Base):
         Uuid, default=uuid.uuid4, nullable=False, index=True
     )
     is_revoked: Mapped[bool] = mapped_column(Boolean, default=False)
-    token_family = relationship(
-        "TokenFamilyName", back_populates="refresh_tokens", cascade="all, delete-orphan"
-    )
 
 
 class TokenFamilyName(Base):
     __tablename__ = "token_family_names"
 
-    family_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, ForeignKey("refresh_tokens.family_id"), nullable=False, primary_key=True
-    )
+    family_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False, primary_key=True)
     family_name: Mapped[str] = mapped_column(String(255))
-    refresh_tokens = relationship("RefreshToken", back_populates="token_family")
