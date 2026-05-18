@@ -1,6 +1,8 @@
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from uuid import UUID
 from datetime import datetime
+import enum
+
 from app.database.models import Roles
 
 
@@ -25,3 +27,12 @@ class User(UserBase):
         if value is None:
             return []
         return [item.id if hasattr(item, "id") else item for item in value]
+
+
+class AccountDeletionMode(str, enum.Enum):
+    ACCOUNT_ONLY = "account_only"
+    ACCOUNT_AND_DATASETS = "account_and_datasets"
+
+
+class AccountDeletionRequest(BaseModel):
+    mode: AccountDeletionMode = AccountDeletionMode.ACCOUNT_ONLY

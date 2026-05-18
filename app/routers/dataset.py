@@ -3,6 +3,7 @@ from fastapi import (
     Depends,
     HTTPException,
     Request,
+    Response,
     status as http_status,
     BackgroundTasks,
     Query,
@@ -65,6 +66,10 @@ from app.services.dataset_lifecycle import (
     lifecycle_state,
     lifecycle_summary,
     requested_lifecycle_state,
+)
+from app.services.deletion_cleanup import (
+    delete_dataset_for_actor,
+    queue_github_issue_updates,
 )
 from app.storage.errors import (
     StorageError,
@@ -1129,6 +1134,9 @@ def get_dataset_detail(
 @router.post("/delete")
 def delete_dataset(
     dataset_id: uuid.UUID,
+    request: Request,
+    response: Response,
+    background_tasks: BackgroundTasks,
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Session = Depends(get_db),
 ):
@@ -1137,7 +1145,34 @@ def delete_dataset(
     """
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
     expert_or_owner(current_user, dataset)
-    dataset_crud.delete_dataset(db=db, dataset_id=dataset_id)
+    db_dataset = db.get(DatasetModel, dataset_id)
+    if db_dataset is None:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    try:
+        result = delete_dataset_for_actor(
+            db=db,
+            dataset=db_dataset,
+            storage=request.app.state.storage,
+            actor_role=current_user.role,
+        )
+    except StorageError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
+    settings = request.app.state.settings
+    queue_github_issue_updates(
+        background_tasks=background_tasks,
+        updates=result.github_updates,
+        settings=settings.github_issues,
+        app_base_url=settings.email.app_base_url,
+    )
+
+    if result.action == "requested":
+        response.status_code = http_status.HTTP_202_ACCEPTED
+        return {
+            "status_code": http_status.HTTP_202_ACCEPTED,
+            "message": "Dataset deletion requires expert approval",
+        }
     return {"status_code": 200, "message": "Dataset deleted successfully"}
 
 
