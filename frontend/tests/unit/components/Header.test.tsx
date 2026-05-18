@@ -24,9 +24,10 @@ describe('Header component', () => {
       expect(screen.getByText('About')).toBeInTheDocument();
     });
 
-    it('renders the Account nav link when a user is logged in', () => {
+    it('does not render a standalone Account nav link when a user is logged in', () => {
       renderWithRouter(<Header />);
-      expect(screen.getByText('Account')).toBeInTheDocument();
+
+      expect(screen.queryByRole('link', { name: 'Account' })).not.toBeInTheDocument();
     });
 
     it('renders the Login button when no user is logged in', () => {
@@ -48,13 +49,14 @@ describe('Header component', () => {
       expect(mockNavigate).toHaveBeenCalledWith('/');
     });
 
-    it('navigates to account when the signed-in user summary is clicked', async () => {
-      const user = userEvent.setup();
+    it('renders the signed-in user summary as the account link', () => {
       renderWithRouter(<Header />);
 
-      await user.click(screen.getByText('Test User'));
+      const accountLink = screen.getByRole('link', { name: 'Account for Test User' });
 
-      expect(mockNavigate).toHaveBeenCalledWith('/account');
+      expect(accountLink).toHaveAttribute('href', '/account');
+      expect(accountLink).toHaveTextContent('Test User');
+      expect(accountLink).toHaveTextContent('user');
     });
   });
 

@@ -72,14 +72,6 @@ export const Header: React.FC = () => {
                 Expert Queue
               </NavLink>
             )}
-            {user && (
-              <NavLink
-                to="/account"
-                className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-              >
-                Account
-              </NavLink>
-            )}
             <NavLink
               to="/about"
               className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
@@ -99,15 +91,18 @@ export const Header: React.FC = () => {
 
             {user ? (
               <>
-                <span
-                  className="text-xs text-muted-foreground flex items-center gap-1.5 font-medium cursor-pointer hover:text-primary transition-colors"
-                  onClick={() => navigate('/account')}
+                <NavLink
+                  to="/account"
+                  aria-label={`Account for ${displayName}`}
+                  className={({ isActive }) =>
+                    `text-xs ${isActive ? 'text-primary' : 'text-muted-foreground'} flex items-center gap-1.5 font-medium hover:text-primary transition-colors`
+                  }
                 >
                   <UserIcon size={14} className="text-primary" />
                   {displayName}
                   <span className="text-muted-foreground/60">·</span>
                   <span className="capitalize text-primary/80">{user.role}</span>
-                </span>
+                </NavLink>
                 <Button variant="ghost" size="sm" onClick={handleAuthAction} className="gap-1.5">
                   <LogOut size={14} /> Logout
                 </Button>

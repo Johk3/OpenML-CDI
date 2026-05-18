@@ -7,8 +7,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
 import { AuthContext } from '../contexts/AuthContext';
 import { meQueryKey } from '@/hooks/useUser';
-
-const GITHUB_LOGIN_FALLBACK_ERROR = 'Authentication failed. Please try again.';
+import {
+  AUTH_ERROR_MESSAGES,
+  GITHUB_PROFILE_CONFLICT_MESSAGES,
+  sanitizeAuthErrorMessage,
+} from '@/lib/authMessages';
 
 type ApiErrorBody = {
   code?: string;
@@ -19,14 +22,6 @@ type ApiErrorBody = {
 type ApiErrorResponse = {
   error?: ApiErrorBody;
   detail?: ApiErrorBody | string;
-};
-
-const githubProfileConflictMessages: Record<string, string> = {
-  email:
-    'This GitHub account uses an email address that is already connected to another OpenML account.',
-  username:
-    'This GitHub account uses a username that is already connected to another OpenML account.',
-  github_id: 'This GitHub account is already connected to another OpenML account.',
 };
 
 function getApiErrorBody(payload: ApiErrorResponse | undefined): ApiErrorBody | undefined {
@@ -59,18 +54,20 @@ function getGitHubLoginErrorMessage(error: unknown): string {
     const errorBody = getApiErrorBody(payload);
     if (errorBody?.code === 'github_profile_conflict' && errorBody.field) {
       return (
-        githubProfileConflictMessages[errorBody.field] ||
-        errorBody.message ||
-        GITHUB_LOGIN_FALLBACK_ERROR
+        GITHUB_PROFILE_CONFLICT_MESSAGES[
+          errorBody.field as keyof typeof GITHUB_PROFILE_CONFLICT_MESSAGES
+        ] ||
+        sanitizeAuthErrorMessage(errorBody.message) ||
+        AUTH_ERROR_MESSAGES.generic
       );
     }
     if (errorBody?.message) {
-      return errorBody.message;
+      return sanitizeAuthErrorMessage(errorBody.message) ?? AUTH_ERROR_MESSAGES.generic;
     }
-    return GITHUB_LOGIN_FALLBACK_ERROR;
+    return AUTH_ERROR_MESSAGES.generic;
   }
 
-  return error instanceof Error && error.message ? error.message : GITHUB_LOGIN_FALLBACK_ERROR;
+  return error instanceof Error && error.message ? error.message : AUTH_ERROR_MESSAGES.generic;
 }
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {

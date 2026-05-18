@@ -4,12 +4,14 @@ import { Github, LogIn } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { getAuthNoticeMessage, sanitizeAuthErrorMessage } from '../lib/authMessages';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 
 export const LoginPage: React.FC = () => {
   const [searchParams] = useSearchParams();
-  const error = searchParams.get('error');
+  const error = sanitizeAuthErrorMessage(searchParams.get('error'));
+  const notice = getAuthNoticeMessage(searchParams.get('notice'));
 
   return (
     <motion.div
@@ -39,6 +41,12 @@ export const LoginPage: React.FC = () => {
       {error ? (
         <div className="w-full max-w-md mb-5 rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           {error}
+        </div>
+      ) : null}
+
+      {notice ? (
+        <div className="w-full max-w-md mb-5 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary">
+          {notice}
         </div>
       ) : null}
 

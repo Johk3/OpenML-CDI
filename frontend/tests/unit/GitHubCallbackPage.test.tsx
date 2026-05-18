@@ -8,10 +8,14 @@ describe('GitHubCallbackPage', () => {
     mockNavigate.mockClear();
   });
 
-  it('routes back to login with the specific GitHub callback error', async () => {
+  it('routes back to login with a known user-facing GitHub callback error', async () => {
     const loginWithGithub = vi
       .fn()
-      .mockRejectedValue(new Error('This GitHub account uses an email address already in use.'));
+      .mockRejectedValue(
+        new Error(
+          'This GitHub account uses an email address that is already connected to another OpenML account.',
+        ),
+      );
 
     renderWithRouter(<GitHubCallbackPage />, {
       initialRoute: '/login/callback?code=github-code&state=oauth-state',
@@ -20,7 +24,25 @@ describe('GitHubCallbackPage', () => {
 
     await waitFor(() =>
       expect(mockNavigate).toHaveBeenCalledWith(
-        '/login?error=This%20GitHub%20account%20uses%20an%20email%20address%20already%20in%20use.',
+        '/login?error=This%20GitHub%20account%20uses%20an%20email%20address%20that%20is%20already%20connected%20to%20another%20OpenML%20account.',
+        { replace: true },
+      ),
+    );
+  });
+
+  it('sanitizes raw GitHub callback errors before routing back to login', async () => {
+    const loginWithGithub = vi
+      .fn()
+      .mockRejectedValue(new Error('Provider stack trace: secret-token'));
+
+    renderWithRouter(<GitHubCallbackPage />, {
+      initialRoute: '/login/callback?code=github-code&state=oauth-state',
+      authContext: { loginWithGithub },
+    });
+
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith(
+        '/login?error=Authentication%20failed.%20Please%20try%20again.',
         { replace: true },
       ),
     );

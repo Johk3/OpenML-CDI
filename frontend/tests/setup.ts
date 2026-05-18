@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { vi } from 'vitest';
-import { mockNavigate } from './mocks/navigation';
+import { mockNavigate, navigationMocks } from './mocks/navigation';
 import { mockDatasetService } from './mocks/datasetService';
 import { configure } from '@testing-library/react';
 
@@ -21,7 +21,7 @@ vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
   return {
     ...actual,
-    useNavigate: () => mockNavigate,
+    useNavigate: () => (navigationMocks.useActualNavigate ? actual.useNavigate() : mockNavigate),
   };
 });
 
