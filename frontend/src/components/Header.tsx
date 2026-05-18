@@ -1,5 +1,5 @@
 import React from 'react';
-import { Database, LogIn, LogOut, User as UserIcon, Sun, Moon } from 'lucide-react';
+import { LogIn, LogOut, User as UserIcon, Sun, Moon } from 'lucide-react';
 import { useNavigate, NavLink } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from './ui/button';
@@ -43,9 +43,6 @@ export const Header: React.FC = () => {
       <div className="container header-content">
         {/* Logo */}
         <div className="logo-section" onClick={() => navigate('/')}>
-          <div className="logo-icon">
-            <Database size={20} color="white" />
-          </div>
           <span className="logo-text">OpenML CDI</span>
         </div>
 

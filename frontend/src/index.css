@@ -239,25 +239,6 @@
   cursor: pointer;
 }
 
-.logo-icon {
-  background: var(--accent-gradient);
-  width: 38px;
-  height: 38px;
-  border-radius: var(--radius-md);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: var(--shadow-glow);
-  transition:
-    transform 200ms ease,
-    box-shadow 200ms ease;
-}
-
-.logo-section:hover .logo-icon {
-  transform: scale(1.08) rotate(-3deg);
-  box-shadow: var(--shadow-glow), var(--shadow-md);
-}
-
 .logo-text {
   font-weight: 800;
   font-size: 1.25rem;

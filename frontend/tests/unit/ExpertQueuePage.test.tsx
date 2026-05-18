@@ -131,6 +131,98 @@ describe('ExpertQueuePage', () => {
     });
   });
 
+  it('allows experts to reopen rejected datasets from the rejected filter', async () => {
+    vi.mocked(DatasetService.listDatasets).mockResolvedValue([
+      {
+        id: 'ds-rejected',
+        title: 'Rejected Dataset',
+        status: 'rejected',
+        dataset_metadata: {
+          description: 'Rejected dataset',
+          objects: [
+            {
+              scan_state: 'clean',
+              download_state: 'downloadable',
+              final_object_key: 'datasets/rejected/clean.csv',
+            },
+          ],
+        },
+      } as unknown as BackendDataset,
+    ]);
+    vi.mocked(DatasetService.updateStatus).mockResolvedValue({} as never);
+    renderWithRouter(<ExpertQueuePage />, { userContext: expertUserContext });
+
+    await screen.findByText('Expert Review Queue');
+    fireEvent.click(screen.getByRole('combobox'));
+    fireEvent.click(screen.getByRole('option', { name: 'Rejected' }));
+
+    expect(await screen.findByText('Rejected Dataset')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /reopen review/i }));
+
+    await waitFor(() => {
+      expect(DatasetService.updateStatus).toHaveBeenCalledWith('ds-rejected', 'pending_review');
+    });
+  });
+
+  it('does not offer reopen for rejected datasets that are not review-ready', async () => {
+    vi.mocked(DatasetService.listDatasets).mockResolvedValue([
+      {
+        id: 'ds-rejected',
+        title: 'Rejected Dataset',
+        status: 'rejected',
+        dataset_metadata: {
+          description: 'Rejected dataset',
+          objects: [
+            {
+              scan_state: 'clean',
+              download_state: 'unavailable',
+              final_object_key: null,
+            },
+          ],
+        },
+      } as unknown as BackendDataset,
+    ]);
+    renderWithRouter(<ExpertQueuePage />, { userContext: expertUserContext });
+
+    await screen.findByText('Expert Review Queue');
+    fireEvent.click(screen.getByRole('combobox'));
+    fireEvent.click(screen.getByRole('option', { name: 'Rejected' }));
+
+    expect(await screen.findByText('Rejected Dataset')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /reopen review/i })).not.toBeInTheDocument();
+  });
+
+  it('keeps the queue visible when a status update fails', async () => {
+    vi.mocked(DatasetService.listDatasets).mockResolvedValue([
+      {
+        id: 'ds-rejected',
+        title: 'Rejected Dataset',
+        status: 'rejected',
+        dataset_metadata: {
+          description: 'Rejected dataset',
+          objects: [
+            {
+              scan_state: 'clean',
+              download_state: 'downloadable',
+              final_object_key: 'datasets/rejected/clean.csv',
+            },
+          ],
+        },
+      } as unknown as BackendDataset,
+    ]);
+    vi.mocked(DatasetService.updateStatus).mockRejectedValueOnce(new Error('not ready'));
+    renderWithRouter(<ExpertQueuePage />, { userContext: expertUserContext });
+
+    await screen.findByText('Expert Review Queue');
+    fireEvent.click(screen.getByRole('combobox'));
+    fireEvent.click(screen.getByRole('option', { name: 'Rejected' }));
+    fireEvent.click(await screen.findByRole('button', { name: /reopen review/i }));
+
+    expect(await screen.findByText('Rejected Dataset')).toBeInTheDocument();
+    expect(screen.getByText('Failed to update dataset status.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /reopen review/i })).toBeInTheDocument();
+  });
+
   it('exposes GitHub integration state for experts in the review queue', async () => {
     vi.mocked(DatasetService.listDatasets).mockResolvedValue([
       {

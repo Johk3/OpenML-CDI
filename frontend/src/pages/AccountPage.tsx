@@ -3,7 +3,7 @@ import { useUserContext } from '@/hooks/useUserContext';
 import { UserService } from '@/services/userService';
 import { useMutation } from '@tanstack/react-query';
 import { AxiosError } from 'axios';
-import { AlertTriangle, Loader2, ShieldAlert, Trash2, UserRoundCog } from 'lucide-react';
+import { AlertTriangle, Loader2, ShieldAlert, Trash2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -84,10 +84,6 @@ export const AccountPage: React.FC = () => {
       className="container py-10 space-y-6"
     >
       <div className="space-y-2">
-        <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground">
-          <UserRoundCog className="h-3.5 w-3.5" />
-          Account settings
-        </div>
         <h1 className="heading-1">Manage your account</h1>
         <p className="subheading max-w-2xl">
           Review your profile details and manage account deletion.
@@ -97,9 +93,6 @@ export const AccountPage: React.FC = () => {
       <Card>
         <CardHeader>
           <CardTitle>Profile details</CardTitle>
-          <CardDescription>
-            Current account metadata from your authenticated profile.
-          </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
           <ReadOnlyField label="Username" value={user.username} />

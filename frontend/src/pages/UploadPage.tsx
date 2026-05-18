@@ -419,7 +419,11 @@ export const UploadPage: React.FC = () => {
             : progress.chunkIndex,
         );
         setTotalChunks(progress.totalChunks);
-        setUploadSessionState(progress.status);
+        setUploadSessionState(
+          uploadController.isPaused() && progress.status === 'uploading'
+            ? 'paused'
+            : progress.status,
+        );
         if (progress.status === 'finalizing') {
           setUploadProgress(100);
           setUploadState('finalizing');
@@ -769,7 +773,12 @@ export const UploadPage: React.FC = () => {
                   <>
                     <div className="relative mb-8">
                       <div className="w-24 h-24 rounded-full border-4 border-muted flex items-center justify-center">
-                        <span className="text-xl font-bold text-primary">{uploadProgress}%</span>
+                        <span
+                          className="text-xl font-bold text-primary"
+                          data-testid="upload-progress-percent"
+                        >
+                          {uploadProgress}%
+                        </span>
                       </div>
                       <svg
                         className="absolute top-0 left-0 w-24 h-24 -rotate-90 pointer-events-none"
@@ -811,10 +820,16 @@ export const UploadPage: React.FC = () => {
                     </p>
 
                     <div className="mb-4 flex flex-col items-center gap-3 text-sm">
-                      <div className="rounded-md bg-muted px-3 py-1 text-muted-foreground">
+                      <div
+                        className="rounded-md bg-muted px-3 py-1 text-muted-foreground"
+                        data-testid="upload-chunk-status"
+                      >
                         Chunk {currentChunk} of {totalChunks}
                       </div>
-                      <p className="max-w-xs text-xs text-muted-foreground">
+                      <p
+                        className="max-w-xs text-xs text-muted-foreground"
+                        data-testid="upload-session-message"
+                      >
                         {uploadSessionMessage(
                           uploadSessionState,
                           uploadedFileName,

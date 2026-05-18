@@ -163,6 +163,38 @@ def test_create_upload_url_presigns_put_with_content_type_and_expiry():
     ) in client.calls
 
 
+def test_upload_urls_use_public_presign_client_when_configured():
+    storage_client = RecordingS3Client()
+    presign_client = RecordingS3Client()
+    settings = StorageSettings(
+        backend="s3",
+        s3_bucket="datasets",
+        s3_region="eu-west-1",
+        s3_endpoint="http://minio:9000",
+        s3_public_endpoint="http://localhost:9000",
+    )
+    backend = S3StorageBackend(
+        settings,
+        client=storage_client,
+        presign_client=presign_client,
+    )
+
+    upload_url = backend.create_upload_url("quarantine/batch/data.csv")
+    part_url = backend.create_multipart_part_url(
+        "quarantine/batch/data.csv",
+        upload_id="upload-1",
+        part_number=1,
+    )
+
+    assert upload_url == "https://signed.example/put_object"
+    assert part_url == "https://signed.example/upload_part"
+    assert not storage_client.calls
+    assert [call[1]["ClientMethod"] for call in presign_client.calls] == [
+        "put_object",
+        "upload_part",
+    ]
+
+
 def test_promote_from_quarantine_copies_then_deletes_source():
     client = RecordingS3Client()
     backend = S3StorageBackend(_settings(), client=client)

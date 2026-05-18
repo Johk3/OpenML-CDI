@@ -189,6 +189,110 @@ describe('MyDatasetsPage', () => {
     anchorClick.mockRestore();
   });
 
+  it('hides the stale download action after an expert rejects a dataset', async () => {
+    const user = userEvent.setup();
+    mockDatasetService.listDatasets.mockResolvedValueOnce([
+      {
+        id: 'dataset-ready',
+        title: 'Ready Dataset',
+        status: 'pending_review',
+        created_at: '2026-04-01T00:00:00Z',
+        dataset_metadata: { description: 'Ready dataset' },
+        lifecycle: {
+          state: 'pending_review',
+          upload: { uploaded: true, scanning: false, quarantined: false },
+          review: { ready: true, approved: false, rejected: false, published: false },
+          download: {
+            available: true,
+            review_only: true,
+            final_approved: false,
+            message: 'Download is available for review; expert approval is pending.',
+          },
+          github: {
+            state: 'pending',
+            issue_url: '',
+          },
+        },
+      } as unknown as BackendDataset,
+    ]);
+
+    renderWithRouter(<MyDatasetsPage />, {
+      userContext: {
+        user: {
+          id: 'test-user',
+          first_name: 'Test',
+          last_name: 'User',
+          role: 'expert',
+          email: 'test@test.com',
+          username: 'testuser',
+          datasets: ['dataset'],
+          created_at: 'a',
+        },
+      },
+    });
+
+    expect(await screen.findByRole('button', { name: /download/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('combobox', { name: /pending expert review/i }));
+    await user.click(screen.getByRole('option', { name: /rejected/i }));
+
+    await waitFor(() => {
+      expect(mockDatasetService.updateStatus).toHaveBeenCalledWith('dataset-ready', 'rejected');
+    });
+    expect(screen.queryByRole('button', { name: /download/i })).not.toBeInTheDocument();
+  });
+
+  it('shows a recoverable message when expert dataset download fails', async () => {
+    mockDatasetService.listDatasets.mockResolvedValueOnce([
+      {
+        id: 'dataset-ready',
+        title: 'Ready Dataset',
+        status: 'pending_review',
+        created_at: '2026-04-01T00:00:00Z',
+        dataset_metadata: { description: 'Ready dataset' },
+        lifecycle: {
+          state: 'pending_review',
+          upload: { uploaded: true, scanning: false, quarantined: false },
+          review: { ready: true, approved: false, rejected: false, published: false },
+          download: {
+            available: true,
+            review_only: true,
+            final_approved: false,
+            message: 'Download is available for review; expert approval is pending.',
+          },
+          github: {
+            state: 'pending',
+            issue_url: '',
+          },
+        },
+      } as unknown as BackendDataset,
+    ]);
+    mockDatasetService.downloadDataset.mockRejectedValueOnce(
+      new Error('Dataset file storage is unavailable'),
+    );
+
+    renderWithRouter(<MyDatasetsPage />, {
+      userContext: {
+        user: {
+          id: 'test-user',
+          first_name: 'Test',
+          last_name: 'User',
+          role: 'expert',
+          email: 'test@test.com',
+          username: 'testuser',
+          datasets: ['dataset'],
+          created_at: 'a',
+        },
+      },
+    });
+
+    const downloadBtn = await screen.findByRole('button', { name: /download/i });
+    fireEvent.click(downloadBtn);
+
+    expect(await screen.findByText(/dataset file storage is unavailable/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /download/i })).toBeEnabled();
+  });
+
   it('keeps the dataset card visible when an expert status update fails', async () => {
     const user = userEvent.setup();
     mockDatasetService.listDatasets.mockResolvedValueOnce([
@@ -283,14 +387,92 @@ describe('MyDatasetsPage', () => {
     });
   });
 
-  it('does not offer status transitions for rejected datasets', async () => {
+  it('allows experts to reopen rejected datasets for review', async () => {
+    const user = userEvent.setup();
     mockDatasetService.listDatasets.mockResolvedValueOnce([
       {
         id: 'dataset-rejected',
         title: 'Rejected Dataset',
         status: 'rejected',
         created_at: '2026-05-18T00:00:00Z',
-        dataset_metadata: { description: 'Rejected dataset' },
+        dataset_metadata: {
+          description: 'Rejected dataset',
+          objects: [
+            {
+              scan_state: 'clean',
+              download_state: 'downloadable',
+              final_object_key: 'datasets/rejected/clean.csv',
+            },
+          ],
+        },
+        lifecycle: {
+          state: 'rejected',
+          upload: { uploaded: true, scanning: false, quarantined: false },
+          review: { ready: false, approved: false, rejected: true, published: false },
+          download: {
+            available: false,
+            message: 'Dataset files are not ready for download.',
+          },
+          github: {
+            state: 'not_ready',
+            issue_url: '',
+          },
+        },
+      } as unknown as BackendDataset,
+    ]);
+
+    renderWithRouter(<MyDatasetsPage />, {
+      userContext: {
+        user: {
+          id: 'test-user',
+          first_name: 'Test',
+          last_name: 'User',
+          role: 'expert',
+          email: 'test@test.com',
+          username: 'testuser',
+          datasets: ['dataset'],
+          created_at: 'a',
+        },
+      },
+    });
+
+    expect(
+      await screen.findByRole('heading', { level: 3, name: /rejected dataset/i }),
+    ).toBeInTheDocument();
+
+    const statusControl = screen.getByRole('combobox', { name: /rejected/i });
+    expect(statusControl).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /download/i })).not.toBeInTheDocument();
+
+    await user.click(statusControl);
+    await user.click(screen.getByRole('option', { name: /pending expert review/i }));
+
+    await waitFor(() => {
+      expect(mockDatasetService.updateStatus).toHaveBeenCalledWith(
+        'dataset-rejected',
+        'pending_review',
+      );
+    });
+    expect(await screen.findByRole('button', { name: /download/i })).toBeInTheDocument();
+  });
+
+  it('does not reopen rejected datasets that are not review-ready', async () => {
+    mockDatasetService.listDatasets.mockResolvedValueOnce([
+      {
+        id: 'dataset-rejected',
+        title: 'Rejected Dataset',
+        status: 'rejected',
+        created_at: '2026-05-18T00:00:00Z',
+        dataset_metadata: {
+          description: 'Rejected dataset',
+          objects: [
+            {
+              scan_state: 'clean',
+              download_state: 'unavailable',
+              final_object_key: null,
+            },
+          ],
+        },
         lifecycle: {
           state: 'rejected',
           upload: { uploaded: true, scanning: false, quarantined: false },

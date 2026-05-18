@@ -34,13 +34,18 @@ class _S3ReadContext:
 
 
 class S3StorageBackend:
-    def __init__(self, settings: StorageSettings, client=None):
+    def __init__(self, settings: StorageSettings, client=None, presign_client=None):
         if not settings.s3_bucket:
             raise StorageConfigurationError("S3_BUCKET is required for S3 storage")
 
         self.settings = settings
         self.bucket = settings.s3_bucket
         self._client = client or self._create_client(settings)
+        self._presign_client = presign_client or (
+            self._create_client(settings, endpoint_url=settings.s3_public_endpoint)
+            if settings.s3_public_endpoint
+            else self._client
+        )
 
     def backend_name(self) -> str:
         return "s3"
@@ -127,7 +132,7 @@ class S3StorageBackend:
         if content_type:
             params["ContentType"] = content_type
         try:
-            return self._client.generate_presigned_url(
+            return self._presign_client.generate_presigned_url(
                 "put_object",
                 Params=params,
                 ExpiresIn=expires_seconds,
@@ -138,7 +143,7 @@ class S3StorageBackend:
     def create_download_url(self, storage_key: str, expires_seconds: int = 3600) -> str:
         key = self._validate_storage_key(storage_key)
         try:
-            return self._client.generate_presigned_url(
+            return self._presign_client.generate_presigned_url(
                 "get_object",
                 Params={"Bucket": self.bucket, "Key": key},
                 ExpiresIn=expires_seconds,
@@ -190,7 +195,7 @@ class S3StorageBackend:
             raise ValueError("part_number must be > 0")
 
         try:
-            return self._client.generate_presigned_url(
+            return self._presign_client.generate_presigned_url(
                 "upload_part",
                 Params={
                     "Bucket": self.bucket,
@@ -295,7 +300,9 @@ class S3StorageBackend:
             )
         return metadata
 
-    def _create_client(self, settings: StorageSettings):
+    def _create_client(
+        self, settings: StorageSettings, endpoint_url: str | None = None
+    ):
         session_kwargs = {}
         if settings.s3_access_key:
             session_kwargs["aws_access_key_id"] = settings.s3_access_key
@@ -305,10 +312,15 @@ class S3StorageBackend:
             session_kwargs["region_name"] = settings.s3_region
 
         client_kwargs = {}
-        if settings.s3_endpoint:
-            client_kwargs["endpoint_url"] = settings.s3_endpoint
+        configured_endpoint = (
+            endpoint_url if endpoint_url is not None else settings.s3_endpoint
+        )
+        if configured_endpoint:
+            client_kwargs["endpoint_url"] = configured_endpoint
+        config_kwargs = {"signature_version": "s3v4"}
         if settings.s3_force_path_style:
-            client_kwargs["config"] = Config(s3={"addressing_style": "path"})
+            config_kwargs["s3"] = {"addressing_style": "path"}
+        client_kwargs["config"] = Config(**config_kwargs)
 
         return boto3.Session(**session_kwargs).client("s3", **client_kwargs)
 

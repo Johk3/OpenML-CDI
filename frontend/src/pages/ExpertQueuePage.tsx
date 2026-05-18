@@ -16,6 +16,7 @@ import {
   Search,
   MessageSquare,
   ExternalLink,
+  RotateCcw,
 } from 'lucide-react';
 import { Dataset, DatasetLifecycleSummary, DatasetStatus } from '../types/auth';
 import { Card } from '../components/ui/card';
@@ -31,6 +32,7 @@ import { Input } from '../components/ui/input';
 import { useUserContext } from '@/hooks/useUserContext';
 import { DatasetService } from '@/services/datasetService';
 import { BackendDataset } from '@/types/dataset';
+import { canReopenRejectedDataset } from '@/lib/datasetReadiness';
 
 type ReviewQueueDataset = Dataset & {
   issueUrl: string;
@@ -228,6 +230,7 @@ export const ExpertQueuePage: React.FC = () => {
   const [datasets, setDatasets] = useState<ReviewQueueDataset[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<DatasetStatus | 'all'>('pending_review');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -251,12 +254,13 @@ export const ExpertQueuePage: React.FC = () => {
     const previous = datasets.find((ds) => ds.id === id)?.status;
     if (!previous || previous === newStatus) return;
 
+    setActionError(null);
     setDatasets((cur) => cur.map((ds) => (ds.id === id ? { ...ds, status: newStatus } : ds)));
     try {
       await DatasetService.updateStatus(id, newStatus);
     } catch {
       setDatasets((cur) => cur.map((ds) => (ds.id === id ? { ...ds, status: previous } : ds)));
-      setError('Failed to update dataset status.');
+      setActionError('Failed to update dataset status.');
     }
   };
 
@@ -284,10 +288,7 @@ export const ExpertQueuePage: React.FC = () => {
       <div className="container max-w-6xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white bg-gradient-to-br from-emerald-500 to-teal-600 shadow-md">
-              <ShieldAlert size={20} />
-            </div>
+          <div className="mb-2">
             <h1 className="text-3xl font-bold tracking-tight">Expert Review Queue</h1>
           </div>
           <p className="text-muted-foreground max-w-2xl">
@@ -331,6 +332,13 @@ export const ExpertQueuePage: React.FC = () => {
             </Select>
           </div>
         </div>
+
+        {actionError && !loading && !error && (
+          <div className="mb-4 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <AlertCircle size={15} />
+            <span>{actionError}</span>
+          </div>
+        )}
 
         {loading ? (
           <div className="flex flex-col items-center justify-center py-24">
@@ -461,6 +469,18 @@ export const ExpertQueuePage: React.FC = () => {
                           Inspect Details
                         </Link>
                       </Button>
+
+                      {canReopenRejectedDataset(dataset) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full justify-start h-9"
+                          onClick={() => handleStatusChange(dataset.id, 'pending_review')}
+                        >
+                          <RotateCcw size={14} className="mr-2" />
+                          Reopen Review
+                        </Button>
+                      )}
 
                       {[...REVIEW_READY_STATUSES, 'quarantined'].includes(dataset.status) && (
                         <>

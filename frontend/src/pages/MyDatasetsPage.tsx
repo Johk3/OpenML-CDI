@@ -25,6 +25,7 @@ import {
 import { useUserContext } from '@/hooks/useUserContext';
 import { DatasetService } from '@/services/datasetService';
 import { BackendDataset } from '@/types/dataset';
+import { canReopenRejectedDataset, hasReviewReadyFiles } from '@/lib/datasetReadiness';
 
 function toFrontendDataset(b: BackendDataset): Dataset {
   const metadata = b.dataset_metadata || {};
@@ -70,6 +71,7 @@ function toFrontendDataset(b: BackendDataset): Dataset {
     metrics,
     croissantMetadata,
     lifecycle: b.lifecycle,
+    rawMetadata: metadata,
   };
 }
 
@@ -161,6 +163,62 @@ const toExpertSelectStatus = (status: DatasetStatus): DatasetStatus => {
   return status;
 };
 
+const DOWNLOADABLE_DATASET_STATUSES: DatasetStatus[] = [
+  'pending_review',
+  'pending',
+  'approved',
+  'converted',
+  'published',
+  'claimed',
+];
+
+const isDatasetStatusDownloadable = (status: DatasetStatus): boolean =>
+  DOWNLOADABLE_DATASET_STATUSES.includes(status);
+
+const downloadMessageForStatus = (status: DatasetStatus, available: boolean): string => {
+  if (!available) return 'Dataset files are not ready for download.';
+  if (toExpertSelectStatus(status) === 'pending_review') {
+    return 'Download is available for review; expert approval is pending.';
+  }
+  return 'Download is available from the expert-approved dataset.';
+};
+
+const lifecycleAfterStatusChange = (
+  dataset: Dataset,
+  status: DatasetStatus,
+): Dataset['lifecycle'] => {
+  if (!dataset.lifecycle) return dataset.lifecycle;
+
+  const canonicalStatus = toExpertSelectStatus(status);
+  const downloadAvailable = isDatasetStatusDownloadable(status) && hasReviewReadyFiles(dataset);
+
+  return {
+    ...dataset.lifecycle,
+    state: canonicalStatus,
+    upload: {
+      ...dataset.lifecycle.upload,
+      uploaded: canonicalStatus !== 'pending_upload',
+      scanning: canonicalStatus === 'scanning',
+      quarantined: canonicalStatus === 'quarantined',
+    },
+    review: {
+      ...dataset.lifecycle.review,
+      ready: canonicalStatus === 'pending_review',
+      approved: canonicalStatus === 'approved' || canonicalStatus === 'published',
+      rejected: canonicalStatus === 'rejected',
+      published: canonicalStatus === 'published',
+    },
+    download: {
+      ...dataset.lifecycle.download,
+      available: downloadAvailable,
+      review_only: downloadAvailable && canonicalStatus === 'pending_review',
+      final_approved:
+        downloadAvailable && (canonicalStatus === 'approved' || canonicalStatus === 'published'),
+      message: downloadMessageForStatus(canonicalStatus, downloadAvailable),
+    },
+  };
+};
+
 const EXPERT_STATUS_TRANSITIONS: Partial<Record<DatasetStatus, DatasetStatus[]>> = {
   pending_upload: ['scanning', 'integration_failed'],
   uploaded: ['scanning', 'integration_failed'],
@@ -169,24 +227,25 @@ const EXPERT_STATUS_TRANSITIONS: Partial<Record<DatasetStatus, DatasetStatus[]>>
   approved: ['scanning', 'published', 'rejected', 'integration_failed'],
   integration_failed: ['pending_review', 'rejected'],
   quarantined: ['rejected'],
-  rejected: [],
+  rejected: ['pending_review'],
   published: ['scanning', 'integration_failed'],
 };
 
 const getExpertStatusLabel = (status: DatasetStatus) => STATUS_CONFIG[status]?.label || status;
 
-const getExpertStatusOptions = (status: DatasetStatus): DatasetStatus[] => {
-  const current = toExpertSelectStatus(status);
-  const transitions = EXPERT_STATUS_TRANSITIONS[current] || [];
+const getExpertStatusOptions = (dataset: Dataset): DatasetStatus[] => {
+  const current = toExpertSelectStatus(dataset.status);
+  const transitions =
+    current === 'rejected' && !canReopenRejectedDataset(dataset)
+      ? []
+      : EXPERT_STATUS_TRANSITIONS[current] || [];
   return [current, ...transitions].filter(
     (value, index, values) => values.indexOf(value) === index,
   );
 };
 
-const canChangeExpertStatus = (status: DatasetStatus): boolean => {
-  const current = toExpertSelectStatus(status);
-  return Boolean(EXPERT_STATUS_TRANSITIONS[current]?.length);
-};
+const canChangeExpertStatus = (dataset: Dataset): boolean =>
+  getExpertStatusOptions(dataset).length > 1;
 
 export const MyDatasetsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -196,7 +255,9 @@ export const MyDatasetsPage: React.FC = () => {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusUpdateError, setStatusUpdateError] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+  const [downloadingDatasetId, setDownloadingDatasetId] = useState<string | null>(null);
 
   useEffect(() => {
     // Wait until the user context has finished resolving
@@ -208,6 +269,7 @@ export const MyDatasetsPage: React.FC = () => {
     setLoading(true);
     setError(null);
     setStatusUpdateError(null);
+    setDownloadError(null);
     DatasetService.listDatasets()
       .then((backendDatasets) => setDatasets(backendDatasets.map(toFrontendDataset)))
       .catch(() => setError('Failed to load datasets. Please try again later.'))
@@ -248,26 +310,45 @@ export const MyDatasetsPage: React.FC = () => {
 
   const isExpert = user.role === 'expert';
   const handleDownload = async (dataset: Dataset) => {
-    const { blob, filename } = await DatasetService.downloadDataset(dataset.id);
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.URL.revokeObjectURL(url);
+    if (downloadingDatasetId) return;
+
+    setDownloadingDatasetId(dataset.id);
+    setDownloadError(null);
+    try {
+      const { blob, filename } = await DatasetService.downloadDataset(dataset.id);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : 'Failed to download dataset.');
+    } finally {
+      setDownloadingDatasetId(null);
+    }
   };
 
   const handleStatusChange = async (id: string, newStatus: DatasetStatus) => {
     if (!isExpert) return;
-    const previous = datasets.find((ds) => ds.id === id)?.status;
-    if (!previous || previous === newStatus) return;
-    if (!getExpertStatusOptions(previous).includes(newStatus)) return;
+    const dataset = datasets.find((ds) => ds.id === id);
+    if (!dataset) return;
+    const previous = dataset.status;
+    if (previous === newStatus) return;
+    if (!getExpertStatusOptions(dataset).includes(newStatus)) return;
 
     setUpdatingStatusId(id);
     setStatusUpdateError(null);
-    setDatasets((cur) => cur.map((ds) => (ds.id === id ? { ...ds, status: newStatus } : ds)));
+    setDownloadError(null);
+    setDatasets((cur) =>
+      cur.map((ds) =>
+        ds.id === id
+          ? { ...ds, status: newStatus, lifecycle: lifecycleAfterStatusChange(ds, newStatus) }
+          : ds,
+      ),
+    );
     try {
       await DatasetService.updateStatus(id, newStatus);
     } catch {
@@ -277,6 +358,7 @@ export const MyDatasetsPage: React.FC = () => {
       setUpdatingStatusId(null);
     }
   };
+  const actionError = statusUpdateError || downloadError;
 
   return (
     <motion.div
@@ -288,13 +370,7 @@ export const MyDatasetsPage: React.FC = () => {
       <div className="container">
         {/* Header */}
         <div className="datasets-header">
-          <div className="flex items-center gap-3 mb-1">
-            <div
-              className="w-9 h-9 rounded-lg flex items-center justify-center text-white"
-              style={{ background: 'var(--accent-gradient)' }}
-            >
-              <Database size={18} />
-            </div>
+          <div className="mb-1">
             <h1 className="heading-1">{isExpert ? 'All User Datasets' : 'My Datasets'}</h1>
           </div>
           <p className="subheading" style={{ maxWidth: '600px' }}>
@@ -309,10 +385,10 @@ export const MyDatasetsPage: React.FC = () => {
           )}
         </div>
 
-        {statusUpdateError && !loading && !error && (
+        {actionError && !loading && !error && (
           <div className="mb-4 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             <AlertCircle size={15} />
-            <span>{statusUpdateError}</span>
+            <span>{actionError}</span>
           </div>
         )}
 
@@ -341,11 +417,14 @@ export const MyDatasetsPage: React.FC = () => {
         ) : (
           <div className="datasets-grid">
             {datasets.map((dataset) => {
-              const canDownloadDataset = isExpert && Boolean(dataset.lifecycle?.download.available);
+              const canDownloadDataset =
+                isDatasetStatusDownloadable(dataset.status) &&
+                Boolean(dataset.lifecycle?.download.available);
+              const isDownloading = downloadingDatasetId === dataset.id;
               const expertStatusValue = toExpertSelectStatus(dataset.status);
-              const expertStatusOptions = getExpertStatusOptions(dataset.status);
+              const expertStatusOptions = getExpertStatusOptions(dataset);
               const expertStatusLabel = getExpertStatusLabel(expertStatusValue);
-              const statusCanChange = canChangeExpertStatus(dataset.status);
+              const statusCanChange = canChangeExpertStatus(dataset);
 
               return (
                 <div key={dataset.id} className="h-full">
@@ -391,12 +470,18 @@ export const MyDatasetsPage: React.FC = () => {
                             <Button
                               variant="outline"
                               size="xs"
+                              disabled={isDownloading}
                               onClick={async (e) => {
                                 e.preventDefault();
                                 await handleDownload(dataset);
                               }}
                             >
-                              <Download size={12} /> Download
+                              {isDownloading ? (
+                                <Loader2 size={12} className="animate-spin" />
+                              ) : (
+                                <Download size={12} />
+                              )}
+                              {isDownloading ? 'Downloading...' : 'Download'}
                             </Button>
                           )}
                         </div>

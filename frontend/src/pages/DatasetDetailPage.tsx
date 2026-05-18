@@ -384,6 +384,8 @@ export const DatasetDetailPage: React.FC = () => {
   const [actionError, setActionError] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [showAllFiles, setShowAllFiles] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [downloadingDataset, setDownloadingDataset] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -395,6 +397,7 @@ export const DatasetDetailPage: React.FC = () => {
       if (!isMounted) return;
       setLoading(true);
       setError(null);
+      setDownloadError(null);
 
       try {
         const data = (await DatasetService.getDataset(id)) as BackendDatasetWithPackage;
@@ -529,6 +532,28 @@ export const DatasetDetailPage: React.FC = () => {
     }
   };
 
+  const handleDownloadDataset = async () => {
+    if (!dataset || downloadingDataset) return;
+
+    setDownloadingDataset(true);
+    setDownloadError(null);
+    try {
+      const { blob, filename } = await DatasetService.downloadDataset(dataset.id);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : 'Failed to download dataset.');
+    } finally {
+      setDownloadingDataset(false);
+    }
+  };
+
   if (!user) {
     return (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="container py-12">
@@ -576,6 +601,8 @@ export const DatasetDetailPage: React.FC = () => {
   const isExpert = user.role === 'expert';
   const canDownloadDataset = Boolean(lifecycle?.download.available);
   const canPublishDataset = isExpert && (lifecycle?.state || dataset.status) === 'approved';
+  const visibleFiles = dataset.files ?? [];
+  const showFilesSection = visibleFiles.length > 0 || canDownloadDataset;
 
   return (
     <motion.div
@@ -812,12 +839,12 @@ export const DatasetDetailPage: React.FC = () => {
             </motion.section>
           )}
 
-          {dataset.files && dataset.files.length > 0 && (
+          {showFilesSection && (
             <section>
               <div className="flex items-center justify-between mb-4 border-b pb-2">
                 <h2 className="text-xl font-semibold flex items-center gap-2">
                   <FileCode className="w-5 h-5 text-primary" /> Uploaded Files (
-                  {dataset.files.length})
+                  {visibleFiles.length})
                 </h2>
                 {dataset.uploadPackage && (
                   <span className="text-xs font-medium px-2 py-1 rounded-md bg-muted text-muted-foreground">
@@ -833,42 +860,48 @@ export const DatasetDetailPage: React.FC = () => {
                     variant="outline"
                     size="sm"
                     className="gap-2"
-                    onClick={async () => {
-                      const { blob, filename } = await DatasetService.downloadDataset(dataset.id);
-                      const url = window.URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = filename;
-                      document.body.appendChild(a);
-                      a.click();
-                      a.remove();
-                      window.URL.revokeObjectURL(url);
-                    }}
+                    onClick={handleDownloadDataset}
+                    disabled={downloadingDataset}
                   >
-                    <Download size={14} /> Download Dataset
+                    {downloadingDataset ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <Download size={14} />
+                    )}
+                    {downloadingDataset ? 'Downloading' : 'Download Dataset'}
                   </Button>
                 ) : (
                   <span className="text-xs font-medium text-muted-foreground">
-                    Dataset files are not ready for download.
+                    {lifecycle?.download.message || 'Dataset files are not ready for download.'}
                   </span>
                 )}
               </div>
-              <div className="bg-muted/10 rounded-xl border p-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {(showAllFiles ? dataset.files : dataset.files.slice(0, 100)).map((file, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-3 p-2.5 rounded-lg bg-card border border-border/50 text-xs"
-                    >
-                      <div className="w-7 h-7 rounded bg-primary/5 flex items-center justify-center text-primary shrink-0">
-                        <FileText size={14} />
-                      </div>
-                      <span className="truncate font-medium">{file}</span>
-                    </div>
-                  ))}
+              {downloadError && (
+                <div className="mb-3 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  <AlertCircle size={15} />
+                  <span>{downloadError}</span>
                 </div>
+              )}
+              <div className="bg-muted/10 rounded-xl border p-4">
+                {visibleFiles.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {(showAllFiles ? visibleFiles : visibleFiles.slice(0, 100)).map((file, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center gap-3 p-2.5 rounded-lg bg-card border border-border/50 text-xs"
+                      >
+                        <div className="w-7 h-7 rounded bg-primary/5 flex items-center justify-center text-primary shrink-0">
+                          <FileText size={14} />
+                        </div>
+                        <span className="truncate font-medium">{file}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No file listing is available.</p>
+                )}
 
-                {dataset.files.length > 100 && (
+                {visibleFiles.length > 100 && (
                   <div className="mt-4 flex justify-center">
                     <Button
                       variant="ghost"
@@ -883,7 +916,7 @@ export const DatasetDetailPage: React.FC = () => {
                       ) : (
                         <>
                           <ChevronDown className="mr-2 h-4 w-4" /> Show All (
-                          {dataset.files.length - 100} more)
+                          {visibleFiles.length - 100} more)
                         </>
                       )}
                     </Button>

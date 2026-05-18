@@ -12,23 +12,50 @@ describe('AboutPage', () => {
   it('should render the description section', () => {
     navigateTo('/about');
 
+    expect(screen.getByText(/connects dataset contributors who need help/i)).toBeInTheDocument();
+    expect(screen.getByText(/review communication happens in a GitHub issue/i)).toBeInTheDocument();
+  });
+
+  it('should render the workflow section with all steps', () => {
+    navigateTo('/about');
+
+    expect(screen.getByRole('heading', { name: /how the workflow works/i })).toBeInTheDocument();
+
+    const steps = [
+      { title: 'Upload files and metadata', desc: /submit dataset files and croissant metadata/i },
+      { title: 'Safety checks run', desc: /before review starts/i },
+      { title: 'GitHub review issue opens', desc: /available experts and the uploader/i },
+      { title: 'Experts help refine it', desc: /coordinate in github/i },
+      { title: 'Approved data moves forward', desc: /accepted submissions can move/i },
+    ];
+
+    steps.forEach((step) => {
+      expect(screen.getByRole('heading', { name: step.title })).toBeInTheDocument();
+      expect(screen.getByText(step.desc)).toBeInTheDocument();
+    });
+  });
+
+  it('should render the role section for uploaders and experts', () => {
+    navigateTo('/about');
+
+    expect(screen.getByRole('heading', { name: /who uses cdi\?/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /for uploaders/i })).toBeInTheDocument();
+    expect(screen.getByText(/get help preparing dataset formatting/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /for experts/i })).toBeInTheDocument();
     expect(
-      screen.getByText(/dedicated portal for contributing machine learning datasets/i),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/intuitive pipeline to upload, validate, and publish datasets/i),
+      screen.getByText(/find clean submissions through github review issues/i),
     ).toBeInTheDocument();
   });
 
-  it('should render the features section with all features', () => {
+  it('should render the contribution section with all features', () => {
     navigateTo('/about');
 
     expect(screen.getByRole('heading', { name: /why contribute\?/i })).toBeInTheDocument();
 
     const features = [
-      { title: 'Open Science', desc: /all datasets are publicly available/i },
-      { title: 'Quality Assured', desc: /every submission is reviewed/i },
-      { title: 'ML-Ready', desc: /datasets are standardised and enriched/i },
+      { title: 'A meeting point', desc: /connects contributors with experts/i },
+      { title: 'GitHub-based review', desc: /review discussion happens in github/i },
+      { title: 'Better OpenML datasets', desc: /proper formatting and metadata/i },
     ];
 
     features.forEach((feature) => {

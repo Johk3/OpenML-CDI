@@ -6,6 +6,7 @@ from zipfile import ZipFile
 from app.database.models import Dataset, Roles, Statuses, User
 from app.security import create_access_token
 from app.services.github_issues import GitHubAPIError
+from app.storage.errors import StorageObjectNotFoundError, StorageUnavailableError
 
 
 class _ReadableStorage:
@@ -19,6 +20,19 @@ class _ReadableStorage:
 
     def object_exists(self, storage_key: str) -> bool:
         return storage_key in self.objects
+
+
+class _OpenFailureStorage(_ReadableStorage):
+    def __init__(self, error: Exception):
+        super().__init__()
+        self.error = error
+
+    def open(self, storage_key: str, mode: str = "rb"):
+        self.opened_keys.append(storage_key)
+        raise self.error
+
+    def object_exists(self, storage_key: str) -> bool:
+        return True
 
 
 class _ReadContext:
@@ -198,6 +212,172 @@ def test_download_uses_only_downloadable_final_object(client, db_test_session):
     assert response.status_code == 200
     assert response.content == b"clean bytes"
     assert storage.opened_keys == ["ready/dataset/clean.csv"]
+
+
+def test_download_reports_missing_object_when_storage_open_fails(
+    client, db_test_session
+):
+    owner_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    storage = _OpenFailureStorage(StorageObjectNotFoundError("gone"))
+    client.app.state.storage = storage
+    db_test_session.add(_user(user_id=owner_id))
+    db_test_session.add(
+        Dataset(
+            id=dataset_id,
+            title="Missing at download",
+            owner_id=owner_id,
+            dataset_metadata={
+                "filenames": ["clean.csv"],
+                "objects": [
+                    _object_metadata(
+                        final_object_key="ready/dataset/clean.csv",
+                        scan_state="clean",
+                        download_state="downloadable",
+                    )
+                ],
+            },
+            status=Statuses.PENDING,
+        )
+    )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(owner_id), "type": "access"})
+
+    response = client.get(
+        f"/api/datasets/{dataset_id}/download",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Dataset file is missing from storage"}
+    assert storage.opened_keys == ["ready/dataset/clean.csv"]
+
+
+def test_download_reports_storage_unavailable_when_storage_open_fails(
+    client, db_test_session
+):
+    owner_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    storage = _OpenFailureStorage(StorageUnavailableError("storage down"))
+    client.app.state.storage = storage
+    db_test_session.add(_user(user_id=owner_id))
+    db_test_session.add(
+        Dataset(
+            id=dataset_id,
+            title="Storage unavailable at download",
+            owner_id=owner_id,
+            dataset_metadata={
+                "filenames": ["clean.csv"],
+                "objects": [
+                    _object_metadata(
+                        final_object_key="ready/dataset/clean.csv",
+                        scan_state="clean",
+                        download_state="downloadable",
+                    )
+                ],
+            },
+            status=Statuses.PENDING,
+        )
+    )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(owner_id), "type": "access"})
+
+    response = client.get(
+        f"/api/datasets/{dataset_id}/download",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Dataset file storage is unavailable"}
+    assert storage.opened_keys == ["ready/dataset/clean.csv"]
+
+
+def test_archive_download_reports_missing_object_when_storage_open_fails(
+    client, db_test_session
+):
+    owner_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    storage = _OpenFailureStorage(StorageObjectNotFoundError("gone"))
+    client.app.state.storage = storage
+    db_test_session.add(_user(user_id=owner_id))
+    db_test_session.add(
+        Dataset(
+            id=dataset_id,
+            title="Missing archive dataset",
+            owner_id=owner_id,
+            dataset_metadata={
+                "filenames": ["train.csv", "test.csv"],
+                "objects": [
+                    _object_metadata(
+                        object_key="quarantine/dataset/train.csv",
+                        final_object_key="ready/dataset/train.csv",
+                        original_path="train.csv",
+                        scan_state="clean",
+                        download_state="downloadable",
+                    ),
+                    _object_metadata(
+                        object_key="quarantine/dataset/test.csv",
+                        final_object_key="ready/dataset/test.csv",
+                        original_path="test.csv",
+                        scan_state="clean",
+                        download_state="downloadable",
+                    ),
+                ],
+            },
+            status=Statuses.PENDING,
+        )
+    )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(owner_id), "type": "access"})
+
+    response = client.get(
+        f"/api/datasets/{dataset_id}/download",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Dataset file is missing from storage"}
+    assert storage.opened_keys == ["ready/dataset/train.csv"]
+
+
+def test_download_encodes_non_ascii_filenames(client, db_test_session):
+    owner_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    storage = _ReadableStorage({"ready/dataset/resume.csv": b"resume"})
+    client.app.state.storage = storage
+    db_test_session.add(_user(user_id=owner_id))
+    db_test_session.add(
+        Dataset(
+            id=dataset_id,
+            title="Unicode filename dataset",
+            owner_id=owner_id,
+            dataset_metadata={
+                "filenames": ["Résumé Δ.csv"],
+                "objects": [
+                    _object_metadata(
+                        final_object_key="ready/dataset/resume.csv",
+                        original_path="Résumé Δ.csv",
+                        scan_state="clean",
+                        download_state="downloadable",
+                    )
+                ],
+            },
+            status=Statuses.PENDING,
+        )
+    )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(owner_id), "type": "access"})
+
+    response = client.get(
+        f"/api/datasets/{dataset_id}/download",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 200
+    assert (
+        "filename*=UTF-8''R%C3%A9sum%C3%A9%20%CE%94.csv"
+        in response.headers["content-disposition"]
+    )
 
 
 def test_download_archives_single_nested_object_path(client, db_test_session):
@@ -841,6 +1021,85 @@ def test_expert_can_mark_reviewed_dataset_as_ongoing_processing(
         assert response.status_code == 200
         db_test_session.expire_all()
         assert db_test_session.get(Dataset, dataset_id).status == Statuses.SCANNING
+
+
+def test_expert_can_reopen_rejected_review_ready_dataset(client, db_test_session):
+    owner_id = uuid.uuid4()
+    expert_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    db_test_session.add(_user(user_id=owner_id, role=Roles.USER))
+    db_test_session.add(_user(user_id=expert_id, role=Roles.EXPERT))
+    db_test_session.add(
+        Dataset(
+            id=dataset_id,
+            title="Rejected review-ready dataset",
+            owner_id=owner_id,
+            dataset_metadata={
+                "filenames": ["clean.csv"],
+                "objects": [
+                    _object_metadata(
+                        final_object_key="ready/rejected/clean.csv",
+                        scan_state="clean",
+                        download_state="downloadable",
+                    )
+                ],
+            },
+            status=Statuses.REJECTED,
+        )
+    )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(expert_id), "type": "access"})
+
+    response = client.post(
+        "/api/datasets/status",
+        params={"dataset_id": str(dataset_id), "status": "pending_review"},
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 200
+    db_test_session.expire_all()
+    assert db_test_session.get(Dataset, dataset_id).status == Statuses.PENDING_REVIEW
+
+
+def test_rejected_dataset_without_review_ready_files_cannot_be_reopened(
+    client, db_test_session
+):
+    owner_id = uuid.uuid4()
+    expert_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    db_test_session.add(_user(user_id=owner_id, role=Roles.USER))
+    db_test_session.add(_user(user_id=expert_id, role=Roles.EXPERT))
+    db_test_session.add(
+        Dataset(
+            id=dataset_id,
+            title="Rejected unsafe dataset",
+            owner_id=owner_id,
+            dataset_metadata={
+                "filenames": ["infected.csv"],
+                "objects": [
+                    _object_metadata(
+                        object_key="quarantine/infected.csv",
+                        scan_state="infected",
+                        download_state="unavailable",
+                    )
+                ],
+            },
+            status=Statuses.REJECTED,
+        )
+    )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(expert_id), "type": "access"})
+
+    response = client.post(
+        "/api/datasets/status",
+        params={"dataset_id": str(dataset_id), "status": "pending_review"},
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Dataset is not ready for expert review"}
+    db_test_session.expire_all()
+    assert db_test_session.get(Dataset, dataset_id).status == Statuses.REJECTED
 
 
 def test_github_discussion_returns_creation_failure_without_issue_url(

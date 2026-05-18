@@ -32,7 +32,7 @@ export default defineConfig({
   /* shared settings for all the projects below. see https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* base url to use in actions like `await page.goto('')`. */
-    baseURL: "http://localhost:5173",
+    baseURL: process.env.E2E_FRONTEND_BASE_URL ?? "http://localhost:5173",
 
     /* collect trace when retrying the failed test. see https://playwright.dev/docs/trace-viewer */
     trace: "on-first-retry",

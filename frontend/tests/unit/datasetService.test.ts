@@ -595,3 +595,42 @@ describe('DatasetService direct uploads', () => {
     ).toBe(true);
   });
 });
+
+describe('DatasetService downloads', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    apiClientMock.get.mockReset();
+  });
+
+  it('prefers RFC 5987 download filenames from content-disposition', async () => {
+    const DatasetService = await importDatasetService();
+    const blob = new Blob(['content'], { type: 'text/csv' });
+    apiClientMock.get.mockResolvedValue({
+      data: blob,
+      headers: {
+        'content-disposition':
+          'attachment; filename="fallback.csv"; filename*=UTF-8\'\'R%C3%A9sum%C3%A9%20%CE%94.csv',
+      },
+    });
+
+    await expect(DatasetService.downloadDataset('dataset-1')).resolves.toEqual({
+      blob,
+      filename: 'Résumé Δ.csv',
+    });
+  });
+
+  it('throws the backend detail message from blob error responses', async () => {
+    const DatasetService = await importDatasetService();
+    apiClientMock.get.mockRejectedValue({
+      response: {
+        data: new Blob([JSON.stringify({ detail: 'Dataset file is missing from storage' })], {
+          type: 'application/json',
+        }),
+      },
+    });
+
+    await expect(DatasetService.downloadDataset('dataset-1')).rejects.toThrow(
+      'Dataset file is missing from storage',
+    );
+  });
+});

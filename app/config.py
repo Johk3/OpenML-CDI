@@ -11,6 +11,7 @@ CLAMD_TIMEOUT_SECONDS_ENV = "CLAMD_TIMEOUT_SECONDS"
 S3_BUCKET_ENV = "S3_BUCKET"
 S3_REGION_ENV = "S3_REGION"
 S3_ENDPOINT_ENV = "S3_ENDPOINT"
+S3_PUBLIC_ENDPOINT_ENV = "S3_PUBLIC_ENDPOINT"
 S3_ACCESS_KEY_ENV = "S3_ACCESS_KEY"
 S3_SECRET_KEY_ENV = "S3_SECRET_KEY"
 S3_FORCE_PATH_STYLE_ENV = "S3_FORCE_PATH_STYLE"
@@ -57,6 +58,7 @@ class StorageSettings:
     s3_bucket: str = ""
     s3_region: str = ""
     s3_endpoint: str = ""
+    s3_public_endpoint: str = ""
     s3_access_key: str = ""
     s3_secret_key: str = ""
     s3_force_path_style: bool = False
@@ -120,6 +122,7 @@ class StorageSettings:
             s3_bucket=s3_bucket,
             s3_region=os.getenv(S3_REGION_ENV, "").strip(),
             s3_endpoint=os.getenv(S3_ENDPOINT_ENV, "").strip(),
+            s3_public_endpoint=os.getenv(S3_PUBLIC_ENDPOINT_ENV, "").strip(),
             s3_access_key=os.getenv(S3_ACCESS_KEY_ENV, "").strip(),
             s3_secret_key=os.getenv(S3_SECRET_KEY_ENV, "").strip(),
             s3_force_path_style=_get_bool_env(S3_FORCE_PATH_STYLE_ENV, False),

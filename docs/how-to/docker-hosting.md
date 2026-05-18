@@ -27,6 +27,14 @@ docker compose up -d --build
 
 With the default `.env` values, the application is available at **[http://localhost:8000](http://localhost:8000)**.
 
+If you are using the repository's encrypted SOPS secrets, do not run plain `docker compose up -d --build`. Start or rebuild the stack with the decrypted environment injected into Compose:
+
+```bash
+sops exec-env encrypted.env 'docker compose -f compose.yml up -d --build'
+```
+
+Use that exact command for local Compose runs that depend on encrypted values such as `GITHUB_CLIENT_ID`, `GITHUB_SECRET`, `JWT_SECRET`, or GitHub App credentials. Otherwise Compose falls back to the defaults in `compose.yml`, and GitHub login will not be configured.
+
 For GitHub login, create a GitHub OAuth App and set these deployment-time credentials in the root `.env` file:
 
 ```env
@@ -122,6 +130,7 @@ docker run -d \
 | `S3_BUCKET`             |                  | Required when `STORAGE_BACKEND=s3`; bucket for quarantined and promoted dataset objects.                                                          |
 | `S3_REGION`             |                  | Region passed to the S3 client.                                                                                                                   |
 | `S3_ENDPOINT`           |                  | Custom endpoint for MinIO or another S3-compatible service. Leave empty for AWS S3.                                                               |
+| `S3_PUBLIC_ENDPOINT`    |                  | Optional endpoint used only for presigned browser URLs when `S3_ENDPOINT` is not reachable from the browser.                                      |
 | `S3_ACCESS_KEY`         |                  | Static access key for local or static S3 credentials.                                                                                             |
 | `S3_SECRET_KEY`         |                  | Static secret key for local or static S3 credentials.                                                                                             |
 | `S3_FORCE_PATH_STYLE`   | `false`          | Enables path-style bucket addressing for MinIO and similar S3-compatible services.                                                                |

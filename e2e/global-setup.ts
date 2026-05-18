@@ -1,10 +1,10 @@
 import fs from "fs";
 import path from "path";
 
+const API_BASE_URL = process.env.E2E_API_BASE_URL ?? "http://localhost:8000";
+
 async function e2eSetup(): Promise<void> {
-  const response = await fetch(
-    "http://localhost:8000/api/auth/github/callback",
-  );
+  const response = await fetch(`${API_BASE_URL}/api/auth/github/callback`);
 
   if (!response.ok) {
     throw new Error(`Setup failed with status code: ${response.status}`);

@@ -23,22 +23,26 @@ MinIO endpoints:
 
 ## Backend configuration
 
-When the backend runs inside Compose, use the internal endpoint:
+When the backend runs inside Compose for browser uploads, keep backend S3 calls on the Docker network and sign presigned URLs with the host-reachable MinIO endpoint:
 
 ```env
 STORAGE_BACKEND=s3
 S3_BUCKET=openml-upload-local
 S3_REGION=eu-west-1
 S3_ENDPOINT=http://minio:9000
+S3_PUBLIC_ENDPOINT=http://localhost:9000
 S3_ACCESS_KEY=minioadmin
 S3_SECRET_KEY=minioadmin123
 S3_FORCE_PATH_STYLE=true
 ```
 
+`S3_ENDPOINT` must be reachable by the backend container. `S3_PUBLIC_ENDPOINT` is optional and should be set when browser upload contracts need a different hostname.
+
 When the backend runs directly on the host against Compose MinIO, use:
 
 ```env
 S3_ENDPOINT=http://localhost:9000
+S3_PUBLIC_ENDPOINT=
 ```
 
 ## CORS

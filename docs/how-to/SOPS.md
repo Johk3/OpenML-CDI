@@ -152,6 +152,8 @@ For the Docker Compose stack, pass the decrypted environment to Compose at runti
 sops exec-env encrypted.env 'docker compose -f compose.yml up -d --build'
 ```
 
+Use this exact command whenever you start, rebuild, or restart the local Compose stack with encrypted secrets. Running plain `docker compose up -d --build` does not read `encrypted.env`; Compose will use defaults from `compose.yml`, leaving secrets such as `GITHUB_CLIENT_ID`, `GITHUB_SECRET`, and GitHub App credentials unset.
+
 Do not use `env_file: encrypted.env`, copy `.env` or `encrypted.env` into the image, or install SOPS inside the app container. Compose maps the runtime environment into the services.
 
 For Docker, keep the Postgres values as `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD`. The Compose stack builds the in-container `DATABASE_URI` from those values, so a local-development `DATABASE_URI` in `encrypted.env` is not used by the Docker stack.

@@ -257,6 +257,29 @@ def test_expert_can_mark_reviewed_dataset_as_ongoing_processing():
         )
 
 
+def test_expert_can_reopen_rejected_dataset_for_review():
+    dataset = _dataset(status=Statuses.REJECTED)
+
+    assert_lifecycle_transition_allowed(
+        dataset,
+        Statuses.PENDING_REVIEW,
+        actor_role=Roles.EXPERT,
+        system=False,
+    )
+
+
+def test_user_cannot_reopen_rejected_dataset_for_review():
+    dataset = _dataset(status=Statuses.REJECTED)
+
+    with pytest.raises(DatasetLifecyclePermissionError, match="Only experts"):
+        assert_lifecycle_transition_allowed(
+            dataset,
+            Statuses.PENDING_REVIEW,
+            actor_role=Roles.USER,
+            system=False,
+        )
+
+
 def test_rejects_invalid_transition_with_clear_error():
     dataset = _dataset(status=Statuses.PENDING_UPLOAD)
 

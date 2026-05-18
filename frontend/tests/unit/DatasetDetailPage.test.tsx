@@ -310,6 +310,34 @@ describe('DatasetDetailPage', () => {
     ).toBeInTheDocument();
   });
 
+  it('keeps lifecycle-available downloads reachable without file list metadata', async () => {
+    mockDatasetService.getDataset.mockResolvedValueOnce(
+      datasetWithLifecycle('pending_review', {
+        dataset_metadata: {
+          description: 'No file list dataset',
+        },
+      }),
+    );
+    navigateTo('/datasets/ds-pending-review-no-files');
+
+    expect(await screen.findByRole('button', { name: /download dataset/i })).toBeInTheDocument();
+    expect(screen.getByText(/no file listing is available/i)).toBeInTheDocument();
+  });
+
+  it('shows a recoverable message when dataset download fails', async () => {
+    mockDatasetService.getDataset.mockResolvedValueOnce(datasetWithLifecycle('pending_review'));
+    mockDatasetService.downloadDataset.mockRejectedValueOnce(
+      new Error('Dataset file is missing from storage'),
+    );
+    navigateTo('/datasets/ds-pending-review-download');
+
+    const downloadButton = await screen.findByRole('button', { name: /download dataset/i });
+    fireEvent.click(downloadButton);
+
+    expect(await screen.findByText(/dataset file is missing from storage/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /download dataset/i })).toBeEnabled();
+  });
+
   it('shows uploader review copy without expert actions when review is ready', async () => {
     setUserRole('user');
     mockDatasetService.getDataset.mockResolvedValueOnce(datasetWithLifecycle('pending_review'));

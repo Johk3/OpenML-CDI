@@ -5,7 +5,7 @@ For more information, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 For guides on testing, CI, code reviews, and more, see the [documentation index](docs/index.md).
 
-# How to run
+## How to run
 
 install requirements
 run `uvicorn app.main:app --reload` to start server
@@ -43,13 +43,21 @@ For a local smoke test without GitHub OAuth, set this in `.env`:
 AUTH_DEV_MODE_APPROVE_ALL_LOGINS=true
 ```
 
-Then start the stack:
+If you are using the repository's encrypted team secrets, start the stack through SOPS so Compose receives the decrypted environment variables:
+
+```bash
+sops exec-env encrypted.env 'docker compose -f compose.yml up -d --build'
+```
+
+Use that exact command whenever you rebuild or restart the local Compose stack with encrypted secrets. Running plain `docker compose up -d --build` does not load `encrypted.env`, so values such as `GITHUB_CLIENT_ID` and `GITHUB_SECRET` fall back to empty defaults and GitHub login will fail.
+
+If you are using a plaintext local `.env` instead, start the stack with:
 
 ```bash
 docker compose up -d --build
 ```
 
-The app will be available at **http://localhost:8000**.
+The app will be available at `http://localhost:8000`.
 
 Dataset GitHub issue creation is separate from login. The Compose defaults target the test repository:
 
@@ -73,7 +81,7 @@ docker build -t openml-upload .
 docker run -d -p 8000:8000 -v openml-data:/data openml-upload
 ```
 
-The app will be available at **http://localhost:8000**. A pre-built image is also published to `ghcr.io/ludev/openml-upload:latest` on every push to the default branch.
+The app will be available at `http://localhost:8000`. A pre-built image is also published to `ghcr.io/ludev/openml-upload:latest` on every push to the default branch.
 
 Dataset upload confirmation requires a reachable ClamAV `clamd` daemon. If `clamd` is unavailable, uploads are quarantined and not promoted for download. For local upload-flow development, use the Compose stack documented in [Local S3-Compatible Storage](docs/how-to/local-s3-storage.md).
 
@@ -90,13 +98,14 @@ STORAGE_BACKEND=s3
 S3_BUCKET=openml-datasets
 S3_REGION=eu-west-1
 S3_ENDPOINT=http://localhost:9000
+S3_PUBLIC_ENDPOINT=
 S3_ACCESS_KEY=minioadmin
 S3_SECRET_KEY=minioadmin
 S3_FORCE_PATH_STYLE=true
 UPLOAD_URL_EXPIRES_SECONDS=3600
 ```
 
-`S3_ENDPOINT` and `S3_FORCE_PATH_STYLE=true` are mainly for local S3-compatible services such as MinIO. Leave `S3_ENDPOINT` empty for AWS S3. For the full architecture, upload lifecycle, MinIO setup, bucket CORS, cleanup rules, and minimum permissions, see [docs/reference/s3-storage.md](docs/reference/s3-storage.md).
+`S3_ENDPOINT` and `S3_FORCE_PATH_STYLE=true` are mainly for local S3-compatible services such as MinIO. Leave `S3_ENDPOINT` empty for AWS S3. Use `S3_PUBLIC_ENDPOINT` only when browser-facing presigned URLs need a different hostname from the backend's S3 endpoint. For the full architecture, upload lifecycle, MinIO setup, bucket CORS, cleanup rules, and minimum permissions, see [docs/reference/s3-storage.md](docs/reference/s3-storage.md).
 
 ## Run tests and automation
 
@@ -118,6 +127,6 @@ Lefthook runs the same formatting, linting, secret-scanning, and test checks tha
 
 For the full step-by-step setup guide, see [docs/how-to/CI-pipeline.md](docs/how-to/CI-pipeline.md).
 
-# Credits / Third-party libraries
+## Credits / Third-party libraries
 
 This project builds oSn a number of open-source libraries and tools across the backend, frontend, and tooling. See [docs/references/credits.md](docs/references/credits.md) for the full list with descriptions and links.

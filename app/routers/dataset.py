@@ -12,6 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
+from urllib.parse import quote
 from zipfile import BadZipFile, ZIP_DEFLATED, ZipFile
 import logging
 from app.database import get_db
@@ -66,7 +67,11 @@ from app.services.dataset_lifecycle import (
     lifecycle_summary,
     requested_lifecycle_state,
 )
-from app.storage.errors import StorageError, StorageVerificationError
+from app.storage.errors import (
+    StorageError,
+    StorageObjectNotFoundError,
+    StorageVerificationError,
+)
 from app.database import SessionLocal
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
@@ -746,6 +751,15 @@ def ensure_status_update_allowed(
             status_code=http_status.HTTP_409_CONFLICT,
             detail="Dataset is not ready for expert approval",
         )
+    if (
+        current_state == Statuses.REJECTED
+        and next_state == Statuses.PENDING_REVIEW
+        and not _has_review_ready_files(dataset)
+    ):
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail="Dataset is not ready for expert review",
+        )
 
     try:
         assert_lifecycle_transition_allowed(
@@ -1347,16 +1361,26 @@ def download_dataset(
     storage_key, original_path, content_type = downloadable_objects[0]
     filename = PurePosixPath(original_path).name
 
+    context, file_obj = _open_download_file(storage, storage_key)
+    try:
+        first_chunk = _read_download_chunk(file_obj)
+    except HTTPException:
+        _close_download_file(context)
+        raise
+
     def iter_file():
-        with storage.open(storage_key, "rb") as f:
-            # chunked read
-            while chunk := f.read(1024 * 1024):  # 1MB chunks
+        try:
+            if first_chunk:
+                yield first_chunk
+            while chunk := file_obj.read(1024 * 1024):
                 yield chunk
+        finally:
+            _close_download_file(context)
 
     return StreamingResponse(
         iter_file(),
         media_type=_download_media_type(original_path, content_type),
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": _download_content_disposition(filename)},
     )
 
 
@@ -1370,18 +1394,83 @@ def _archive_download_response(
     archive_root = _synthetic_archive_root(downloadable_objects, dataset_id)
     with ZipFile(archive, "w", compression=ZIP_DEFLATED) as zip_file:
         for storage_key, original_path, _content_type in downloadable_objects:
-            with storage.open(storage_key, "rb") as f:
-                zip_file.writestr(
-                    _archive_member_name(original_path, archive_root),
-                    f.read(),
-                )
+            zip_file.writestr(
+                _archive_member_name(original_path, archive_root),
+                _read_download_file(storage, storage_key),
+            )
     archive.seek(0)
     filename = f"dataset_{dataset_id}.zip"
     return StreamingResponse(
         archive,
         media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": _download_content_disposition(filename)},
     )
+
+
+def _download_content_disposition(filename: str) -> str:
+    safe_filename = (
+        filename.replace("\\", "_")
+        .replace("/", "_")
+        .replace("\r", "_")
+        .replace("\n", "_")
+    )
+    fallback = safe_filename.encode("ascii", "ignore").decode("ascii").strip()
+    fallback = fallback.replace('"', "_") or "download"
+    if safe_filename == fallback and all(
+        character.isalnum() or character in "._-" for character in safe_filename
+    ):
+        return f"attachment; filename={safe_filename}"
+    encoded = quote(safe_filename, safe="")
+    return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{encoded}"
+
+
+def _open_download_file(storage, storage_key: str):
+    try:
+        context = storage.open(storage_key, "rb")
+        enter = getattr(context, "__enter__", None)
+        file_obj = enter() if enter else context
+    except (StorageError, FileNotFoundError, OSError, KeyError) as error:
+        _raise_download_storage_error(error)
+    return context, file_obj
+
+
+def _close_download_file(context) -> None:
+    exit_method = getattr(context, "__exit__", None)
+    if exit_method:
+        exit_method(None, None, None)
+        return
+
+    close = getattr(context, "close", None)
+    if close:
+        close()
+
+
+def _read_download_chunk(file_obj, size: int = 1024 * 1024) -> bytes:
+    try:
+        return file_obj.read(size)
+    except (StorageError, FileNotFoundError, OSError, KeyError) as error:
+        _raise_download_storage_error(error)
+
+
+def _read_download_file(storage, storage_key: str) -> bytes:
+    context, file_obj = _open_download_file(storage, storage_key)
+    try:
+        return _read_download_chunk(file_obj, -1)
+    finally:
+        _close_download_file(context)
+
+
+def _raise_download_storage_error(error: Exception) -> None:
+    if isinstance(error, (StorageObjectNotFoundError, FileNotFoundError, KeyError)):
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="Dataset file is missing from storage",
+        ) from error
+
+    raise HTTPException(
+        status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Dataset file storage is unavailable",
+    ) from error
 
 
 def _synthetic_archive_root(

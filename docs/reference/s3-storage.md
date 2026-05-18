@@ -14,21 +14,22 @@ This document is the source of truth for the S3-compatible storage path used by 
 
 ## Required Environment Variables
 
-| Variable                     | Required for S3             | Example                     | Description                                                                         |
-| ---------------------------- | --------------------------- | --------------------------- | ----------------------------------------------------------------------------------- |
-| `STORAGE_BACKEND`            | Yes                         | `s3`                        | Selects the configured storage backend. Use `s3` for S3-compatible storage.         |
-| `S3_BUCKET`                  | Yes                         | `openml-datasets`           | Bucket where quarantined and promoted dataset objects are stored.                   |
-| `S3_REGION`                  | Recommended                 | `eu-west-1`                 | Region passed to the S3 client. Some local S3-compatible services accept any value. |
-| `S3_ENDPOINT`                | Local S3-compatible only    | `http://localhost:9000`     | Custom endpoint for MinIO or another S3-compatible service. Leave empty for AWS S3. |
-| `S3_ACCESS_KEY`              | Local or static credentials | `minioadmin`                | Access key used by the backend when static credentials are configured.              |
-| `S3_SECRET_KEY`              | Local or static credentials | `minioadmin`                | Secret key used by the backend when static credentials are configured.              |
-| `S3_FORCE_PATH_STYLE`        | Usually for MinIO           | `true`                      | Enables path-style bucket addressing required by many local S3-compatible services. |
-| `UPLOAD_URL_EXPIRES_SECONDS` | No                          | `3600`                      | Lifetime for presigned upload and download URLs.                                    |
-| `QUARANTINE_DIR`             | Yes for scanning            | `.quarantine`               | Local temporary directory used for ClamAV scan copies.                              |
-| `CLAMD_SOCKET`               | Optional                    | `/var/run/clamav/clamd.ctl` | Unix socket for ClamAV. Takes precedence over host/port when set.                   |
-| `CLAMD_HOST`                 | Yes for TCP ClamAV          | `127.0.0.1`                 | Hostname for the ClamAV daemon.                                                     |
-| `CLAMD_PORT`                 | Yes for TCP ClamAV          | `3310`                      | TCP port for the ClamAV daemon.                                                     |
-| `CLAMD_TIMEOUT_SECONDS`      | No                          | `60`                        | Timeout for scan requests.                                                          |
+| Variable                     | Required for S3             | Example                     | Description                                                                                                  |
+| ---------------------------- | --------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `STORAGE_BACKEND`            | Yes                         | `s3`                        | Selects the configured storage backend. Use `s3` for S3-compatible storage.                                  |
+| `S3_BUCKET`                  | Yes                         | `openml-datasets`           | Bucket where quarantined and promoted dataset objects are stored.                                            |
+| `S3_REGION`                  | Recommended                 | `eu-west-1`                 | Region passed to the S3 client. Some local S3-compatible services accept any value.                          |
+| `S3_ENDPOINT`                | Local S3-compatible only    | `http://localhost:9000`     | Custom endpoint for MinIO or another S3-compatible service. Leave empty for AWS S3.                          |
+| `S3_PUBLIC_ENDPOINT`         | Local browser uploads only  | `http://localhost:9000`     | Optional endpoint used only for presigned browser URLs when `S3_ENDPOINT` is not reachable from the browser. |
+| `S3_ACCESS_KEY`              | Local or static credentials | `minioadmin`                | Access key used by the backend when static credentials are configured.                                       |
+| `S3_SECRET_KEY`              | Local or static credentials | `minioadmin`                | Secret key used by the backend when static credentials are configured.                                       |
+| `S3_FORCE_PATH_STYLE`        | Usually for MinIO           | `true`                      | Enables path-style bucket addressing required by many local S3-compatible services.                          |
+| `UPLOAD_URL_EXPIRES_SECONDS` | No                          | `3600`                      | Lifetime for presigned upload and download URLs.                                                             |
+| `QUARANTINE_DIR`             | Yes for scanning            | `.quarantine`               | Local temporary directory used for ClamAV scan copies.                                                       |
+| `CLAMD_SOCKET`               | Optional                    | `/var/run/clamav/clamd.ctl` | Unix socket for ClamAV. Takes precedence over host/port when set.                                            |
+| `CLAMD_HOST`                 | Yes for TCP ClamAV          | `127.0.0.1`                 | Hostname for the ClamAV daemon.                                                                              |
+| `CLAMD_PORT`                 | Yes for TCP ClamAV          | `3310`                      | TCP port for the ClamAV daemon.                                                                              |
+| `CLAMD_TIMEOUT_SECONDS`      | No                          | `60`                        | Timeout for scan requests.                                                                                   |
 
 `LOCAL_UPLOAD_DIR` is still used by local storage and by current scan/download helper paths. For container deployments, set it to a persisted location such as `/data/uploads`.
 
@@ -265,7 +266,7 @@ export CLAMD_PORT=3310
 uvicorn app.main:app --reload
 ```
 
-When running the backend inside Docker Compose, use the service name as the endpoint host, for example `S3_ENDPOINT=http://minio:9000`.
+When running the backend inside Docker Compose for direct browser uploads, use `S3_ENDPOINT=http://minio:9000` for backend-to-MinIO calls and set `S3_PUBLIC_ENDPOINT=http://localhost:9000` so presigned upload URLs use a hostname the browser can reach.
 
 ## Bucket CORS
 

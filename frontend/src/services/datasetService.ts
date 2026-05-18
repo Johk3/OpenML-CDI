@@ -120,6 +120,74 @@ const readResponseEtag = (headers: unknown) => {
   return stripEtag(headerRecord?.etag ?? headerRecord?.ETag);
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const downloadFilenameFromHeader = (disposition: string, fallback: string) => {
+  const encodedMatch = disposition.match(/filename\*=(?:UTF-8'[^']*')?([^;]+)/i);
+  if (encodedMatch?.[1]) {
+    const encodedFilename = encodedMatch[1].trim().replace(/^"|"$/g, '');
+    try {
+      return decodeURIComponent(encodedFilename);
+    } catch {
+      return encodedFilename;
+    }
+  }
+
+  const filenameMatch = disposition.match(/filename=(?:"([^"]+)"|([^;]+))/i);
+  const filename = (filenameMatch?.[1] ?? filenameMatch?.[2])?.trim();
+  return filename || fallback;
+};
+
+const downloadErrorMessageFromPayload = (payload: unknown): string | null => {
+  if (typeof payload === 'string') {
+    return payload.trim() || null;
+  }
+
+  if (!isRecord(payload)) {
+    return null;
+  }
+
+  if (typeof payload.detail === 'string') {
+    return payload.detail;
+  }
+
+  if (isRecord(payload.detail) && typeof payload.detail.message === 'string') {
+    return payload.detail.message;
+  }
+
+  if (typeof payload.message === 'string') {
+    return payload.message;
+  }
+
+  if (isRecord(payload.error) && typeof payload.error.message === 'string') {
+    return payload.error.message;
+  }
+
+  return null;
+};
+
+const readDownloadErrorMessage = async (error: unknown) => {
+  const fallback = 'Failed to download dataset.';
+  const responseData = isRecord(error) && isRecord(error.response) ? error.response.data : null;
+
+  if (typeof Blob !== 'undefined' && responseData instanceof Blob) {
+    const text = await responseData.text();
+    if (!text.trim()) return fallback;
+
+    try {
+      return downloadErrorMessageFromPayload(JSON.parse(text)) || fallback;
+    } catch {
+      return text.trim();
+    }
+  }
+
+  return (
+    downloadErrorMessageFromPayload(responseData) ||
+    (error instanceof Error ? error.message : fallback)
+  );
+};
+
 const isBackendUploadUrl = (url: string) => {
   try {
     const baseUrl = typeof window !== 'undefined' ? window.location.href : 'http://localhost';
@@ -696,15 +764,19 @@ export const DatasetService = {
 
   /** Download dataset files through AUTHENTICATED! API. */
   downloadDataset: async (datasetId: string) => {
-    const response = await apiClient.get<Blob>(`/datasets/${datasetId}/download`, {
-      responseType: 'blob',
-    });
-    const disposition = response.headers['content-disposition'] || '';
-    const filenameMatch = disposition.match(/filename="?([^"]+)"?/i);
-    return {
-      blob: response.data,
-      filename: filenameMatch?.[1] || `dataset-${datasetId}.bin`,
-    };
+    try {
+      const response = await apiClient.get<Blob>(`/datasets/${datasetId}/download`, {
+        responseType: 'blob',
+      });
+
+      const disposition = response.headers['content-disposition'] || '';
+      return {
+        blob: response.data,
+        filename: downloadFilenameFromHeader(disposition, `dataset-${datasetId}.bin`),
+      };
+    } catch (error) {
+      throw new Error(await readDownloadErrorMessage(error));
+    }
   },
 
   /** Fetch GitHub issue state and comments for a dataset. */
