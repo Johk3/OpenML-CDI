@@ -117,7 +117,14 @@ Then create and encrypt the `.env` file:
 nano .env
 # Add your secrets, e.g.:
 # GITHUB_CLIENT_ID=your_client_id
-# GITHUB_CLIENT_SECRET=your_client_secret
+# GITHUB_SECRET=your_client_secret
+# GITHUB_OAUTH_SCOPES=read:user,user:email,read:org
+# POSTGRES_DB=openml_upload
+# POSTGRES_USER=openml_upload
+# POSTGRES_PASSWORD=change_me
+# GH_APP_ID=your_github_app_id
+# GH_INSTALL_ID=your_github_installation_id
+# GH_PRIV_KEY="-----BEGIN RSA PRIVATE KEY-----\n..."
 
 sops -e --input-type dotenv --output-type dotenv .env > encrypted.env
 rm .env
@@ -138,6 +145,16 @@ Or for Python:
 ```bash
 sops exec-env encrypted.env 'python main.py'
 ```
+
+For the Docker Compose stack, pass the decrypted environment to Compose at runtime:
+
+```bash
+sops exec-env encrypted.env 'docker compose -f compose.yml up -d --build'
+```
+
+Do not use `env_file: encrypted.env`, copy `.env` or `encrypted.env` into the image, or install SOPS inside the app container. Compose maps the runtime environment into the services.
+
+For Docker, keep the Postgres values as `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD`. The Compose stack builds the in-container `DATABASE_URI` from those values, so a local-development `DATABASE_URI` in `encrypted.env` is not used by the Docker stack.
 
 The secrets only exist in your computer's RAM while the app is running. There is zero risk of accidentally committing a plaintext `.env` file.
 

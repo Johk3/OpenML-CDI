@@ -83,6 +83,12 @@ class FailingPutClient(RecordingS3Client):
         raise RuntimeError("s3 unavailable")
 
 
+class FailingHeadClient(RecordingS3Client):
+    def head_object(self, **kwargs):
+        self.calls.append(("head_object", kwargs))
+        raise RuntimeError("metadata unavailable")
+
+
 def _settings() -> StorageSettings:
     return StorageSettings(
         backend="s3",
@@ -225,3 +231,27 @@ def test_multipart_lifecycle_uses_s3_contracts():
             "UploadId": "upload-1",
         },
     ) in client.calls
+
+
+def test_complete_multipart_upload_does_not_read_metadata_after_s3_completion():
+    client = FailingHeadClient()
+    backend = S3StorageBackend(_settings(), client=client)
+
+    result = backend.complete_multipart_upload(
+        "quarantine/batch/large.csv",
+        upload_id="upload-1",
+        parts=[{"part_number": 1, "etag": "abc"}],
+    )
+
+    assert result is None
+    assert client.calls == [
+        (
+            "complete_multipart_upload",
+            {
+                "Bucket": "datasets",
+                "Key": "quarantine/batch/large.csv",
+                "UploadId": "upload-1",
+                "MultipartUpload": {"Parts": [{"ETag": "abc", "PartNumber": 1}]},
+            },
+        )
+    ]

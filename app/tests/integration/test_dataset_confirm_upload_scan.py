@@ -52,15 +52,17 @@ class _FakeClamDClient:
         return self.response
 
 
-def _create_access_token_for_user(db_test_session, user_id: uuid.UUID) -> str:
+def _create_access_token_for_user(
+    db_test_session, user_id: uuid.UUID, *, role: Roles = Roles.USER
+) -> str:
     db_test_session.add(
         User(
             id=user_id,
-            email="uploader@example.com",
-            username="uploader",
+            email=f"{role.value}-{user_id}@example.com",
+            username=f"{role.value}-{str(user_id)[:8]}",
             first_name="Upload",
             last_name="User",
-            role=Roles.USER,
+            role=role,
             created_at=datetime.now(timezone.utc),
         )
     )
@@ -163,6 +165,67 @@ def test_confirm_upload_promotes_clean_file_and_marks_dataset_pending_review(
     assert Path(fake_client.scanned_paths[0]).name.endswith("_clean.csv")
     quarantine_dir = Path(scan_client.app.state.settings.storage.quarantine_dir)
     assert not list(quarantine_dir.glob("*"))
+
+
+def test_confirm_upload_promotes_clean_file_when_storage_key_is_sanitized(
+    scan_client: TestClient, db_test_session, monkeypatch
+):
+    uploader_id = uuid.uuid4()
+    access_token = _create_access_token_for_user(db_test_session, uploader_id)
+    payload = b"%PDF-1.7 sample"
+    filename = "Fundamentals of Software Architecture sample.pdf"
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    upload_response = scan_client.post(
+        "/api/datasets/upload-url",
+        headers=headers,
+        json={
+            "name": "Architecture Book",
+            "filenames": [filename],
+            "content_types": ["application/pdf"],
+            "byte_sizes": [len(payload)],
+        },
+    )
+    assert upload_response.status_code == 201
+    body = upload_response.json()
+    dataset_id = uuid.UUID(body["id"])
+    storage_key = body["upload_contracts"][0]["object_key"]
+    assert storage_key.endswith("Fundamentals_of_Software_Architecture_sample.pdf")
+    scan_client.app.state.storage.write_bytes(storage_key, payload)
+
+    fake_client = _FakeClamDClient({"ignored": ("OK", None)})
+    _patch_clamd(monkeypatch, fake_client)
+
+    response = _confirm_upload(scan_client, dataset_id, access_token)
+
+    assert response.status_code == 202
+    db_test_session.expire_all()
+    dataset = db_test_session.get(Dataset, dataset_id)
+    assert dataset.status == Statuses.PENDING_REVIEW
+    scan_file = dataset.dataset_metadata["malware_scan"]["files"][0]
+    assert scan_file["status"] == "clean"
+    assert scan_file["file"] == "Fundamentals_of_Software_Architecture_sample.pdf"
+    assert scan_file["final_object_key"].endswith(
+        "/Fundamentals_of_Software_Architecture_sample.pdf"
+    )
+    obj = dataset.dataset_metadata["objects"][0]
+    assert obj["original_path"] == filename
+    assert obj["upload_state"] == "promoted"
+    assert obj["scan_state"] == "clean"
+    assert obj["download_state"] == "downloadable"
+    assert obj["final_object_key"] == scan_file["final_object_key"]
+
+    expert_token = _create_access_token_for_user(
+        db_test_session, uuid.uuid4(), role=Roles.EXPERT
+    )
+    approve_response = scan_client.post(
+        "/api/datasets/status",
+        params={"dataset_id": str(dataset_id), "status": "approved"},
+        headers={"Authorization": f"Bearer {expert_token}"},
+    )
+    assert approve_response.status_code == 200
+    db_test_session.expire_all()
+    assert db_test_session.get(Dataset, dataset_id).status == Statuses.APPROVED
 
 
 def test_confirm_upload_rejects_zip_entries_that_do_not_match_manifest(

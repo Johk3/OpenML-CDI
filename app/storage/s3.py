@@ -237,7 +237,7 @@ class S3StorageBackend:
         storage_key: str,
         upload_id: str,
         parts: list[dict[str, str | int]],
-    ) -> ObjectMetadata:
+    ) -> None:
         key = self._validate_storage_key(storage_key)
         multipart_parts = [
             {"ETag": str(part["etag"]), "PartNumber": int(part["part_number"])}
@@ -253,8 +253,6 @@ class S3StorageBackend:
             )
         except Exception as error:
             raise self._to_storage_error("complete multipart upload", error) from error
-
-        return self.get_metadata(key)
 
     def abort_multipart_upload(self, storage_key: str, upload_id: str) -> None:
         key = self._validate_storage_key(storage_key)

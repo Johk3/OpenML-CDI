@@ -1,4 +1,25 @@
 {$CADDY_SITE_ADDRESS} {
 	encode zstd gzip
-	reverse_proxy app:8000
+
+	handle /api/* {
+		reverse_proxy app:8000
+	}
+
+	handle /assets/* {
+		reverse_proxy app:8000
+	}
+
+	handle /static/* {
+		reverse_proxy app:8000
+	}
+
+	@fastapi_docs path /docs /docs/* /redoc /redoc/* /openapi.json
+	handle @fastapi_docs {
+		reverse_proxy app:8000
+	}
+
+	handle {
+		rewrite * /
+		reverse_proxy app:8000
+	}
 }

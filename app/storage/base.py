@@ -83,7 +83,7 @@ class StorageBackend(Protocol):
         storage_key: str,
         upload_id: str,
         parts: list[dict[str, str | int]],
-    ) -> ObjectMetadata:
+    ) -> None:
         """Complete a multipart upload."""
         ...
 

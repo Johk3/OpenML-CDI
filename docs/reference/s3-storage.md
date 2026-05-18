@@ -28,7 +28,7 @@ This document is the source of truth for the S3-compatible storage path used by 
 | `CLAMD_SOCKET`               | Optional                    | `/var/run/clamav/clamd.ctl` | Unix socket for ClamAV. Takes precedence over host/port when set.                   |
 | `CLAMD_HOST`                 | Yes for TCP ClamAV          | `127.0.0.1`                 | Hostname for the ClamAV daemon.                                                     |
 | `CLAMD_PORT`                 | Yes for TCP ClamAV          | `3310`                      | TCP port for the ClamAV daemon.                                                     |
-| `CLAMD_TIMEOUT_SECONDS`      | No                          | `10`                        | Timeout for scan requests.                                                          |
+| `CLAMD_TIMEOUT_SECONDS`      | No                          | `60`                        | Timeout for scan requests.                                                          |
 
 `LOCAL_UPLOAD_DIR` is still used by local storage and by current scan/download helper paths. For container deployments, set it to a persisted location such as `/data/uploads`.
 

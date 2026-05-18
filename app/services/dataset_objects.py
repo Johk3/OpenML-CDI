@@ -272,9 +272,10 @@ def mark_objects_scan_results(
         obj["original_path"]: obj for obj in validate_dataset_objects(objects)
     }
     updated_by_path = {path: dict(obj) for path, obj in objects_by_path.items()}
+    object_lookup = _build_scan_object_lookup(objects_by_path)
 
     for result in scan_results:
-        original_path = _normalize_original_path(str(result.get("file", "")))
+        original_path = _find_scanned_object_path(result, object_lookup)
         if original_path not in updated_by_path:
             continue
 
@@ -287,7 +288,10 @@ def mark_objects_scan_results(
 
         if status == "clean":
             obj["upload_state"] = "promoted"
-            obj["final_object_key"] = f"ready/{dataset_id}/{original_path}"
+            obj["final_object_key"] = result.get(
+                "final_object_key",
+                f"ready/{dataset_id}/{original_path}",
+            )
             obj["download_state"] = "downloadable"
         else:
             obj["download_state"] = "unavailable"
@@ -296,6 +300,59 @@ def mark_objects_scan_results(
         updated_by_path[original_path] = _validate_object(obj)
 
     return [updated_by_path[obj["original_path"]] for obj in objects_by_path.values()]
+
+
+def _build_scan_object_lookup(
+    objects_by_path: dict[str, dict[str, Any]],
+) -> dict[str, str | None]:
+    lookup: dict[str, str | None] = {}
+    for original_path, obj in objects_by_path.items():
+        for key in _object_scan_match_keys(obj):
+            if key in lookup and lookup[key] != original_path:
+                lookup[key] = None
+            else:
+                lookup[key] = original_path
+    return lookup
+
+
+def _object_scan_match_keys(obj: dict[str, Any]) -> set[str]:
+    keys = {obj["original_path"]}
+    keys.add(obj["object_key"])
+    keys.add(obj["quarantine_key"])
+    keys.add(_relative_path_from_storage_key(obj["object_key"]))
+    keys.add(_relative_path_from_storage_key(obj["quarantine_key"]))
+    if obj.get("final_object_key"):
+        keys.add(obj["final_object_key"])
+        keys.add(_relative_path_from_storage_key(obj["final_object_key"]))
+    return keys
+
+
+def _find_scanned_object_path(
+    result: dict[str, Any],
+    object_lookup: dict[str, str | None],
+) -> str | None:
+    for key in _scan_result_match_keys(result):
+        original_path = object_lookup.get(key)
+        if original_path:
+            return original_path
+    return None
+
+
+def _scan_result_match_keys(result: dict[str, Any]) -> set[str]:
+    keys: set[str] = set()
+    raw_file = result.get("file")
+    if raw_file:
+        file_key = _normalize_posix_path(str(raw_file), label="scan result file")
+        keys.add(file_key)
+        keys.add(_relative_path_from_storage_key(file_key))
+
+    final_object_key = result.get("final_object_key")
+    if final_object_key:
+        final_key = _normalize_storage_key(str(final_object_key))
+        keys.add(final_key)
+        keys.add(_relative_path_from_storage_key(final_key))
+
+    return keys
 
 
 def validate_dataset_objects(
@@ -579,6 +636,25 @@ def _original_path_from_storage_key(storage_key: str) -> str:
     parts = PurePosixPath(storage_key).parts
     if len(parts) > 2 and parts[0] in {"datasets", "quarantine"}:
         return PurePosixPath(*parts[2:]).as_posix()
+    if len(parts) > 1:
+        return PurePosixPath(*parts[1:]).as_posix()
+    return storage_key
+
+
+def _relative_path_from_storage_key(storage_key: str) -> str:
+    parts = PurePosixPath(storage_key).parts
+    if not parts:
+        return storage_key
+
+    if parts[0] in {"datasets", "quarantine", "ready"} and len(parts) > 2:
+        return PurePosixPath(*parts[2:]).as_posix()
+
+    if parts[0] in {"datasets", "quarantine"} and len(parts) == 2:
+        name = parts[1]
+        if "_" in name:
+            return name.split("_", 1)[1]
+        return name
+
     if len(parts) > 1:
         return PurePosixPath(*parts[1:]).as_posix()
     return storage_key

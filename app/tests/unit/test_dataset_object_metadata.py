@@ -344,3 +344,53 @@ def test_mark_objects_scan_results_promotes_clean_and_quarantines_infected():
     assert updated[1]["scan_state"] == "infected"
     assert updated[1]["final_object_key"] is None
     assert updated[1]["download_state"] == "unavailable"
+
+
+def test_mark_objects_scan_results_matches_sanitized_storage_path():
+    objects = build_dataset_objects(
+        storage=_Storage(),
+        upload_targets=[
+            UploadTarget(
+                "datasets/batch/Fundamentals_of_Software_Architecture_sample.pdf",
+                None,
+            )
+        ],
+        original_paths=["Fundamentals of Software Architecture sample.pdf"],
+        content_types=["application/pdf"],
+    )
+    uploaded = mark_objects_uploaded(
+        objects,
+        [
+            ObjectMetadata(
+                "local",
+                "uploads",
+                "datasets/batch/Fundamentals_of_Software_Architecture_sample.pdf",
+                42,
+                "application/pdf",
+            )
+        ],
+    )
+
+    updated = mark_objects_scan_results(
+        uploaded,
+        dataset_id="dataset-1",
+        scan_results=[
+            {
+                "file": "Fundamentals_of_Software_Architecture_sample.pdf",
+                "status": "clean",
+                "engine": "clamav",
+                "final_object_key": (
+                    "ready/dataset-1/"
+                    "Fundamentals_of_Software_Architecture_sample.pdf"
+                ),
+            }
+        ],
+    )
+
+    assert updated[0]["upload_state"] == "promoted"
+    assert updated[0]["scan_state"] == "clean"
+    assert (
+        updated[0]["final_object_key"]
+        == "ready/dataset-1/Fundamentals_of_Software_Architecture_sample.pdf"
+    )
+    assert updated[0]["download_state"] == "downloadable"

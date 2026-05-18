@@ -5,15 +5,20 @@ import pytest
 
 from app.database.models import Dataset, Roles, Statuses, User
 from app.security import create_access_token
-from app.storage.errors import StorageVerificationError
+from app.storage.errors import StorageUnavailableError, StorageVerificationError
 from app.storage.types import MultipartPart, MultipartUpload, ObjectMetadata
 
 
 class _MultipartStorage:
     bucket = "datasets"
 
-    def __init__(self, verification_error: Exception | None = None):
+    def __init__(
+        self,
+        completion_error: Exception | None = None,
+        verification_error: Exception | None = None,
+    ):
         self.calls: list[tuple[str, dict]] = []
+        self.completion_error = completion_error
         self.verification_error = verification_error
 
     def backend_name(self) -> str:
@@ -80,6 +85,8 @@ class _MultipartStorage:
                 },
             )
         )
+        if self.completion_error:
+            raise self.completion_error
         return _object_metadata_response(storage_key)
 
     def abort_multipart_upload(self, storage_key: str, upload_id: str) -> None:
@@ -111,6 +118,9 @@ class _MultipartStorage:
         if self.verification_error:
             raise self.verification_error
         return _object_metadata_response(storage_key)
+
+    def delete(self, storage_key: str) -> None:
+        self.calls.append(("delete", {"storage_key": storage_key}))
 
 
 def _object_metadata_response(storage_key: str) -> ObjectMetadata:
@@ -195,6 +205,18 @@ def _active_upload(object_key: str) -> dict:
             "status": "active",
         }
     }
+
+
+def _completed_pending_validation_upload(object_key: str) -> dict:
+    session = _active_upload(object_key)["upload-1"]
+    session.update(
+        {
+            "status": "completed_pending_validation",
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "parts": [{"part_number": 1, "etag": "etag-1"}],
+        }
+    )
+    return {"upload-1": session}
 
 
 def test_multipart_upload_session_lifecycle_exposes_s3_api(
@@ -375,6 +397,51 @@ def test_complete_multipart_upload_keeps_quarantined_dataset_when_scan_fails(
     assert dataset.dataset_metadata["objects"][0]["download_state"] == "unavailable"
 
 
+def test_complete_multipart_upload_surfaces_completion_failure_without_scan(
+    client, db_test_session, monkeypatch
+):
+    owner_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    object_key = "quarantine/batch/large.csv"
+    scan_calls = []
+    storage = _MultipartStorage(
+        completion_error=StorageUnavailableError("S3 completion failed")
+    )
+    client.app.state.storage = storage
+    monkeypatch.setattr(
+        "app.routers.dataset.scan_uploaded_files",
+        lambda **kwargs: scan_calls.append(kwargs),
+    )
+    _seed_dataset(
+        db_test_session,
+        owner_id=owner_id,
+        dataset_id=dataset_id,
+        object_key=object_key,
+        multipart_uploads=_active_upload(object_key),
+    )
+
+    response = client.post(
+        f"/api/datasets/{dataset_id}/multipart-uploads/upload-1/complete",
+        headers=_headers(owner_id),
+        json={
+            "object_key": object_key,
+            "parts": [{"part_number": 1, "etag": "etag-1"}],
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "S3 completion failed"}
+    db_test_session.expire_all()
+    dataset = db_test_session.get(Dataset, dataset_id)
+    assert dataset is not None
+    assert dataset.status == Statuses.PENDING
+    assert (
+        dataset.dataset_metadata["multipart_uploads"]["upload-1"]["status"] == "active"
+    )
+    assert [name for name, _ in storage.calls] == ["complete_multipart_upload"]
+    assert scan_calls == []
+
+
 def test_abort_multipart_upload_marks_session_aborted(client, db_test_session):
     owner_id = uuid.uuid4()
     dataset_id = uuid.uuid4()
@@ -478,9 +545,119 @@ def test_complete_multipart_upload_rejects_verification_failure_before_scan(
     assert response.status_code == 400
     assert response.json() == {"detail": "Object size mismatch"}
     db_test_session.expire_all()
-    assert db_test_session.get(Dataset, dataset_id) is None
+    dataset = db_test_session.get(Dataset, dataset_id)
+    assert dataset is None
+    assert [name for name, _ in storage.calls] == [
+        "complete_multipart_upload",
+        "verify_object",
+        "delete",
+    ]
+    assert storage.calls[-1] == ("delete", {"storage_key": object_key})
+    assert scan_calls == []
+
+
+def test_complete_multipart_upload_keeps_completed_session_when_validation_unavailable(
+    client, db_test_session, monkeypatch
+):
+    owner_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    object_key = "quarantine/batch/large.csv"
+    scan_calls = []
+    storage = _MultipartStorage(
+        verification_error=StorageUnavailableError("Object metadata unavailable")
+    )
+    client.app.state.storage = storage
+    monkeypatch.setattr(
+        "app.routers.dataset.scan_uploaded_files",
+        lambda **kwargs: scan_calls.append(kwargs),
+    )
+    _seed_dataset(
+        db_test_session,
+        owner_id=owner_id,
+        dataset_id=dataset_id,
+        object_key=object_key,
+        multipart_uploads=_active_upload(object_key),
+    )
+
+    response = client.post(
+        f"/api/datasets/{dataset_id}/multipart-uploads/upload-1/complete",
+        headers=_headers(owner_id),
+        json={
+            "object_key": object_key,
+            "parts": [{"part_number": 1, "etag": "etag-1"}],
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Object metadata unavailable"}
+    db_test_session.expire_all()
+    dataset = db_test_session.get(Dataset, dataset_id)
+    assert dataset is not None
+    assert dataset.status == Statuses.PENDING
+    assert (
+        dataset.dataset_metadata["multipart_uploads"]["upload-1"]["status"]
+        == "completed_pending_validation"
+    )
     assert [name for name, _ in storage.calls] == [
         "complete_multipart_upload",
         "verify_object",
     ]
     assert scan_calls == []
+
+
+def test_complete_multipart_upload_retries_completed_validation_without_recomplete(
+    client, db_test_session, monkeypatch
+):
+    owner_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    object_key = "quarantine/batch/large.csv"
+    scan_calls = []
+    storage = _MultipartStorage()
+    client.app.state.storage = storage
+
+    def fake_scan(**kwargs):
+        scan_calls.append(kwargs)
+        return {
+            "files": [
+                {
+                    "status": "clean",
+                    "engine": "clamav",
+                    "file": "large.csv",
+                    "final_object_key": f"ready/{dataset_id}/large.csv",
+                }
+            ],
+            "engine": "clamav",
+        }
+
+    monkeypatch.setattr(
+        "app.routers.dataset.scan_uploaded_files",
+        fake_scan,
+    )
+    _seed_dataset(
+        db_test_session,
+        owner_id=owner_id,
+        dataset_id=dataset_id,
+        object_key=object_key,
+        multipart_uploads=_completed_pending_validation_upload(object_key),
+    )
+
+    response = client.post(
+        f"/api/datasets/{dataset_id}/multipart-uploads/upload-1/complete",
+        headers=_headers(owner_id),
+        json={
+            "object_key": object_key,
+            "parts": [{"part_number": 1, "etag": "etag-1"}],
+        },
+    )
+
+    assert response.status_code == 202
+    assert [name for name, _ in storage.calls] == ["verify_object"]
+    assert scan_calls and scan_calls[0]["storage_keys"] == [object_key]
+    db_test_session.expire_all()
+    dataset = db_test_session.get(Dataset, dataset_id)
+    assert dataset.status == Statuses.UPLOADED
+    assert dataset.dataset_metadata["objects"][0]["upload_state"] == "uploaded"
+    assert (
+        dataset.dataset_metadata["multipart_uploads"]["upload-1"]["status"]
+        == "completed"
+    )

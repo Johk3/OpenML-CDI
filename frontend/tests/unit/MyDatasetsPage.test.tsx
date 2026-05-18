@@ -234,7 +234,8 @@ describe('MyDatasetsPage', () => {
     expect(
       screen.getByRole('heading', { level: 3, name: /published dataset/i }),
     ).toBeInTheDocument();
-    expect(screen.getAllByText('Processing Error').length).toBeGreaterThan(0);
+    expect(await screen.findByText('Failed to update dataset status.')).toBeInTheDocument();
+    expect(screen.getAllByText('Published').length).toBeGreaterThan(0);
   });
 
   it('uses canonical expert status values and shows selected status labels', async () => {
@@ -280,6 +281,136 @@ describe('MyDatasetsPage', () => {
         'scanning',
       );
     });
+  });
+
+  it('does not offer status transitions for rejected datasets', async () => {
+    mockDatasetService.listDatasets.mockResolvedValueOnce([
+      {
+        id: 'dataset-rejected',
+        title: 'Rejected Dataset',
+        status: 'rejected',
+        created_at: '2026-05-18T00:00:00Z',
+        dataset_metadata: { description: 'Rejected dataset' },
+        lifecycle: {
+          state: 'rejected',
+          upload: { uploaded: true, scanning: false, quarantined: false },
+          review: { ready: false, approved: false, rejected: true, published: false },
+          download: {
+            available: false,
+            message: 'Dataset files are not ready for download.',
+          },
+          github: {
+            state: 'not_ready',
+            issue_url: '',
+          },
+        },
+      } as unknown as BackendDataset,
+    ]);
+
+    renderWithRouter(<MyDatasetsPage />, {
+      userContext: {
+        user: {
+          id: 'test-user',
+          first_name: 'Test',
+          last_name: 'User',
+          role: 'expert',
+          email: 'test@test.com',
+          username: 'testuser',
+          datasets: ['dataset'],
+          created_at: 'a',
+        },
+      },
+    });
+
+    expect(
+      await screen.findByRole('heading', { level: 3, name: /rejected dataset/i }),
+    ).toBeInTheDocument();
+
+    const statusControl = screen.getByRole('combobox', { name: /rejected/i });
+    expect(statusControl).toBeDisabled();
+    expect(statusControl).toHaveTextContent('Rejected');
+  });
+
+  it('rolls back optimistic status changes when the backend rejects the transition', async () => {
+    const user = userEvent.setup();
+    mockDatasetService.listDatasets.mockResolvedValueOnce([
+      {
+        id: 'dataset-review-ready',
+        title: 'Review Ready Dataset',
+        status: 'pending_review',
+        created_at: '2026-05-18T00:00:00Z',
+        dataset_metadata: { description: 'Ready for review' },
+        lifecycle: {
+          state: 'pending_review',
+          upload: { uploaded: true, scanning: false, quarantined: false },
+          review: { ready: true, approved: false, rejected: false, published: false },
+          download: {
+            available: true,
+            review_only: true,
+            message: 'Download is available for review; expert approval is pending.',
+          },
+          github: {
+            state: 'open',
+            issue_url: 'https://github.com/openml/openmlupload-test/issues/1',
+          },
+        },
+      } as unknown as BackendDataset,
+    ]);
+    mockDatasetService.updateStatus.mockRejectedValueOnce(new Error('invalid transition'));
+
+    renderWithRouter(<MyDatasetsPage />, {
+      userContext: {
+        user: {
+          id: 'test-user',
+          first_name: 'Test',
+          last_name: 'User',
+          role: 'expert',
+          email: 'test@test.com',
+          username: 'testuser',
+          datasets: ['dataset'],
+          created_at: 'a',
+        },
+      },
+    });
+
+    expect(
+      await screen.findByRole('heading', { level: 3, name: /review ready dataset/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('combobox', { name: /pending expert review/i }));
+    await user.click(screen.getByRole('option', { name: /ongoing processing/i }));
+
+    expect(await screen.findByText('Failed to update dataset status.')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /pending expert review/i })).toHaveTextContent(
+      'Pending Expert Review',
+    );
+  });
+
+  it('renders expert status text through the Radix select value slot', async () => {
+    const { container } = renderWithRouter(<MyDatasetsPage />, {
+      userContext: {
+        user: {
+          id: 'test-user',
+          first_name: 'Test',
+          last_name: 'User',
+          role: 'expert',
+          email: 'test@test.com',
+          username: 'testuser',
+          datasets: ['dataset'],
+          created_at: 'a',
+        },
+      },
+    });
+
+    expect(
+      await screen.findByRole('heading', { level: 3, name: /sample dataset/i }),
+    ).toBeInTheDocument();
+
+    const statusControl = screen.getByRole('combobox', { name: /pending expert review/i });
+    expect(statusControl.querySelector('[data-slot="select-value"]')).toBeTruthy();
+    expect(container.querySelector('[data-slot="select-value"]')).toHaveTextContent(
+      'Pending Expert Review',
+    );
   });
 
   it('keeps expert status controls outside the dataset detail link', async () => {

@@ -126,7 +126,7 @@ class LocalStorageBackend:
         storage_key: str,
         upload_id: str,
         parts: list[dict[str, str | int]],
-    ) -> ObjectMetadata:
+    ) -> None:
         """Local storage does not need multipart upload sessions."""
         del storage_key, upload_id, parts
         raise NotImplementedError("Local storage does not support multipart uploads")

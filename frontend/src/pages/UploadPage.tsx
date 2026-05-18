@@ -92,6 +92,28 @@ const isUploadCanceledError = (error: unknown) => {
   return maybeError?.name === 'AbortError';
 };
 
+const getUploadErrorDetail = (error: unknown) => {
+  const axiosError = error as AxiosError<{ detail?: unknown }>;
+  const detail = axiosError.response?.data?.detail;
+  return typeof detail === 'string' ? detail : null;
+};
+
+const isDuplicateDatasetNameError = (error: unknown, detail: string | null) => {
+  const axiosError = error as AxiosError;
+  return axiosError.response?.status === 409 && /already exists|duplicate/i.test(detail ?? '');
+};
+
+const duplicateDatasetNameMessage = (name: string) => {
+  const displayName = name.trim();
+  if (!displayName) {
+    return 'A dataset with this name already exists. Choose a different dataset name and try again.';
+  }
+
+  return `A dataset named "${displayName}" already exists. Choose a different dataset name and try again.`;
+};
+
+const normalizeDatasetName = (name: string) => name.trim().toLocaleLowerCase();
+
 const uploadSessionMessage = (
   state: UploadSessionState,
   fileName: string | null,
@@ -238,8 +260,29 @@ export const UploadPage: React.FC = () => {
       navigate('/login', { state: { from: location } });
       return;
     }
+    setErrorMessage(null);
     setSelectedFiles(files);
     setUploadState('contact');
+  };
+
+  const ensureDatasetNameAvailable = async () => {
+    const requestedName = normalizeDatasetName(formData.name);
+    if (!requestedName) return true;
+
+    try {
+      const existingDatasets = await DatasetService.listDatasets({ scope: 'mine' });
+      const duplicateExists = existingDatasets.some(
+        (dataset) => normalizeDatasetName(dataset.title) === requestedName,
+      );
+      if (!duplicateExists) return true;
+    } catch (error) {
+      console.warn('Could not check existing dataset names before upload:', error);
+      return true;
+    }
+
+    setErrorMessage(duplicateDatasetNameMessage(formData.name));
+    setUploadState('contact');
+    return false;
   };
 
   const handleContactSubmit = async (e: React.FormEvent) => {
@@ -256,8 +299,18 @@ export const UploadPage: React.FC = () => {
     setHasMultipartControls(false);
     setOriginalFileCount(selectedFiles.length);
     let createdDatasetId: string | null = null;
+    let usedMultipartUpload = false;
+    let directUploadFinalizationStarted = false;
 
     try {
+      const restorableSelectedFileSession =
+        selectedFiles.length === 1
+          ? DatasetService.getRestorableMultipartUpload(selectedFiles[0])
+          : null;
+      if (!restorableSelectedFileSession && !(await ensureDatasetNameAvailable())) {
+        return;
+      }
+
       // Compress
       let filesToUpload: File[];
 
@@ -277,7 +330,8 @@ export const UploadPage: React.FC = () => {
 
       const restorableMultipartSession =
         filesToUpload.length === 1
-          ? DatasetService.getRestorableMultipartUpload(filesToUpload[0])
+          ? (restorableSelectedFileSession ??
+            DatasetService.getRestorableMultipartUpload(filesToUpload[0]))
           : null;
       const uploadResponse = restorableMultipartSession
         ? {
@@ -393,8 +447,6 @@ export const UploadPage: React.FC = () => {
         updateProgress(index, file.size);
       };
 
-      let usedMultipartUpload = false;
-
       const tasks = filesToUpload.map((file, index) => async () => {
         const contract = uploadContracts[index];
         const canUseMultipart =
@@ -430,6 +482,7 @@ export const UploadPage: React.FC = () => {
       setUploadState('finalizing');
 
       if (!usedMultipartUpload) {
+        directUploadFinalizationStarted = true;
         await DatasetService.confirmUpload(id);
       }
 
@@ -437,7 +490,7 @@ export const UploadPage: React.FC = () => {
       setUploadSessionState('completed');
       setUploadState('success');
     } catch (err) {
-      if (createdDatasetId) {
+      if (createdDatasetId && !usedMultipartUpload && !directUploadFinalizationStarted) {
         try {
           await DatasetService.deleteDataset(createdDatasetId);
         } catch {
@@ -449,8 +502,13 @@ export const UploadPage: React.FC = () => {
         return;
       }
 
-      const axiosErr = err as AxiosError<{ detail?: string }>;
-      const detail = axiosErr.response?.data?.detail;
+      const detail = getUploadErrorDetail(err);
+      if (isDuplicateDatasetNameError(err, detail)) {
+        setErrorMessage(duplicateDatasetNameMessage(formData.name));
+        setUploadState('contact');
+        return;
+      }
+
       setErrorMessage(
         detail === 'Not authorized to create this dataset'
           ? 'You do not have permission to upload datasets.'
@@ -593,6 +651,16 @@ export const UploadPage: React.FC = () => {
                   </div>
                 </div>
 
+                {errorMessage && (
+                  <div
+                    role="alert"
+                    className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                  >
+                    <XCircle size={16} className="mt-0.5 shrink-0" />
+                    <span>{errorMessage}</span>
+                  </div>
+                )}
+
                 <form onSubmit={handleContactSubmit} className="space-y-4">
                   {/* Dataset details */}
                   <Input
@@ -600,7 +668,10 @@ export const UploadPage: React.FC = () => {
                     placeholder="ImageNet"
                     required
                     value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    onChange={(e) => {
+                      setFormData({ ...formData, name: e.target.value });
+                      setErrorMessage(null);
+                    }}
                   />
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="description">Description</Label>

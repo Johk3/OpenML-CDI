@@ -48,6 +48,7 @@ DEFAULT_DEV_EMAIL = "dev.user@example.com"
 DEFAULT_DEV_USERNAME = "dev-user"
 DEFAULT_DEV_FIRST_NAME = "Dev"
 DEFAULT_DEV_LAST_NAME = "User"
+DEFAULT_GITHUB_OAUTH_SCOPES = ("read:user", "user:email", "read:org")
 GITHUB_OAUTH_CONFIGURATION_MESSAGE = (
     "GitHub login is not configured correctly. Please contact an administrator."
 )
@@ -220,6 +221,17 @@ def _resolve_github_oauth_settings() -> tuple[str, str, str]:
         )
         raise GitHubOAuthConfigurationError(missing_values)
     return github_client_id, github_secret, github_redirect
+
+
+def _github_oauth_scopes() -> list[str]:
+    raw_scopes = os.getenv("GITHUB_OAUTH_SCOPES", "").strip()
+    if not raw_scopes:
+        return list(DEFAULT_GITHUB_OAUTH_SCOPES)
+
+    scopes = [
+        scope.strip() for scope in raw_scopes.replace(",", " ").split() if scope.strip()
+    ]
+    return scopes or list(DEFAULT_GITHUB_OAUTH_SCOPES)
 
 
 def _get_github_json(
@@ -458,7 +470,7 @@ def github_login(request: Request):
         )
     github = OAuth2Session(
         github_client_id,
-        scope=["read:user", "user:email", "read:org"],
+        scope=_github_oauth_scopes(),
         redirect_uri=github_redirect,
     )
     authorization_url, state = github.authorization_url(

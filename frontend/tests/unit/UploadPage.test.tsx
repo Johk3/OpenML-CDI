@@ -174,8 +174,6 @@ describe('UploadPage', () => {
       const uploadButton = screen.getByText(/Upload Dataset/i);
       fireEvent.click(uploadButton);
 
-      expect(screen.getByText('Uploading…')).toBeInTheDocument();
-
       await waitFor(() => {
         expect(screen.getByText('Upload Complete!')).toBeInTheDocument();
       });
@@ -406,6 +404,51 @@ describe('UploadPage', () => {
       expect(mockDatasetService.uploadFileMultipart).not.toHaveBeenCalled();
     });
 
+    it('keeps the contact form open when the dataset name already exists', async () => {
+      mockDatasetService.requestUploadUrl.mockRejectedValueOnce({
+        response: {
+          status: 409,
+          data: { detail: 'Dataset with this name already exists' },
+        },
+      });
+
+      fireEvent.click(screen.getByText(/Upload Dataset/i));
+
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toHaveTextContent(
+          'A dataset named "My Dataset" already exists. Choose a different dataset name and try again.',
+        );
+      });
+
+      expect(screen.getByText('Almost there!')).toBeInTheDocument();
+      expect(screen.getByLabelText(/Dataset Name/i)).toHaveValue('My Dataset');
+      expect(screen.queryByText('Upload Failed')).not.toBeInTheDocument();
+      expect(mockDatasetService.uploadFileToPresignedUrl).not.toHaveBeenCalled();
+      expect(mockDatasetService.confirmUpload).not.toHaveBeenCalled();
+    });
+
+    it('checks existing user datasets before uploading a duplicate dataset name', async () => {
+      mockDatasetService.listDatasets.mockResolvedValueOnce([
+        {
+          id: 'existing-dataset-id',
+          title: 'My Dataset',
+        },
+      ]);
+
+      fireEvent.click(screen.getByText(/Upload Dataset/i));
+
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toHaveTextContent(
+          'A dataset named "My Dataset" already exists. Choose a different dataset name and try again.',
+        );
+      });
+
+      expect(mockDatasetService.listDatasets).toHaveBeenCalledWith({ scope: 'mine' });
+      expect(mockDatasetService.requestUploadUrl).not.toHaveBeenCalled();
+      expect(mockDatasetService.uploadFileToPresignedUrl).not.toHaveBeenCalled();
+      expect(mockDatasetService.confirmUpload).not.toHaveBeenCalled();
+    });
+
     it('keeps a finalizing loading screen visible while upload confirmation is pending', async () => {
       let resolveConfirmation: () => void = () => undefined;
       mockDatasetService.confirmUpload.mockReturnValueOnce(
@@ -429,6 +472,25 @@ describe('UploadPage', () => {
       await waitFor(() => {
         expect(screen.getByText('Upload Complete!')).toBeInTheDocument();
       });
+    });
+
+    it('keeps the dataset record when server-side scan finalization fails', async () => {
+      mockDatasetService.confirmUpload.mockRejectedValueOnce({
+        response: {
+          status: 503,
+          data: { detail: 'Upload scan could not be completed' },
+        },
+      });
+
+      fireEvent.click(screen.getByText(/Upload Dataset/i));
+
+      await waitFor(() => {
+        expect(screen.getByText('Upload Failed')).toBeInTheDocument();
+      });
+
+      expect(mockDatasetService.confirmUpload).toHaveBeenCalledWith('test-dataset-id');
+      expect(mockDatasetService.deleteDataset).not.toHaveBeenCalled();
+      expect(screen.getByText('Upload scan could not be completed')).toBeInTheDocument();
     });
 
     it('shows the finalizing loading screen while multipart completion is pending', async () => {
@@ -544,6 +606,26 @@ describe('UploadPage', () => {
 
       expect(mockDatasetService.confirmUpload).not.toHaveBeenCalled();
       expect(screen.getByText(/Upload failed while sending part 2 of 3/i)).toBeInTheDocument();
+    });
+
+    it('keeps the dataset record after a recoverable multipart upload failure', async () => {
+      fireEvent.click(screen.getByText('Change'));
+      const fileInput = document.getElementById('file-input') as HTMLInputElement;
+      fireEvent.change(fileInput, { target: { files: [createLargeFile()] } });
+      mockDatasetService.uploadFileMultipart.mockRejectedValueOnce(
+        new Error(
+          'Upload failed while sending part 2 of 3. Please check your connection and resume the upload.',
+        ),
+      );
+
+      fireEvent.click(screen.getByText(/Upload Dataset/i));
+
+      await waitFor(() => {
+        expect(screen.getByText('Upload Failed')).toBeInTheDocument();
+      });
+
+      expect(mockDatasetService.confirmUpload).not.toHaveBeenCalled();
+      expect(mockDatasetService.deleteDataset).not.toHaveBeenCalled();
     });
 
     it('deletes the pre-created dataset record when direct upload fails', async () => {

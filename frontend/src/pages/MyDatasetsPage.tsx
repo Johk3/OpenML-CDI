@@ -15,7 +15,13 @@ import {
 import { Dataset, DatasetStatus } from '../types/auth';
 import { Card, CardContent, CardHeader } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger } from '../components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
 import { useUserContext } from '@/hooks/useUserContext';
 import { DatasetService } from '@/services/datasetService';
 import { BackendDataset } from '@/types/dataset';
@@ -150,9 +156,36 @@ const StatusBadge = ({ status }: { status: DatasetStatus }) => {
 
 const toExpertSelectStatus = (status: DatasetStatus): DatasetStatus => {
   if (status === 'pending') return 'pending_review';
-  if (status === 'converted') return 'scanning';
+  if (status === 'converted') return 'approved';
   if (status === 'claimed') return 'published';
   return status;
+};
+
+const EXPERT_STATUS_TRANSITIONS: Partial<Record<DatasetStatus, DatasetStatus[]>> = {
+  pending_upload: ['scanning', 'integration_failed'],
+  uploaded: ['scanning', 'integration_failed'],
+  scanning: ['pending_review', 'integration_failed'],
+  pending_review: ['scanning', 'approved', 'rejected', 'integration_failed'],
+  approved: ['scanning', 'published', 'rejected', 'integration_failed'],
+  integration_failed: ['pending_review', 'rejected'],
+  quarantined: ['rejected'],
+  rejected: [],
+  published: ['scanning', 'integration_failed'],
+};
+
+const getExpertStatusLabel = (status: DatasetStatus) => STATUS_CONFIG[status]?.label || status;
+
+const getExpertStatusOptions = (status: DatasetStatus): DatasetStatus[] => {
+  const current = toExpertSelectStatus(status);
+  const transitions = EXPERT_STATUS_TRANSITIONS[current] || [];
+  return [current, ...transitions].filter(
+    (value, index, values) => values.indexOf(value) === index,
+  );
+};
+
+const canChangeExpertStatus = (status: DatasetStatus): boolean => {
+  const current = toExpertSelectStatus(status);
+  return Boolean(EXPERT_STATUS_TRANSITIONS[current]?.length);
 };
 
 export const MyDatasetsPage: React.FC = () => {
@@ -230,6 +263,7 @@ export const MyDatasetsPage: React.FC = () => {
     if (!isExpert) return;
     const previous = datasets.find((ds) => ds.id === id)?.status;
     if (!previous || previous === newStatus) return;
+    if (!getExpertStatusOptions(previous).includes(newStatus)) return;
 
     setUpdatingStatusId(id);
     setStatusUpdateError(null);
@@ -237,6 +271,7 @@ export const MyDatasetsPage: React.FC = () => {
     try {
       await DatasetService.updateStatus(id, newStatus);
     } catch {
+      setDatasets((cur) => cur.map((ds) => (ds.id === id ? { ...ds, status: previous } : ds)));
       setStatusUpdateError('Failed to update dataset status.');
     } finally {
       setUpdatingStatusId(null);
@@ -308,8 +343,9 @@ export const MyDatasetsPage: React.FC = () => {
             {datasets.map((dataset) => {
               const canDownloadDataset = isExpert && Boolean(dataset.lifecycle?.download.available);
               const expertStatusValue = toExpertSelectStatus(dataset.status);
-              const expertStatusLabel =
-                STATUS_CONFIG[expertStatusValue]?.label || STATUS_CONFIG[dataset.status]?.label;
+              const expertStatusOptions = getExpertStatusOptions(dataset.status);
+              const expertStatusLabel = getExpertStatusLabel(expertStatusValue);
+              const statusCanChange = canChangeExpertStatus(dataset.status);
 
               return (
                 <div key={dataset.id} className="h-full">
@@ -401,17 +437,20 @@ export const MyDatasetsPage: React.FC = () => {
                             <SelectTrigger
                               aria-label={expertStatusLabel}
                               className="h-8 w-[210px] max-w-full justify-between text-xs"
-                              disabled={updatingStatusId === dataset.id}
+                              disabled={updatingStatusId === dataset.id || !statusCanChange}
                             >
-                              <span className="min-w-0 flex-1 truncate text-left">
-                                {expertStatusLabel}
-                              </span>
+                              <SelectValue />
                             </SelectTrigger>
                             <SelectContent className="min-w-[210px]">
-                              <SelectItem value="pending_review">Pending Expert Review</SelectItem>
-                              <SelectItem value="scanning">Ongoing Processing</SelectItem>
-                              <SelectItem value="published">Verified &amp; Published</SelectItem>
-                              <SelectItem value="integration_failed">Processing Error</SelectItem>
+                              {expertStatusOptions.map((status) => (
+                                <SelectItem
+                                  key={status}
+                                  value={status}
+                                  disabled={status === expertStatusValue}
+                                >
+                                  {getExpertStatusLabel(status)}
+                                </SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         )}

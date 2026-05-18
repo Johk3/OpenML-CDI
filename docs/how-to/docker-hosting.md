@@ -33,11 +33,23 @@ For GitHub login, create a GitHub OAuth App and set these deployment-time creden
 GITHUB_CLIENT_ID=your-client-id
 GITHUB_SECRET=your-client-secret
 GITHUB_REDIRECT=http://localhost:8000/login/callback
+GITHUB_OAUTH_SCOPES=read:user,user:email,read:org
 ```
 
 The callback URL configured in the GitHub OAuth App must exactly match `GITHUB_REDIRECT`. End users do not provide these values when they log in; they identify this deployed application to GitHub.
+The GitHub App settings below should be configured and installed on the repository so the app can use an installation token to verify repository collaborator permissions for expert-role assignment without requesting broad user repository access.
 
-Dataset review issue creation defaults to `koevoet1221/openmlupload-testing` for this test deployment. For the official deployment, update `GITHUB_ISSUES_OWNER` and `GITHUB_ISSUES_REPO` in `.env`.
+Dataset review issue creation defaults to `koevoet1221/openmlupload-testing` for this test deployment. The GitHub App credentials must also be present for issue creation to run:
+
+```env
+GH_APP_ID=your-github-app-id
+GH_INSTALL_ID=your-github-app-installation-id
+GH_PRIV_KEY=your-github-app-private-key
+GITHUB_ISSUES_OWNER=koevoet1221
+GITHUB_ISSUES_REPO=openmlupload-testing
+```
+
+For the official deployment, update `GITHUB_ISSUES_OWNER` and `GITHUB_ISSUES_REPO` in `.env`.
 
 For a production domain, use the HTTPS callback, for example:
 
@@ -48,6 +60,9 @@ COOKIE_SECURE=true
 CADDY_SITE_ADDRESS=upload.example.com
 HTTP_PORT=80
 HTTPS_PORT=443
+GH_APP_ID=official-github-app-id
+GH_INSTALL_ID=official-github-app-installation-id
+GH_PRIV_KEY=official-github-app-private-key
 GITHUB_ISSUES_OWNER=official-owner
 GITHUB_ISSUES_REPO=official-repo
 ```
@@ -103,11 +118,19 @@ docker run -d \
 | `CLAMD_SOCKET`          |                  | Unix socket path for`clamd`. When set, this takes precedence over `CLAMD_HOST` and `CLAMD_PORT`.                                                  |
 | `CLAMD_HOST`            | `127.0.0.1`      | Hostname for`clamd` when using TCP.                                                                                                               |
 | `CLAMD_PORT`            | `3310`           | TCP port for`clamd`.                                                                                                                              |
-| `CLAMD_TIMEOUT_SECONDS` | `10`             | Timeout for ClamAV daemon calls.                                                                                                                  |
+| `CLAMD_TIMEOUT_SECONDS` | `60`             | Timeout for ClamAV daemon calls.                                                                                                                  |
+| `S3_BUCKET`             |                  | Required when `STORAGE_BACKEND=s3`; bucket for quarantined and promoted dataset objects.                                                          |
+| `S3_REGION`             |                  | Region passed to the S3 client.                                                                                                                   |
+| `S3_ENDPOINT`           |                  | Custom endpoint for MinIO or another S3-compatible service. Leave empty for AWS S3.                                                               |
+| `S3_ACCESS_KEY`         |                  | Static access key for local or static S3 credentials.                                                                                             |
+| `S3_SECRET_KEY`         |                  | Static secret key for local or static S3 credentials.                                                                                             |
+| `S3_FORCE_PATH_STYLE`   | `false`          | Enables path-style bucket addressing for MinIO and similar S3-compatible services.                                                                |
 
 ## Upload malware scanning
 
 Uploaded datasets are scanned before they are promoted from quarantine storage to the ready/downloadable location. Production and production-like deployments must run a ClamAV `clamd` daemon as a sidecar, sibling container, host service, or managed service and configure the application with `CLAMD_SOCKET` or `CLAMD_HOST`/`CLAMD_PORT`.
+
+When `clamd` is reached over TCP, the daemon must be able to read the configured `QUARANTINE_DIR` at the same path as the application. The production Compose stack mounts `openml-data` into the `clamd` container read-only for this reason.
 
 If `clamd` is unavailable, uploaded bytes are not modified, but the scan records an error, the dataset is marked quarantined, and the uploaded objects are not promoted for download or expert review.
 

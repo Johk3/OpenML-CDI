@@ -66,13 +66,16 @@ from app.services.dataset_lifecycle import (
     lifecycle_summary,
     requested_lifecycle_state,
 )
-from app.storage.errors import StorageError
+from app.storage.errors import StorageError, StorageVerificationError
 from app.database import SessionLocal
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 logger = logging.getLogger(__name__)
 MULTIPART_UPLOADS_KEY = "multipart_uploads"
 MULTIPART_UPLOAD_THRESHOLD_BYTES = 8 * 1024 * 1024
+MULTIPART_UPLOAD_STATUS_ACTIVE = "active"
+MULTIPART_UPLOAD_STATUS_COMPLETED = "completed"
+MULTIPART_UPLOAD_STATUS_PENDING_VALIDATION = "completed_pending_validation"
 GITHUB_DISCUSSION_FETCH_MESSAGES = {
     "configuration_error": (
         "GitHub discussion is unavailable because the server is missing its "
@@ -314,7 +317,7 @@ def initiate_multipart_upload(
         "expires_at": (
             datetime.now(timezone.utc) + timedelta(seconds=expires_seconds)
         ).isoformat(),
-        "status": "active",
+        "status": MULTIPART_UPLOAD_STATUS_ACTIVE,
     }
     metadata = _set_multipart_upload_session(metadata, upload.upload_id, session)
     dataset_crud.update_dataset_metadata(
@@ -327,7 +330,7 @@ def initiate_multipart_upload(
         upload_id=upload.upload_id,
         part_size=payload.part_size,
         expires_seconds=expires_seconds,
-        status="active",
+        status=MULTIPART_UPLOAD_STATUS_ACTIVE,
     )
 
 
@@ -437,19 +440,42 @@ def complete_multipart_upload(
     expert_or_owner(current_user, dataset)
     metadata = dict(dataset.dataset_metadata or {})
     upload_object = _get_quarantine_upload_object(metadata, payload.object_key)
-    session = _get_active_multipart_upload_session(
+    session = _get_multipart_upload_session(
         metadata,
         upload_id,
         payload.object_key,
+        allowed_statuses={
+            MULTIPART_UPLOAD_STATUS_ACTIVE,
+            MULTIPART_UPLOAD_STATUS_PENDING_VALIDATION,
+        },
     )
     parts = _validated_complete_parts(payload)
 
-    try:
-        storage.complete_multipart_upload(
-            payload.object_key,
-            upload_id=upload_id,
-            parts=parts,
+    if session.get("status") == MULTIPART_UPLOAD_STATUS_ACTIVE:
+        try:
+            storage.complete_multipart_upload(
+                payload.object_key,
+                upload_id=upload_id,
+                parts=parts,
+            )
+        except (NotImplementedError, StorageError, ValueError) as error:
+            raise HTTPException(
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+                detail=str(error),
+            ) from error
+
+        session = {
+            **session,
+            "status": MULTIPART_UPLOAD_STATUS_PENDING_VALIDATION,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "parts": parts,
+        }
+        metadata = _set_multipart_upload_session(metadata, upload_id, session)
+        dataset_crud.update_dataset_metadata(
+            db=db, dataset_id=dataset_id, metadata=metadata
         )
+
+    try:
         verified_metadata = storage.verify_object(
             payload.object_key,
             expected_size=upload_object.get("byte_size"),
@@ -475,8 +501,7 @@ def complete_multipart_upload(
             upload_id,
             {
                 **session,
-                "status": "completed",
-                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "status": MULTIPART_UPLOAD_STATUS_COMPLETED,
                 "etag": verified_metadata.etag,
                 "byte_size": verified_metadata.byte_size,
             },
@@ -487,12 +512,7 @@ def complete_multipart_upload(
         dataset_crud.update_dataset_status(
             db=db, dataset_id=dataset_id, status=Statuses.UPLOADED
         )
-    except (
-        DatasetObjectValidationError,
-        NotImplementedError,
-        StorageError,
-        ValueError,
-    ) as error:
+    except StorageVerificationError as error:
         _delete_failed_upload(
             request=request,
             db=db,
@@ -500,6 +520,23 @@ def complete_multipart_upload(
             storage_keys=[payload.object_key],
             scan_result=None,
         )
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
+    except (DatasetObjectValidationError, NotImplementedError, ValueError) as error:
+        _delete_failed_upload(
+            request=request,
+            db=db,
+            dataset_id=dataset_id,
+            storage_keys=[payload.object_key],
+            scan_result=None,
+        )
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
+    except StorageError as error:
         raise HTTPException(
             status_code=http_status.HTTP_400_BAD_REQUEST,
             detail=str(error),
@@ -800,6 +837,21 @@ def _get_active_multipart_upload_session(
     upload_id: str,
     object_key: str,
 ) -> dict:
+    return _get_multipart_upload_session(
+        metadata,
+        upload_id,
+        object_key,
+        allowed_statuses={MULTIPART_UPLOAD_STATUS_ACTIVE},
+    )
+
+
+def _get_multipart_upload_session(
+    metadata: dict,
+    upload_id: str,
+    object_key: str,
+    *,
+    allowed_statuses: set[str],
+) -> dict:
     _get_quarantine_upload_object(metadata, object_key)
     sessions = metadata.get(MULTIPART_UPLOADS_KEY) or {}
     session = sessions.get(upload_id)
@@ -808,7 +860,7 @@ def _get_active_multipart_upload_session(
             status_code=http_status.HTTP_404_NOT_FOUND,
             detail="Multipart upload session not found",
         )
-    if session.get("status") != "active":
+    if session.get("status") not in allowed_statuses:
         raise HTTPException(
             status_code=http_status.HTTP_409_CONFLICT,
             detail="Multipart upload session is not active",

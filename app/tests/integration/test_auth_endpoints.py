@@ -244,6 +244,9 @@ def test_login_redirects_to_github_when_dev_mode_disabled(client, monkeypatch):
     assert response.status_code in {302, 307}
     location = response.headers["location"]
     assert location.startswith("https://github.com/login/oauth/authorize")
+    scopes = set(parse_qs(urlparse(location).query)["scope"][0].split())
+    assert {"read:user", "user:email", "read:org"} <= scopes
+    assert "repo" not in scopes
 
 
 def test_github_login_configuration_error_uses_public_message(client, monkeypatch):

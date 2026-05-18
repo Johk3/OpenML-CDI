@@ -160,6 +160,8 @@ GitHub profile sync behavior:
 - role assignment is based on collaborator permission in
   `koevoet1221/openmlupload-testing`; any collaborator role maps to `expert`,
   and non-collaborators map to `user`
+- GitHub App installation credentials should be configured for this permission
+  check so normal user login only needs profile, email, and organization scopes
 - this prevents duplicate local users when GitHub profile fields change
 
 Conflict response (`409 Conflict`):
