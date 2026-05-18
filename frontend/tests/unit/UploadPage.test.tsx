@@ -334,6 +334,62 @@ describe('UploadPage', () => {
       expect(await screen.findByRole('button', { name: /resume upload/i })).toBeInTheDocument();
     });
 
+    it('shows retrying feedback during multipart part retry', async () => {
+      fireEvent.click(screen.getByText('Change'));
+      const fileInput = document.getElementById('file-input') as HTMLInputElement;
+      fireEvent.change(fileInput, { target: { files: [createLargeFile()] } });
+      mockDatasetService.uploadFileMultipart.mockImplementationOnce(
+        async (_datasetId, _contract, file, options) => {
+          options?.onProgress?.({
+            loadedBytes: file.size / 2,
+            totalBytes: file.size,
+            chunkIndex: 1,
+            totalChunks: 2,
+            status: 'retrying',
+          });
+          await new Promise(() => undefined);
+        },
+      );
+
+      fireEvent.click(screen.getByText(/Upload Dataset/i));
+
+      expect(await screen.findByText(/Retrying after a network interruption/i)).toBeInTheDocument();
+    });
+
+    it('shows a canceled state when a multipart upload is canceled', async () => {
+      fireEvent.click(screen.getByText('Change'));
+      const fileInput = document.getElementById('file-input') as HTMLInputElement;
+      fireEvent.change(fileInput, { target: { files: [createLargeFile()] } });
+      mockDatasetService.uploadFileMultipart.mockImplementationOnce(
+        async (_datasetId, _contract, file, options) => {
+          options?.onProgress?.({
+            loadedBytes: file.size / 2,
+            totalBytes: file.size,
+            chunkIndex: 1,
+            totalChunks: 2,
+            status: 'uploading',
+          });
+          await new Promise((_resolve, reject) => {
+            const originalAbort = options?.controller?.abort;
+            if (options?.controller) {
+              options.controller.abort = () => {
+                originalAbort?.();
+                reject(new DOMException('Upload aborted', 'AbortError'));
+              };
+            }
+          });
+        },
+      );
+
+      fireEvent.click(screen.getByText(/Upload Dataset/i));
+      const cancelButton = await screen.findByRole('button', { name: /cancel upload/i });
+      fireEvent.click(cancelButton);
+
+      expect(await screen.findByText('Upload Canceled')).toBeInTheDocument();
+      expect(screen.queryByText('Upload Failed')).not.toBeInTheDocument();
+      expect(mockDatasetService.confirmUpload).not.toHaveBeenCalled();
+    });
+
     it('uses the direct PUT path for small files and confirms after upload', async () => {
       fireEvent.click(screen.getByText(/Upload Dataset/i));
 

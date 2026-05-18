@@ -56,7 +56,6 @@ Success response (`201 Created`):
   "first_name": "New",
   "last_name": "User",
   "role": "uploader",
-  "is_verified": false,
   "created_at": "2026-03-03T12:34:56Z"
 }
 ```
@@ -106,12 +105,6 @@ Validation rules:
 - `first_name` and `last_name` are required, trimmed, and cannot be blank
 - `password` is required, 12-128 characters, and must contain lowercase,
   uppercase, digit, and special characters
-
-Verification behavior:
-
-- successful registration creates the account as `is_verified=false`
-- a verification email is triggered immediately
-- login is currently still allowed before verification is completed
 
 ### Legacy / backend-only: `POST /auth/token`
 

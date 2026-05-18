@@ -15,13 +15,7 @@ import {
 import { Dataset, DatasetStatus } from '../types/auth';
 import { Card, CardContent, CardHeader } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger } from '../components/ui/select';
 import { useUserContext } from '@/hooks/useUserContext';
 import { DatasetService } from '@/services/datasetService';
 import { BackendDataset } from '@/types/dataset';
@@ -87,7 +81,7 @@ const STATUS_CONFIG: Partial<
     cls: 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-950/40 dark:text-cyan-300 dark:border-cyan-800',
   },
   scanning: {
-    label: 'Scanning',
+    label: 'Ongoing Processing',
     icon: <Loader2 size={13} className="animate-spin" />,
     cls: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800',
   },
@@ -112,7 +106,7 @@ const STATUS_CONFIG: Partial<
     cls: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800',
   },
   quarantined: {
-    label: 'Processing Error',
+    label: 'Quarantined',
     icon: <AlertCircle size={13} />,
     cls: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800',
   },
@@ -132,9 +126,9 @@ const STATUS_CONFIG: Partial<
     cls: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800',
   },
   integration_failed: {
-    label: 'Integration Failed',
+    label: 'Processing Error',
     icon: <AlertCircle size={13} />,
-    cls: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-800',
+    cls: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800',
   },
 };
 
@@ -146,12 +140,19 @@ const StatusBadge = ({ status }: { status: DatasetStatus }) => {
   };
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${cfg.cls}`}
+      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-semibold border ${cfg.cls}`}
     >
       {cfg.icon}
       {cfg.label}
     </span>
   );
+};
+
+const toExpertSelectStatus = (status: DatasetStatus): DatasetStatus => {
+  if (status === 'pending') return 'pending_review';
+  if (status === 'converted') return 'scanning';
+  if (status === 'claimed') return 'published';
+  return status;
 };
 
 export const MyDatasetsPage: React.FC = () => {
@@ -161,6 +162,7 @@ export const MyDatasetsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [statusUpdateError, setStatusUpdateError] = useState<string | null>(null);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -172,6 +174,7 @@ export const MyDatasetsPage: React.FC = () => {
     }
     setLoading(true);
     setError(null);
+    setStatusUpdateError(null);
     DatasetService.listDatasets()
       .then((backendDatasets) => setDatasets(backendDatasets.map(toFrontendDataset)))
       .catch(() => setError('Failed to load datasets. Please try again later.'))
@@ -229,12 +232,12 @@ export const MyDatasetsPage: React.FC = () => {
     if (!previous || previous === newStatus) return;
 
     setUpdatingStatusId(id);
+    setStatusUpdateError(null);
     setDatasets((cur) => cur.map((ds) => (ds.id === id ? { ...ds, status: newStatus } : ds)));
     try {
       await DatasetService.updateStatus(id, newStatus);
     } catch {
-      setDatasets((cur) => cur.map((ds) => (ds.id === id ? { ...ds, status: previous } : ds)));
-      setError('Failed to update dataset status.');
+      setStatusUpdateError('Failed to update dataset status.');
     } finally {
       setUpdatingStatusId(null);
     }
@@ -271,6 +274,13 @@ export const MyDatasetsPage: React.FC = () => {
           )}
         </div>
 
+        {statusUpdateError && !loading && !error && (
+          <div className="mb-4 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <AlertCircle size={15} />
+            <span>{statusUpdateError}</span>
+          </div>
+        )}
+
         {loading ? (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="datasets-empty">
             <Loader2 size={32} className="animate-spin mb-4 text-primary" />
@@ -297,65 +307,71 @@ export const MyDatasetsPage: React.FC = () => {
           <div className="datasets-grid">
             {datasets.map((dataset) => {
               const canDownloadDataset = isExpert && Boolean(dataset.lifecycle?.download.available);
+              const expertStatusValue = toExpertSelectStatus(dataset.status);
+              const expertStatusLabel =
+                STATUS_CONFIG[expertStatusValue]?.label || STATUS_CONFIG[dataset.status]?.label;
 
               return (
-                <div key={dataset.id}>
-                  <Link to={`/datasets/${dataset.id}`} className="block h-full">
-                    <Card className="flex flex-col h-full group transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 border-border/70">
-                      <CardHeader className="pb-2">
-                        <div className="flex justify-between items-start">
-                          <div className="w-10 h-10 rounded-xl flex items-center justify-center text-primary bg-primary/10 group-hover:bg-primary/15 transition-colors shrink-0">
-                            <Database size={19} />
-                          </div>
-                          <div className="flex flex-col items-end gap-2">
-                            <span className="dataset-date flex items-center gap-1">
-                              <Calendar size={11} />
-                              {dataset.date}
-                            </span>
-                            {deleting === dataset.id ? (
-                              <Button variant="outline" size="xs" disabled>
-                                <Loader2 size={12} className="animate-spin mr-2" />
-                                Deleting...
-                              </Button>
-                            ) : (
-                              <Button
-                                variant="outline"
-                                size="xs"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  handleDelete(dataset.id);
-                                }}
-                              >
-                                <Trash2 size={12} /> Delete
-                              </Button>
-                            )}
+                <div key={dataset.id} className="h-full">
+                  <Card className="flex flex-col h-full group transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 border-border/70">
+                    <CardHeader className="pb-2">
+                      <div className="flex justify-between items-start">
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center text-primary bg-primary/10 group-hover:bg-primary/15 transition-colors shrink-0">
+                          <Database size={19} />
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <span className="dataset-date flex items-center gap-1">
+                            <Calendar size={11} />
+                            {dataset.date}
+                          </span>
+                          {deleting === dataset.id ? (
+                            <Button variant="outline" size="xs" disabled>
+                              <Loader2 size={12} className="animate-spin mr-2" />
+                              Deleting...
+                            </Button>
+                          ) : (
                             <Button
                               variant="outline"
                               size="xs"
                               onClick={(e) => {
                                 e.preventDefault();
-                                handleMetadataConfiguration(dataset.id);
+                                handleDelete(dataset.id);
                               }}
                             >
-                              <FileText size={12} /> Configure Metadata
+                              <Trash2 size={12} /> Delete
                             </Button>
-                            {canDownloadDataset && (
-                              <Button
-                                variant="outline"
-                                size="xs"
-                                onClick={async (e) => {
-                                  e.preventDefault();
-                                  await handleDownload(dataset);
-                                }}
-                              >
-                                <Download size={12} /> Download
-                              </Button>
-                            )}
-                          </div>
+                          )}
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              handleMetadataConfiguration(dataset.id);
+                            }}
+                          >
+                            <FileText size={12} /> Configure Metadata
+                          </Button>
+                          {canDownloadDataset && (
+                            <Button
+                              variant="outline"
+                              size="xs"
+                              onClick={async (e) => {
+                                e.preventDefault();
+                                await handleDownload(dataset);
+                              }}
+                            >
+                              <Download size={12} /> Download
+                            </Button>
+                          )}
                         </div>
-                      </CardHeader>
+                      </div>
+                    </CardHeader>
 
-                      <CardContent className="flex flex-col flex-1 gap-2">
+                    <CardContent className="flex flex-col flex-1 gap-2">
+                      <Link
+                        to={`/datasets/${dataset.id}`}
+                        className="block rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
                         <h3 className="dataset-title">{dataset.title}</h3>
                         <p className="dataset-description">{dataset.description}</p>
 
@@ -371,38 +387,37 @@ export const MyDatasetsPage: React.FC = () => {
                             </span>
                           </div>
                         )}
+                      </Link>
 
-                        <div className="mt-auto pt-3 border-t border-border/50 flex items-center justify-between gap-3">
-                          <StatusBadge status={dataset.status} />
-                          {isExpert && (
-                            <Select
-                              value={dataset.status}
-                              onValueChange={(val) =>
-                                handleStatusChange(dataset.id, val as DatasetStatus)
-                              }
+                      <div className="mt-auto pt-3 border-t border-border/50 flex flex-wrap items-center justify-between gap-3">
+                        <StatusBadge status={dataset.status} />
+                        {isExpert && (
+                          <Select
+                            value={expertStatusValue}
+                            onValueChange={(val) =>
+                              handleStatusChange(dataset.id, val as DatasetStatus)
+                            }
+                          >
+                            <SelectTrigger
+                              aria-label={expertStatusLabel}
+                              className="h-8 w-[210px] max-w-full justify-between text-xs"
+                              disabled={updatingStatusId === dataset.id}
                             >
-                              <SelectTrigger
-                                className="h-7 text-xs w-auto max-w-[160px]"
-                                disabled={updatingStatusId === dataset.id}
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                }}
-                              >
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="pending">Pending Expert Review</SelectItem>
-                                <SelectItem value="converted">Ongoing Processing</SelectItem>
-                                <SelectItem value="claimed">Verified &amp; Published</SelectItem>
-                                <SelectItem value="quarantined">Processing Error</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </Link>
+                              <span className="min-w-0 flex-1 truncate text-left">
+                                {expertStatusLabel}
+                              </span>
+                            </SelectTrigger>
+                            <SelectContent className="min-w-[210px]">
+                              <SelectItem value="pending_review">Pending Expert Review</SelectItem>
+                              <SelectItem value="scanning">Ongoing Processing</SelectItem>
+                              <SelectItem value="published">Verified &amp; Published</SelectItem>
+                              <SelectItem value="integration_failed">Processing Error</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
               );
             })}

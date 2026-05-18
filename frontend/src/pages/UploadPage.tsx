@@ -39,6 +39,7 @@ type UploadState =
   | 'uploading'
   | 'finalizing'
   | 'success'
+  | 'canceled'
   | 'error';
 type UploadSessionState =
   | 'idle'
@@ -82,6 +83,38 @@ const buildUploadDirectoryStructure = (
       source: 'browser-selection',
     },
   };
+};
+
+const isUploadCanceledError = (error: unknown) => {
+  if (error instanceof DOMException && error.name === 'AbortError') return true;
+
+  const maybeError = error as { name?: unknown } | null | undefined;
+  return maybeError?.name === 'AbortError';
+};
+
+const uploadSessionMessage = (
+  state: UploadSessionState,
+  fileName: string | null,
+  fallbackFileName: string | undefined,
+) => {
+  const displayName = fileName ?? fallbackFileName ?? 'file';
+
+  switch (state) {
+    case 'paused':
+      return 'Upload paused. Resume to continue from the saved chunk.';
+    case 'resumed':
+      return 'Upload resumed from saved progress.';
+    case 'retrying':
+      return 'Retrying after a network interruption. Completed chunks stay saved.';
+    case 'finalizing':
+      return 'Completing the multipart upload and verifying the object.';
+    case 'completed':
+      return 'Upload completed. Preparing the dataset record.';
+    case 'aborted':
+      return 'Upload canceled. Cleaning up saved progress.';
+    default:
+      return `Uploading chunks for ${displayName}.`;
+  }
 };
 
 const TIPS = [
@@ -411,6 +444,11 @@ export const UploadPage: React.FC = () => {
           // The backend may already have cleaned up the failed upload record.
         }
       }
+      if (isUploadCanceledError(err)) {
+        setUploadState('canceled');
+        return;
+      }
+
       const axiosErr = err as AxiosError<{ detail?: string }>;
       const detail = axiosErr.response?.data?.detail;
       setErrorMessage(
@@ -617,6 +655,7 @@ export const UploadPage: React.FC = () => {
           uploadState === 'uploading' ||
           uploadState === 'finalizing' ||
           uploadState === 'success' ||
+          uploadState === 'canceled' ||
           uploadState === 'error') && (
           <motion.div
             key={uploadState}
@@ -705,11 +744,11 @@ export const UploadPage: React.FC = () => {
                         Chunk {currentChunk} of {totalChunks}
                       </div>
                       <p className="max-w-xs text-xs text-muted-foreground">
-                        {uploadSessionState === 'paused'
-                          ? 'Upload paused. Resume to continue from the saved chunk.'
-                          : uploadSessionState === 'resumed'
-                            ? 'Upload resumed from saved progress.'
-                            : `Uploading chunks for ${uploadedFileName ?? selectedFiles[0]?.name ?? 'file'}.`}
+                        {uploadSessionMessage(
+                          uploadSessionState,
+                          uploadedFileName,
+                          selectedFiles[0]?.name,
+                        )}
                       </p>
                       {hasMultipartControls && (
                         <div className="flex gap-2">
@@ -840,6 +879,28 @@ export const UploadPage: React.FC = () => {
                         Complete Metadata <ArrowRight size={16} />
                       </Button>
                     </div>
+                  </motion.div>
+                ) : uploadState === 'canceled' ? (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex flex-col items-center"
+                  >
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: 'spring', stiffness: 200, damping: 15 }}
+                      className="w-20 h-20 rounded-full bg-muted flex items-center justify-center mb-6"
+                    >
+                      <XCircle size={40} className="text-muted-foreground" />
+                    </motion.div>
+                    <h2 className="heading-2 mb-2">Upload Canceled</h2>
+                    <p className="text-muted-foreground text-sm mb-6 max-w-xs">
+                      The multipart upload was canceled and saved upload progress was cleaned up.
+                    </p>
+                    <Button onClick={() => setUploadState('idle')} variant="outline">
+                      Start Again
+                    </Button>
                   </motion.div>
                 ) : (
                   <motion.div

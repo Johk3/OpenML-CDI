@@ -265,6 +265,11 @@ def test_clean_promoted_dataset_downloads_for_owner_and_expert_after_scan(
     )
 
     owner_response = _download(download_client, dataset_id, owner_headers)
+    cors_response = _download(
+        download_client,
+        dataset_id,
+        {**owner_headers, "Origin": "http://localhost:5173"},
+    )
     expert_response = _download(download_client, dataset_id, expert_headers)
     other_response = _download(download_client, dataset_id, other_headers)
     detail_response = _dataset_detail(download_client, dataset_id, owner_headers)
@@ -273,6 +278,9 @@ def test_clean_promoted_dataset_downloads_for_owner_and_expert_after_scan(
     assert owner_response.content == payload
     assert owner_response.headers["content-disposition"] == (
         "attachment; filename=clean.csv"
+    )
+    assert (
+        cors_response.headers["access-control-expose-headers"] == "Content-Disposition"
     )
     assert expert_response.status_code == 200
     assert expert_response.content == payload

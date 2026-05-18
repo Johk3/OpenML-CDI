@@ -93,6 +93,137 @@ sequenceDiagram
 
 The direct upload contract is intentionally split from confirmation. A successful browser `PUT` only proves that S3 accepted bytes. The backend still has to verify object metadata, run malware scanning, and update dataset object state before the upload can become downloadable.
 
+## Multipart Upload Contract
+
+Large S3-backed uploads use the same `/api/datasets/upload-url` dataset creation endpoint, but the returned upload contract can ask the frontend to use multipart upload instead of a single `PUT`.
+
+```json
+{
+  "id": "a98c7f7b-4a91-42fb-a8e1-122d8a4b34aa",
+  "presigned_urls": ["https://s3.example/quarantine/batch/large.csv?..."],
+  "upload_contracts": [
+    {
+      "original_path": "large.csv",
+      "object_key": "quarantine/batch/large.csv",
+      "url": "https://s3.example/quarantine/batch/large.csv?...",
+      "method": "PUT",
+      "headers": { "Content-Type": "text/csv" },
+      "content_type": "text/csv",
+      "expires_seconds": 3600,
+      "upload_mode": "multipart"
+    }
+  ],
+  "dataset_url": "/datasets/a98c7f7b-4a91-42fb-a8e1-122d8a4b34aa"
+}
+```
+
+The frontend treats `upload_mode: "multipart"` as authoritative. Small files and local backend upload URLs keep using the direct `PUT` contract and call `/api/datasets/{id}/confirm-upload` after the upload finishes.
+
+### Handshake
+
+1. Start a multipart session.
+
+   ```http
+   POST /api/datasets/{dataset_id}/multipart-uploads
+   Content-Type: application/json
+   ```
+
+   ```json
+   {
+     "object_key": "quarantine/batch/large.csv",
+     "content_type": "text/csv",
+     "part_size": 8388608
+   }
+   ```
+
+   ```json
+   {
+     "dataset_id": "a98c7f7b-4a91-42fb-a8e1-122d8a4b34aa",
+     "object_key": "quarantine/batch/large.csv",
+     "upload_id": "VXBsb2FkIElE",
+     "part_size": 8388608,
+     "expires_seconds": 3600,
+     "status": "active"
+   }
+   ```
+
+2. Request a fresh presigned URL for each part. Part numbers are 1-based and must stay between 1 and 10,000.
+
+   ```http
+   POST /api/datasets/{dataset_id}/multipart-uploads/{upload_id}/parts/{part_number}/url
+   Content-Type: application/json
+   ```
+
+   ```json
+   {
+     "object_key": "quarantine/batch/large.csv"
+   }
+   ```
+
+   ```json
+   {
+     "url": "https://s3.example/quarantine/batch/large.csv?partNumber=1&uploadId=...",
+     "method": "PUT",
+     "headers": {},
+     "expires_seconds": 3600
+   }
+   ```
+
+3. Upload the file slice directly to S3 with `PUT`. The browser stores each completed part number, ETag, and size. Buckets should expose the `ETag` response header through CORS. If the browser cannot read the header, the frontend reconciles with the list-parts endpoint.
+
+4. Reconcile uploaded parts during resume or reload recovery.
+
+   ```http
+   GET /api/datasets/{dataset_id}/multipart-uploads/{upload_id}/parts?object_key=quarantine/batch/large.csv
+   ```
+
+   ```json
+   {
+     "object_key": "quarantine/batch/large.csv",
+     "upload_id": "VXBsb2FkIElE",
+     "parts": [
+       { "part_number": 1, "etag": "etag-1", "size": 8388608 },
+       { "part_number": 2, "etag": "etag-2", "size": 8388608 }
+     ]
+   }
+   ```
+
+5. Complete only after every part is uploaded. Parts must be ordered by `part_number` and include the matching ETag.
+
+   ```http
+   POST /api/datasets/{dataset_id}/multipart-uploads/{upload_id}/complete
+   Content-Type: application/json
+   ```
+
+   ```json
+   {
+     "object_key": "quarantine/batch/large.csv",
+     "parts": [
+       { "part_number": 1, "etag": "etag-1" },
+       { "part_number": 2, "etag": "etag-2" }
+     ]
+   }
+   ```
+
+   The backend completes the S3 multipart upload, verifies object metadata, marks the object uploaded, and only then runs malware scanning. The frontend does not call `/api/datasets/{id}/confirm-upload` for multipart uploads.
+
+6. Abort a user-canceled multipart upload.
+
+   ```http
+   DELETE /api/datasets/{dataset_id}/multipart-uploads/{upload_id}?object_key=quarantine/batch/large.csv
+   ```
+
+   A successful abort returns `204 No Content` and marks the saved session as aborted in dataset metadata.
+
+### Recovery Rules
+
+- The frontend stores resumable state in `localStorage`: file identity (`name`, `size`, and `lastModified`), dataset id, object key, upload id, part size, uploaded part numbers, ETags, and byte counts.
+- After a reload, selecting the same file restores the active session and lists remote parts before uploading anything else. Remote parts and locally stored parts are merged by part number.
+- Expired part URLs are not reused. The frontend asks the backend for a new part URL immediately before each retry or pending part upload.
+- A failed part can be retried with a fresh URL without restarting the multipart session. Completed part metadata remains saved for resume.
+- Canceling an upload aborts the backend multipart session and clears the local resumable state. Bucket lifecycle rules should still abort stale multipart sessions when the browser closes before it can call the API.
+- Completion or verification failures are returned to the browser as upload failures and do not start scanning.
+
 ## Local MinIO Setup
 
 Use MinIO when you need local development to exercise the same S3-compatible code path as production.

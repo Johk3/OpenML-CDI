@@ -18,7 +18,6 @@ describe('ExpertQueuePage', () => {
       first_name: 'Expert',
       last_name: 'One',
       role: 'expert' as const,
-      is_verified: true,
       created_at: '2024-01-01',
       datasets: [],
     },

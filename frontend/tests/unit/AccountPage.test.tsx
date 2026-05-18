@@ -25,7 +25,29 @@ describe('AccountPage', () => {
 
     expect(screen.getByText(/^Profile details$/i)).toBeInTheDocument();
     expect(screen.getByText(/test@test.com/i)).toBeInTheDocument();
+    expect(screen.getByText(/^User$/)).toBeInTheDocument();
+    expect(screen.queryByText(/^verified$/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /save changes/i })).not.toBeInTheDocument();
+  });
+
+  it('renders expert role with display capitalization', () => {
+    renderWithRouter(<AccountPage />, {
+      userContext: {
+        user: {
+          id: 'expert-user',
+          first_name: 'Expert',
+          last_name: 'Reviewer',
+          role: 'expert',
+          email: 'expert@test.com',
+          username: 'expertuser',
+          datasets: [],
+          created_at: 'a',
+        },
+      },
+    });
+
+    expect(screen.getByText(/^Expert$/)).toBeInTheDocument();
+    expect(screen.queryByText(/^expert$/)).not.toBeInTheDocument();
   });
 
   it('does not call delete endpoint when deletion is not confirmed', async () => {

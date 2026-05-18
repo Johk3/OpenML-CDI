@@ -36,7 +36,6 @@ const defaultUser: User = {
   username: 'testuser',
   datasets: ['dataset'],
   created_at: 'a',
-  is_verified: true,
 };
 
 const defaultUserContext: UserContextValue = {

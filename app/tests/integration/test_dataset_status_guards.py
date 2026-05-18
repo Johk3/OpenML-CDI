@@ -726,6 +726,123 @@ def test_expert_can_approve_review_ready_dataset(client, db_test_session):
     assert db_test_session.get(Dataset, dataset_id).status == Statuses.APPROVED
 
 
+def test_expert_can_mark_reviewed_dataset_as_processing_error(client, db_test_session):
+    owner_id = uuid.uuid4()
+    expert_id = uuid.uuid4()
+    db_test_session.add(_user(user_id=owner_id, role=Roles.USER))
+    db_test_session.add(
+        User(
+            id=expert_id,
+            email="processing-error-expert@example.com",
+            username="processing-error-expert",
+            first_name="Expert",
+            last_name="User",
+            role=Roles.EXPERT,
+            created_at=datetime.now(timezone.utc),
+        )
+    )
+    dataset_ids: list[uuid.UUID] = []
+    for initial_status in (
+        Statuses.PENDING_REVIEW,
+        Statuses.APPROVED,
+        Statuses.PUBLISHED,
+    ):
+        dataset_id = uuid.uuid4()
+        dataset_ids.append(dataset_id)
+        db_test_session.add(
+            Dataset(
+                id=dataset_id,
+                title=f"{initial_status.value} dataset",
+                owner_id=owner_id,
+                dataset_metadata={
+                    "filenames": ["clean.csv"],
+                    "objects": [
+                        _object_metadata(
+                            final_object_key=f"ready/{dataset_id}/clean.csv",
+                            scan_state="clean",
+                            download_state="downloadable",
+                        )
+                    ],
+                },
+                status=initial_status,
+            )
+        )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(expert_id), "type": "access"})
+
+    for dataset_id in dataset_ids:
+        response = client.post(
+            "/api/datasets/status",
+            params={"dataset_id": str(dataset_id), "status": "integration_failed"},
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        assert response.status_code == 200
+        db_test_session.expire_all()
+        assert (
+            db_test_session.get(Dataset, dataset_id).status
+            == Statuses.INTEGRATION_FAILED
+        )
+
+
+def test_expert_can_mark_reviewed_dataset_as_ongoing_processing(
+    client, db_test_session
+):
+    owner_id = uuid.uuid4()
+    expert_id = uuid.uuid4()
+    db_test_session.add(_user(user_id=owner_id, role=Roles.USER))
+    db_test_session.add(
+        User(
+            id=expert_id,
+            email="ongoing-processing-expert@example.com",
+            username="ongoing-processing-expert",
+            first_name="Expert",
+            last_name="User",
+            role=Roles.EXPERT,
+            created_at=datetime.now(timezone.utc),
+        )
+    )
+    dataset_ids: list[uuid.UUID] = []
+    for initial_status in (
+        Statuses.PENDING_REVIEW,
+        Statuses.APPROVED,
+        Statuses.PUBLISHED,
+    ):
+        dataset_id = uuid.uuid4()
+        dataset_ids.append(dataset_id)
+        db_test_session.add(
+            Dataset(
+                id=dataset_id,
+                title=f"{initial_status.value} dataset",
+                owner_id=owner_id,
+                dataset_metadata={
+                    "filenames": ["clean.csv"],
+                    "objects": [
+                        _object_metadata(
+                            final_object_key=f"ready/{dataset_id}/clean.csv",
+                            scan_state="clean",
+                            download_state="downloadable",
+                        )
+                    ],
+                },
+                status=initial_status,
+            )
+        )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(expert_id), "type": "access"})
+
+    for dataset_id in dataset_ids:
+        response = client.post(
+            "/api/datasets/status",
+            params={"dataset_id": str(dataset_id), "status": "scanning"},
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        assert response.status_code == 200
+        db_test_session.expire_all()
+        assert db_test_session.get(Dataset, dataset_id).status == Statuses.SCANNING
+
+
 def test_github_discussion_returns_creation_failure_without_issue_url(
     client, db_test_session
 ):

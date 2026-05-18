@@ -8,7 +8,13 @@ import { motion } from 'motion/react';
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import type { UserRole } from '@/types/auth';
+
 const DELETE_ERROR_MESSAGE = 'Unable to delete account. Please try again.';
+const ROLE_LABELS: Record<UserRole, string> = {
+  expert: 'Expert',
+  user: 'User',
+};
 
 function getErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof AxiosError) {
@@ -97,10 +103,9 @@ export const AccountPage: React.FC = () => {
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
           <ReadOnlyField label="Username" value={user.username} />
-          <ReadOnlyField label="Role" value={user.role} />
+          <ReadOnlyField label="Role" value={ROLE_LABELS[user.role]} />
           <ReadOnlyField label="Name" value={[user.first_name, user.last_name].join(' ').trim()} />
           <ReadOnlyField label="Email" value={user.email} />
-          <ReadOnlyField label="Verified" value={user.is_verified ? 'Yes' : 'No'} />
         </CardContent>
       </Card>
 

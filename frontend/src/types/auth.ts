@@ -7,7 +7,6 @@ export interface User {
   first_name: string;
   last_name: string;
   role: UserRole;
-  is_verified: boolean;
   created_at: string;
   datasets: string[];
 }

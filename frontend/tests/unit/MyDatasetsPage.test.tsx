@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { renderWithRouter } from '../utils';
 import { MyDatasetsPage } from '@/pages/MyDatasetsPage';
@@ -33,7 +34,6 @@ describe('MyDatasetsPage', () => {
           username: 'testuser',
           datasets: ['dataset'],
           created_at: 'a',
-          is_verified: true,
         },
       },
     });
@@ -62,7 +62,6 @@ describe('MyDatasetsPage', () => {
           username: 'testuser',
           datasets: ['dataset'],
           created_at: 'a',
-          is_verified: true,
         },
       },
     });
@@ -114,7 +113,6 @@ describe('MyDatasetsPage', () => {
           username: 'testuser',
           datasets: ['dataset'],
           created_at: 'a',
-          is_verified: true,
         },
       },
     });
@@ -175,7 +173,6 @@ describe('MyDatasetsPage', () => {
           username: 'testuser',
           datasets: ['dataset'],
           created_at: 'a',
-          is_verified: true,
         },
       },
     });
@@ -190,5 +187,132 @@ describe('MyDatasetsPage', () => {
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:dataset-download');
     expect(anchorClick).toHaveBeenCalled();
     anchorClick.mockRestore();
+  });
+
+  it('keeps the dataset card visible when an expert status update fails', async () => {
+    const user = userEvent.setup();
+    mockDatasetService.listDatasets.mockResolvedValueOnce([
+      {
+        id: 'dataset-published',
+        title: 'Published Dataset',
+        status: 'published',
+        created_at: '2026-05-17T00:00:00Z',
+        dataset_metadata: { description: 'Published dataset' },
+      } as unknown as BackendDataset,
+    ]);
+    mockDatasetService.updateStatus.mockRejectedValueOnce(new Error('Invalid transition'));
+
+    renderWithRouter(<MyDatasetsPage />, {
+      userContext: {
+        user: {
+          id: 'test-user',
+          first_name: 'Test',
+          last_name: 'User',
+          role: 'expert',
+          email: 'test@test.com',
+          username: 'testuser',
+          datasets: ['dataset'],
+          created_at: 'a',
+        },
+      },
+    });
+
+    expect(
+      await screen.findByRole('heading', { level: 3, name: /published dataset/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('combobox'));
+    await user.click(screen.getByRole('option', { name: /processing error/i }));
+
+    await waitFor(() => {
+      expect(mockDatasetService.updateStatus).toHaveBeenCalledWith(
+        'dataset-published',
+        'integration_failed',
+      );
+    });
+
+    expect(
+      screen.getByRole('heading', { level: 3, name: /published dataset/i }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('Processing Error').length).toBeGreaterThan(0);
+  });
+
+  it('uses canonical expert status values and shows selected status labels', async () => {
+    const user = userEvent.setup();
+    mockDatasetService.listDatasets.mockResolvedValueOnce([
+      {
+        id: 'dataset-review-ready',
+        title: 'Review Ready Dataset',
+        status: 'pending_review',
+        created_at: '2026-05-17T00:00:00Z',
+        dataset_metadata: { description: 'Ready for review' },
+      } as unknown as BackendDataset,
+    ]);
+
+    renderWithRouter(<MyDatasetsPage />, {
+      userContext: {
+        user: {
+          id: 'test-user',
+          first_name: 'Test',
+          last_name: 'User',
+          role: 'expert',
+          email: 'test@test.com',
+          username: 'testuser',
+          datasets: ['dataset'],
+          created_at: 'a',
+        },
+      },
+    });
+
+    expect(
+      await screen.findByRole('heading', { level: 3, name: /review ready dataset/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /pending expert review/i })).toHaveClass(
+      'w-[210px]',
+    );
+
+    await user.click(screen.getByRole('combobox', { name: /pending expert review/i }));
+    await user.click(screen.getByRole('option', { name: /ongoing processing/i }));
+
+    await waitFor(() => {
+      expect(mockDatasetService.updateStatus).toHaveBeenCalledWith(
+        'dataset-review-ready',
+        'scanning',
+      );
+    });
+  });
+
+  it('keeps expert status controls outside the dataset detail link', async () => {
+    mockDatasetService.listDatasets.mockResolvedValueOnce([
+      {
+        id: 'dataset-review-ready',
+        title: 'Review Ready Dataset',
+        status: 'pending_review',
+        created_at: '2026-05-17T00:00:00Z',
+        dataset_metadata: { description: 'Ready for review' },
+      } as unknown as BackendDataset,
+    ]);
+
+    renderWithRouter(<MyDatasetsPage />, {
+      userContext: {
+        user: {
+          id: 'test-user',
+          first_name: 'Test',
+          last_name: 'User',
+          role: 'expert',
+          email: 'test@test.com',
+          username: 'testuser',
+          datasets: ['dataset'],
+          created_at: 'a',
+        },
+      },
+    });
+
+    expect(
+      await screen.findByRole('heading', { level: 3, name: /review ready dataset/i }),
+    ).toBeInTheDocument();
+
+    const statusControl = screen.getByRole('combobox', { name: /pending expert review/i });
+    expect(statusControl.closest('a')).toBeNull();
   });
 });

@@ -30,11 +30,13 @@ ALLOWED_TRANSITIONS = {
         Statuses.INTEGRATION_FAILED,
     },
     Statuses.PENDING_REVIEW: {
+        Statuses.SCANNING,
         Statuses.APPROVED,
         Statuses.REJECTED,
         Statuses.INTEGRATION_FAILED,
     },
     Statuses.APPROVED: {
+        Statuses.SCANNING,
         Statuses.PUBLISHED,
         Statuses.REJECTED,
         Statuses.INTEGRATION_FAILED,
@@ -45,10 +47,11 @@ ALLOWED_TRANSITIONS = {
     },
     Statuses.QUARANTINED: {Statuses.REJECTED},
     Statuses.REJECTED: set(),
-    Statuses.PUBLISHED: set(),
+    Statuses.PUBLISHED: {Statuses.SCANNING, Statuses.INTEGRATION_FAILED},
 }
 
 EXPERT_TRANSITION_TARGETS = {
+    Statuses.SCANNING,
     Statuses.APPROVED,
     Statuses.REJECTED,
     Statuses.PUBLISHED,

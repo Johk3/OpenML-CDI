@@ -10,8 +10,6 @@ export const Footer: React.FC = () => {
           <span>© {new Date().getFullYear()} OpenML CDI. All rights reserved.</span>
         </div>
         <div className="footer-links">
-          <a href="#">Privacy Policy</a>
-          <a href="#">Terms of Service</a>
           <a href="https://openml.org" target="_blank" rel="noreferrer">
             openml.org ↗
           </a>

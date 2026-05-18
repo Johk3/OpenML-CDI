@@ -225,6 +225,38 @@ def test_expert_can_approve_pending_review_dataset():
     )
 
 
+def test_expert_can_mark_reviewed_dataset_as_processing_error():
+    for current_status in (
+        Statuses.PENDING_REVIEW,
+        Statuses.APPROVED,
+        Statuses.PUBLISHED,
+    ):
+        dataset = _dataset(status=current_status)
+
+        assert_lifecycle_transition_allowed(
+            dataset,
+            Statuses.INTEGRATION_FAILED,
+            actor_role=Roles.EXPERT,
+            system=False,
+        )
+
+
+def test_expert_can_mark_reviewed_dataset_as_ongoing_processing():
+    for current_status in (
+        Statuses.PENDING_REVIEW,
+        Statuses.APPROVED,
+        Statuses.PUBLISHED,
+    ):
+        dataset = _dataset(status=current_status)
+
+        assert_lifecycle_transition_allowed(
+            dataset,
+            Statuses.SCANNING,
+            actor_role=Roles.EXPERT,
+            system=False,
+        )
+
+
 def test_rejects_invalid_transition_with_clear_error():
     dataset = _dataset(status=Statuses.PENDING_UPLOAD)
 

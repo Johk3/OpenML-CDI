@@ -109,7 +109,6 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
           <div className="space-y-2">
             <Textarea
               id={field.id}
-              placeholder={field.placeholder}
               required={field.required}
               value={String(value ?? '')}
               onChange={(e) => {
@@ -184,7 +183,6 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
                 })}
               </div>
               <Input
-                placeholder="Other custom/schema URIs (comma separated)..."
                 value={arrValue.filter((v) => !field.options!.includes(v)).join(', ')}
                 onChange={(e) => {
                   const customVals = e.target.value
@@ -202,11 +200,6 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
           <Input
             id={field.id}
             type="text"
-            placeholder={
-              field.placeholder
-                ? `${field.placeholder} (comma separated)`
-                : 'Comma separated values...'
-            }
             required={field.required}
             pattern={field.pattern}
             title={field.patternMessage}
@@ -232,7 +225,6 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
             type={
               field.inputType === 'date' || field.inputType === 'url' ? field.inputType : 'text'
             }
-            placeholder={field.placeholder}
             required={field.required}
             pattern={field.pattern}
             title={field.patternMessage}

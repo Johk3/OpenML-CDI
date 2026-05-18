@@ -46,6 +46,64 @@ describe('CroissantFieldInput component', () => {
     expect(screen.getByText('Invalid JSON format')).toBeInTheDocument();
   });
 
+  it('does not show example placeholders in writable fields', () => {
+    const onChange = vi.fn();
+
+    const { rerender } = render(
+      <CroissantFieldInput
+        field={{
+          id: 'description',
+          label: 'Description',
+          section: 'dataset',
+          inputType: 'textarea',
+          required: true,
+          helperText: 'Describe the dataset.',
+          placeholder: 'What does this dataset contain?',
+        }}
+        value=""
+        onChange={onChange}
+      />,
+    );
+
+    expect(screen.getByLabelText(/description/i)).not.toHaveAttribute('placeholder');
+
+    rerender(
+      <CroissantFieldInput
+        field={{
+          id: 'url',
+          label: 'Dataset URL',
+          section: 'dataset',
+          inputType: 'url',
+          required: true,
+          helperText: 'Link to the dataset source.',
+          placeholder: 'https://github.com/yourorg/your-dataset',
+        }}
+        value=""
+        onChange={onChange}
+      />,
+    );
+
+    expect(screen.getByLabelText(/dataset url/i)).not.toHaveAttribute('placeholder');
+
+    rerender(
+      <CroissantFieldInput
+        field={{
+          id: 'creators',
+          label: 'Creator(s)',
+          section: 'dataset',
+          inputType: 'multi-text',
+          required: true,
+          helperText: 'People or organizations that created the dataset.',
+          placeholder: 'Jane Doe',
+        }}
+        value={[]}
+        onChange={onChange}
+      />,
+    );
+
+    expect(screen.getByLabelText(/creator\(s\)/i)).not.toHaveAttribute('placeholder');
+  });
+
   it('toggles helper text visibility', async () => {
     const field: CroissantFieldDef = {
       id: 'test-help',
@@ -97,7 +155,7 @@ describe('CroissantFieldInput component', () => {
     const onChange = vi.fn();
     render(<CroissantFieldInput field={field} value={['tag1', 'tag2']} onChange={onChange} />);
 
-    const input = screen.getByPlaceholderText('Comma separated values...');
+    const input = screen.getByLabelText('Tags');
     expect(input).toHaveValue('tag1, tag2');
   });
 });

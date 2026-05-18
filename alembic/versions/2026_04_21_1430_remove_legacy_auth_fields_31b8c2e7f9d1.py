@@ -22,25 +22,15 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     with op.batch_alter_table("users", schema=None) as batch_op:
         batch_op.drop_column("password_hash")
-        batch_op.drop_column("is_verified")
 
     op.drop_table("email_verification_tokens")
 
 
 def downgrade() -> None:
     with op.batch_alter_table("users", schema=None) as batch_op:
-        batch_op.add_column(sa.Column("password_hash", sa.String(length=255), nullable=True))
         batch_op.add_column(
-            sa.Column(
-                "is_verified",
-                sa.Boolean(),
-                nullable=False,
-                server_default=sa.true(),
-            )
+            sa.Column("password_hash", sa.String(length=255), nullable=True)
         )
-
-    with op.batch_alter_table("users", schema=None) as batch_op:
-        batch_op.alter_column("is_verified", server_default=None)
 
     op.create_table(
         "email_verification_tokens",

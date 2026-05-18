@@ -24,7 +24,6 @@ const setUserRole = (role: 'expert' | 'user') => {
       first_name: 'Test',
       last_name: 'User',
       role,
-      is_verified: true,
       created_at: '2026-04-01T00:00:00Z',
       datasets: [],
     },
