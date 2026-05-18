@@ -19,7 +19,6 @@ from app.database import get_db
 from app.schemas.datasets import (
     Dataset,
     DatasetConfirmUploadRequest,
-    DatasetCreate,
     DatasetDetail,
     DatasetListItem,
     DatasetMultipartCompleteRequest,
@@ -706,23 +705,6 @@ def confirm_upload(
     }
 
 
-@router.post("/create", response_model=Dataset)
-def create_new_dataset(
-    dataset: DatasetCreate,
-    current_user: Annotated[User, Depends(get_current_active_user)],
-    db: Session = Depends(get_db),
-):
-    """
-    Create a new dataset.
-    """
-    if dataset.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=403, detail="Not authorized to create this dataset"
-        )
-    # add dataset validation, like metadata and possible duplicates TODO
-    return dataset_crud.create_dataset(db=db, dataset=dataset)
-
-
 def expert_or_owner(current_user: User, dataset: Dataset | None) -> None:
     if not dataset or (
         dataset.owner_id != current_user.id and current_user.role != Roles.EXPERT
@@ -1231,42 +1213,6 @@ def update_metadata_dataset(
     return {"status_code": 200, "message": "Dataset metadata updated successfully"}
 
 
-@router.post("/owner")
-def update_owner_dataset(
-    dataset_id: uuid.UUID,
-    current_user: Annotated[User, Depends(get_current_active_user)],
-    owner_id: uuid.UUID,
-    db: Session = Depends(get_db),
-):
-    """
-    Update a datasets owner.
-    """
-    dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expert_or_owner(current_user, dataset)
-    dataset_crud.update_dataset_owner(
-        db=db, dataset_id=dataset_id, new_owner_id=owner_id
-    )
-    return {"status_code": 200, "message": "Dataset owner updated successfully"}
-
-
-@router.post("/issue_url")
-def update_issue_url_dataset(
-    dataset_id: uuid.UUID,
-    current_user: Annotated[User, Depends(get_current_active_user)],
-    issue_url: str,
-    db: Session = Depends(get_db),
-):
-    """
-    Update a datasets issue url.
-    """
-    dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expert_or_owner(current_user, dataset)
-    dataset_crud.update_dataset_issue_url(
-        db=db, dataset_id=dataset_id, issue_url=issue_url
-    )
-    return {"status_code": 200, "message": "Dataset issue url updated successfully"}
-
-
 @router.get("/{dataset_id}/github-discussion")
 def get_github_discussion(
     dataset_id: uuid.UUID,
@@ -1311,22 +1257,6 @@ def get_github_discussion(
                 }
             },
         )
-
-
-@router.post("/title")
-def update_title_url_dataset(
-    dataset_id: uuid.UUID,
-    current_user: Annotated[User, Depends(get_current_active_user)],
-    title: str,
-    db: Session = Depends(get_db),
-):
-    """
-    Update a datasets title.
-    """
-    dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expert_or_owner(current_user, dataset)
-    dataset_crud.update_dataset_title(db=db, dataset_id=dataset_id, title=title)
-    return {"status_code": 200, "message": "Dataset title updated successfully"}
 
 
 @router.get("/{dataset_id}/download")

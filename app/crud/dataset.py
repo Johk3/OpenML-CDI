@@ -5,20 +5,6 @@ from app.schemas import datasets as schemas
 import uuid
 
 
-def create_dataset(db: Session, dataset: schemas.DatasetCreate) -> schemas.Dataset:
-    new_dataset = models.Dataset(
-        title=dataset.title,
-        dataset_metadata=dataset.dataset_metadata,
-        owner_id=dataset.owner_id,
-        status=dataset.status,
-        issue_url=dataset.issue_url,
-    )
-    db.add(new_dataset)
-    db.commit()
-    db.refresh(new_dataset)
-    return schemas.Dataset.model_validate(new_dataset)
-
-
 def get_dataset(db: Session, dataset_id: uuid.UUID) -> schemas.Dataset | None:
     db_dataset = (
         db.query(models.Dataset).filter(models.Dataset.id == dataset_id).first()
@@ -35,17 +21,6 @@ def _get_dataset(db: Session, dataset_id: uuid.UUID) -> models.Dataset:
     if db_dataset:
         return db_dataset
     raise (ValueError("Dataset not found"))
-
-
-def update_dataset_owner(
-    db: Session, dataset_id: uuid.UUID, new_owner_id: uuid.UUID
-) -> schemas.Dataset:
-    db_dataset = _get_dataset(db, dataset_id)
-    db_dataset.owner_id = new_owner_id
-
-    db.commit()
-    db.refresh(db_dataset)
-    return schemas.Dataset.model_validate(db_dataset)
 
 
 def update_dataset_metadata(
@@ -66,16 +41,6 @@ def update_dataset_status(
 ) -> schemas.Dataset:
     db_dataset = _get_dataset(db, dataset_id)
     db_dataset.status = status
-    db.commit()
-    db.refresh(db_dataset)
-    return schemas.Dataset.model_validate(db_dataset)
-
-
-def update_dataset_issue_url(
-    db: Session, dataset_id: uuid.UUID, issue_url: str
-) -> schemas.Dataset:
-    db_dataset = _get_dataset(db, dataset_id)
-    db_dataset.issue_url = issue_url
     db.commit()
     db.refresh(db_dataset)
     return schemas.Dataset.model_validate(db_dataset)

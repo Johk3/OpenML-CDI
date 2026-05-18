@@ -14,10 +14,6 @@ class DatasetBase(BaseModel):
     issue_url: str = ""
 
 
-class DatasetCreate(DatasetBase):
-    status: Statuses = Statuses.PENDING_UPLOAD
-
-
 class Dataset(DatasetBase):
     id: UUID
     created_at: datetime
