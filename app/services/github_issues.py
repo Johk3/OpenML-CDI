@@ -452,7 +452,9 @@ def create_issue_for_dataset(
 
     attempts = max(1, max_attempts)
     last_error: GitHubAPIError | None = None
+    final_attempt = 0
     for attempt in range(1, attempts + 1):
+        final_attempt = attempt
         try:
             html_url = create_issue(
                 settings=settings,
@@ -524,7 +526,7 @@ def create_issue_for_dataset(
         state=_github_issue_failure_state(
             reason=last_error.reason,
             retryable=last_error.retryable,
-            attempts=attempt,
+            attempts=final_attempt,
             message=last_error.user_message,
         ),
     )

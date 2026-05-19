@@ -633,7 +633,7 @@ def _storage_bucket(storage: Any) -> str:
 
 
 def _original_path_from_storage_key(storage_key: str) -> str:
-    parts = PurePosixPath(storage_key).parts
+    parts = list(PurePosixPath(storage_key).parts)
     if len(parts) > 2 and parts[0] in {"datasets", "quarantine"}:
         return PurePosixPath(*parts[2:]).as_posix()
     if len(parts) > 1:
@@ -642,7 +642,7 @@ def _original_path_from_storage_key(storage_key: str) -> str:
 
 
 def _relative_path_from_storage_key(storage_key: str) -> str:
-    parts = PurePosixPath(storage_key).parts
+    parts = list(PurePosixPath(storage_key).parts)
     if not parts:
         return storage_key
 

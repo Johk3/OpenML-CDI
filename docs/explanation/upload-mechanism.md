@@ -8,7 +8,6 @@ For the detailed storage contract, environment variables, MinIO setup, bucket CO
 
 - Use `STORAGE_BACKEND=s3` for production and production-like development.
 - Use `STORAGE_BACKEND=local` for simple local development and tests that do not need object-storage behavior.
-- Avoid `STORAGE_BACKEND=smart` for release verification because its local fallback can hide S3 configuration errors.
 
 - **S3 backend**: Browser uploads are created under a `quarantine/` prefix through short-lived upload contracts.
 - **Local backend**: Local development stores upload objects under the configured `LOCAL_UPLOAD_DIR`.

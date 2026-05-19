@@ -2,10 +2,12 @@ import uuid
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
+from typing import cast
 from zipfile import ZipFile
 
 import app.services.scan as scan_service
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -108,6 +110,10 @@ def _confirm_upload(scan_client: TestClient, dataset_id: uuid.UUID, access_token
     )
 
 
+def _client_app(client: TestClient) -> FastAPI:
+    return cast(FastAPI, client.app)
+
+
 def _zip_bytes(entries: dict[str, bytes]) -> bytes:
     payload = BytesIO()
     with ZipFile(payload, "w") as archive:
@@ -132,7 +138,7 @@ def test_confirm_upload_promotes_clean_file_and_marks_dataset_pending_review(
         filename="clean.csv",
         storage_key=storage_key,
     )
-    scan_client.app.state.storage.write_bytes(storage_key, payload)
+    _client_app(scan_client).state.storage.write_bytes(storage_key, payload)
 
     fake_client = _FakeClamDClient({"ignored": ("OK", None)})
     _patch_clamd(monkeypatch, fake_client)
@@ -155,7 +161,7 @@ def test_confirm_upload_promotes_clean_file_and_marks_dataset_pending_review(
         "engine": "clamav",
     }
     final_path = (
-        Path(scan_client.app.state.settings.storage.local_upload_dir)
+        Path(_client_app(scan_client).state.settings.storage.local_upload_dir)
         / "ready"
         / str(dataset_id)
         / "clean.csv"
@@ -163,7 +169,9 @@ def test_confirm_upload_promotes_clean_file_and_marks_dataset_pending_review(
     assert final_path.read_bytes() == payload
     assert len(fake_client.scanned_paths) == 1
     assert Path(fake_client.scanned_paths[0]).name.endswith("_clean.csv")
-    quarantine_dir = Path(scan_client.app.state.settings.storage.quarantine_dir)
+    quarantine_dir = Path(
+        _client_app(scan_client).state.settings.storage.quarantine_dir
+    )
     assert not list(quarantine_dir.glob("*"))
 
 
@@ -191,7 +199,7 @@ def test_confirm_upload_promotes_clean_file_when_storage_key_is_sanitized(
     dataset_id = uuid.UUID(body["id"])
     storage_key = body["upload_contracts"][0]["object_key"]
     assert storage_key.endswith("Fundamentals_of_Software_Architecture_sample.pdf")
-    scan_client.app.state.storage.write_bytes(storage_key, payload)
+    _client_app(scan_client).state.storage.write_bytes(storage_key, payload)
 
     fake_client = _FakeClamDClient({"ignored": ("OK", None)})
     _patch_clamd(monkeypatch, fake_client)
@@ -257,7 +265,7 @@ def test_confirm_upload_rejects_zip_entries_that_do_not_match_manifest(
     body = upload_response.json()
     dataset_id = uuid.UUID(body["id"])
     storage_key = body["upload_contracts"][0]["object_key"]
-    scan_client.app.state.storage.write_bytes(storage_key, zip_payload)
+    _client_app(scan_client).state.storage.write_bytes(storage_key, zip_payload)
     fake_client = _FakeClamDClient({"ignored": ("OK", None)})
     _patch_clamd(monkeypatch, fake_client)
 
@@ -287,7 +295,7 @@ def test_confirm_upload_marks_dataset_quarantined_when_file_is_infected(
         filename="infected.csv",
         storage_key=storage_key,
     )
-    scan_client.app.state.storage.write_bytes(storage_key, b"infected-bytes")
+    _client_app(scan_client).state.storage.write_bytes(storage_key, b"infected-bytes")
 
     fake_client = _FakeClamDClient({"ignored": ("FOUND", "Eicar-Test-Signature")})
     _patch_clamd(
@@ -306,13 +314,15 @@ def test_confirm_upload_marks_dataset_quarantined_when_file_is_infected(
     assert dataset.dataset_metadata["objects"][0]["scan_state"] == "infected"
     assert dataset.dataset_metadata["objects"][0]["download_state"] == "unavailable"
     final_path = (
-        Path(scan_client.app.state.settings.storage.local_upload_dir)
+        Path(_client_app(scan_client).state.settings.storage.local_upload_dir)
         / "ready"
         / str(dataset_id)
         / "infected.csv"
     )
     assert not final_path.exists()
-    quarantine_dir = Path(scan_client.app.state.settings.storage.quarantine_dir)
+    quarantine_dir = Path(
+        _client_app(scan_client).state.settings.storage.quarantine_dir
+    )
     assert not list(quarantine_dir.glob("*"))
 
 
@@ -331,7 +341,9 @@ def test_confirm_upload_marks_dataset_quarantined_when_clamd_is_unavailable(
         filename="offline.csv",
         storage_key=storage_key,
     )
-    scan_client.app.state.storage.write_bytes(storage_key, b"feature,target\n2,1\n")
+    _client_app(scan_client).state.storage.write_bytes(
+        storage_key, b"feature,target\n2,1\n"
+    )
 
     _patch_clamd(
         monkeypatch,
@@ -349,11 +361,13 @@ def test_confirm_upload_marks_dataset_quarantined_when_clamd_is_unavailable(
     assert dataset.dataset_metadata["objects"][0]["scan_state"] == "error"
     assert dataset.dataset_metadata["objects"][0]["download_state"] == "unavailable"
     final_path = (
-        Path(scan_client.app.state.settings.storage.local_upload_dir)
+        Path(_client_app(scan_client).state.settings.storage.local_upload_dir)
         / "ready"
         / str(dataset_id)
         / "offline.csv"
     )
-    quarantine_dir = Path(scan_client.app.state.settings.storage.quarantine_dir)
+    quarantine_dir = Path(
+        _client_app(scan_client).state.settings.storage.quarantine_dir
+    )
     assert not final_path.exists()
     assert not list(quarantine_dir.glob("*"))

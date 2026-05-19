@@ -4,11 +4,10 @@ This document is the source of truth for the S3-compatible storage path used by 
 
 ## Storage Backends
 
-| Backend | Intended use                                                      | Notes                                                                                                                                                               |
-| ------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `s3`    | Production and production-like development                        | Stores upload objects in an app-owned S3-compatible bucket. Required for direct browser upload contracts and realistic scan/promotion behavior.                     |
-| `local` | Unit tests, simple local development, and fallback-free debugging | Stores files below `LOCAL_UPLOAD_DIR`. Use this only when object-storage behavior is not under test.                                                                |
-| `smart` | Legacy compatibility path                                         | Attempts S3 through `smart_open` and falls back to local storage. Do not use it for production readiness checks because it can hide storage configuration failures. |
+| Backend | Intended use                                                      | Notes                                                                                                                                           |
+| ------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `s3`    | Production and production-like development                        | Stores upload objects in an app-owned S3-compatible bucket. Required for direct browser upload contracts and realistic scan/promotion behavior. |
+| `local` | Unit tests, simple local development, and fallback-free debugging | Stores files below `LOCAL_UPLOAD_DIR`. Use this only when object-storage behavior is not under test.                                            |
 
 `STORAGE_BACKEND=s3` intentionally requires `S3_BUCKET`. If the bucket is missing or unreachable, startup or storage operations should fail visibly instead of silently switching to local storage.
 

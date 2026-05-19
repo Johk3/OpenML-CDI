@@ -2,11 +2,13 @@ import uuid
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
+from typing import cast
 from zipfile import ZipFile
 
 import app.services.scan as scan_service
 import pytest
 from botocore.exceptions import ClientError
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -95,12 +97,16 @@ class _MemoryS3Client:
 
     def get_object(self, **kwargs):
         obj = self._object_or_raise(kwargs["Key"])
-        return {"Body": _MemoryBody(obj["body"])}
+        body = obj["body"]
+        assert isinstance(body, bytes)
+        return {"Body": _MemoryBody(body)}
 
     def head_object(self, **kwargs):
         obj = self._object_or_raise(kwargs["Key"])
+        body = obj["body"]
+        assert isinstance(body, bytes)
         return {
-            "ContentLength": len(obj["body"]),
+            "ContentLength": len(body),
             "ContentType": obj["content_type"],
             "ETag": f'"{obj["etag"]}"',
         }
@@ -150,6 +156,10 @@ def _storage_for_backend(backend_name: str, tmp_path: Path):
 
 def _put_upload_object(storage, storage_key: str, payload: bytes) -> None:
     storage.write_bytes(storage_key, payload)
+
+
+def _client_app(client: TestClient) -> FastAPI:
+    return cast(FastAPI, client.app)
 
 
 def _headers_for_user(
@@ -206,7 +216,7 @@ def _promote_upload(
     body = upload_response.json()
     for contract in body["upload_contracts"]:
         _put_upload_object(
-            client.app.state.storage,
+            _client_app(client).state.storage,
             contract["object_key"],
             files[contract["original_path"]],
         )

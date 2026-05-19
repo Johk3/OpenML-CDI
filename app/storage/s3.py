@@ -7,6 +7,7 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
 
 from app.config import StorageSettings
+from app.storage.base import StorageBackend
 from .errors import (
     StorageBucketError,
     StorageConfigurationError,
@@ -33,7 +34,7 @@ class _S3ReadContext:
             close()
 
 
-class S3StorageBackend:
+class S3StorageBackend(StorageBackend):
     def __init__(self, settings: StorageSettings, client=None, presign_client=None):
         if not settings.s3_bucket:
             raise StorageConfigurationError("S3_BUCKET is required for S3 storage")
@@ -317,7 +318,7 @@ class S3StorageBackend:
         )
         if configured_endpoint:
             client_kwargs["endpoint_url"] = configured_endpoint
-        config_kwargs = {"signature_version": "s3v4"}
+        config_kwargs = {"signature_version": "s3v4", "s3": {}}
         if settings.s3_force_path_style:
             config_kwargs["s3"] = {"addressing_style": "path"}
         client_kwargs["config"] = Config(**config_kwargs)

@@ -35,7 +35,7 @@ def _add_dataset(
     issue_url: str = "https://github.com/openml/original/issues/1",
 ) -> uuid.UUID:
     dataset_id = uuid.uuid4()
-    metadata = {"name": title}
+    metadata: dict[str, object] = {"name": title}
     if checksums is not None:
         metadata["checksums"] = checksums
     db_test_session.add(

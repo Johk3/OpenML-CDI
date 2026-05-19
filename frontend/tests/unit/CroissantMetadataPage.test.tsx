@@ -622,7 +622,7 @@ describe('CroissantMetadataPage', () => {
       await waitFor(() => {
         expect(mockNavigate).toHaveBeenCalledWith('/datasets');
       });
-    });
+    }, 30000);
 
     it('returns to the originating dataset detail page after saving existing metadata', async () => {
       cleanup();

@@ -22,8 +22,7 @@ class GitHubPermissionLookupError(RuntimeError):
 
 
 class GitHubPermissionClient(Protocol):
-    def get_repository_permission(self, username: str) -> dict:
-        pass
+    def get_repository_permission(self, username: str) -> dict[str, object]: ...
 
 
 class GitHubRepositoryPermissionClient:
@@ -49,7 +48,7 @@ class GitHubRepositoryPermissionClient:
         self.repo = DEFAULT_GITHUB_PERMISSION_REPO
         self.api_base_url = api_base_url.rstrip("/")
 
-    def _get_headers(self) -> dict:
+    def _get_headers(self) -> dict[str, str]:
         headers = {
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": GITHUB_API_VERSION,
@@ -58,7 +57,7 @@ class GitHubRepositoryPermissionClient:
             headers["Authorization"] = f"Bearer {self.token}"
         return headers
 
-    def get_repository_permission(self, username: str) -> dict:
+    def get_repository_permission(self, username: str) -> dict[str, object]:
         safe_owner = quote(self.owner, safe="")
         safe_repo = quote(self.repo, safe="")
         safe_username = quote(username.strip(), safe="")
@@ -120,7 +119,7 @@ class GitHubRepositoryPermissionClient:
         return payload
 
 
-def map_github_repository_role(permission_payload: dict) -> Roles:
+def map_github_repository_role(permission_payload: dict[str, object]) -> Roles:
     role_name = str(permission_payload.get("role_name", "")).strip().lower()
     permission = str(permission_payload.get("permission", "")).strip().lower()
     if role_name in MAINTAINER_ROLE_NAMES or permission == "admin":

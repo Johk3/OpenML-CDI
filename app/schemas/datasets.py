@@ -40,7 +40,7 @@ class DatasetDetail(Dataset):
 class DatasetUploadURLRequest(BaseModel):
     name: str = Field(..., min_length=1)
     description: str | dict[str, Any] | None = None
-    filenames: list[str] = Field(..., min_items=1)
+    filenames: list[str] = Field(..., min_length=1)
     content_types: list[str | None] | None = None
     byte_sizes: list[int | None] | None = None
     checksums: list[str | None] | None = None

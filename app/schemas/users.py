@@ -1,6 +1,7 @@
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from uuid import UUID
 from datetime import datetime
+from typing import Iterable, Any
 import enum
 
 from app.database.models import Roles
@@ -23,7 +24,7 @@ class User(UserBase):
 
     @field_validator("datasets", mode="before")
     @classmethod
-    def normalize_dataset_ids(cls, value: object) -> list[UUID]:
+    def normalize_dataset_ids(cls, value: Iterable[Any] | None) -> list[UUID]:
         if value is None:
             return []
         return [item.id if hasattr(item, "id") else item for item in value]

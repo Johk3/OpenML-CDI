@@ -77,6 +77,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["auth"])
 
 
+def _refresh_jti_from_payload(payload: dict[str, Any]) -> str:
+    refresh_jti = payload.get("jti")
+    if not isinstance(refresh_jti, str) or not refresh_jti:
+        raise HTTPException(status_code=401, detail="Invalid JTI")
+    return refresh_jti
+
+
 class GitHubOAuthConfigurationError(RuntimeError):
     def __init__(self, missing_values: list[str]):
         super().__init__("GitHub OAuth settings are incomplete")
@@ -373,12 +380,12 @@ def refresh_access(
     if not refresh_token:
         raise HTTPException(status_code=401, detail="Refresh token missing")
     decoded_jwt = decode_refresh_JWT(refresh_token)
-    refresh_token = decoded_jwt.get("jti", "")
+    refresh_jti = _refresh_jti_from_payload(decoded_jwt)
     if decoded_jwt.get("type") != "refresh":
         raise HTTPException(status_code=401, detail="Invalid JTI")
     try:
         user, family_id = verify_jti(
-            db, refresh_token
+            db, refresh_jti
         )  # committed in create_tokens -> update_jti
     except TokenReuseDetectedError:
         raise HTTPException(status_code=401, detail="Invalid JTI")
@@ -405,8 +412,8 @@ def logout(
     if not refresh_token:
         raise HTTPException(status_code=401, detail="Refresh token missing")
     decoded_jwt = decode_refresh_JWT(refresh_token)
-    refresh_token = decoded_jwt.get("jti", "")
-    _, family_id = verify_jti(db, refresh_token)
+    refresh_jti = _refresh_jti_from_payload(decoded_jwt)
+    _, family_id = verify_jti(db, refresh_jti)
     if not family_id:
         raise HTTPException(status_code=401, detail="Invalid family ID")
     revoke_family_crud(db, family_id)

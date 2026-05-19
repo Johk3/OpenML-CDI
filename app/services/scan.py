@@ -106,23 +106,24 @@ def _set_scan_metadata(dataset: Dataset, scan_result: dict[str, Any]) -> None:
 
 def _get_relative_path(storage_key: str) -> Path:
     """Extract the relative file path from a storage key."""
-    parts = Path(storage_key).parts
+    parts = list(Path(storage_key).parts)
     if not parts:
         return Path("unknown.bin")
-
+    # Fallback to just the filename.
+    filename = Path(parts[-1])
+    if parts[0] not in {"datasets", "quarantine"}:
+        return filename
     # Handles many files uploaded: {datasets|quarantine}/{batch_uuid}/{path}
-    if parts[0] in {"datasets", "quarantine"} and len(parts) > 2:
+    if len(parts) > 2:
         return Path(*parts[2:])
-
     # Handles single file uploaded: {datasets|quarantine}/{uuid}_{filename}
-    if parts[0] in {"datasets", "quarantine"} and len(parts) == 2:
+    if len(parts) == 2:
         name = parts[1]
         if "_" in name:
             return Path(name.split("_", 1)[1])
         return Path(name)
-
     # Fallback to just the filename.
-    return Path(parts[-1])
+    return filename
 
 
 def _copy_to_quarantine(storage: Any, storage_key: str, quarantine_path: Path) -> None:

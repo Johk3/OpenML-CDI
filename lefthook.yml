@@ -18,6 +18,10 @@ pre-commit:
       glob: "**/*.py"
       run: flake8 {staged_files}
 
+    pyright:
+      glob: "app/**/*.py"
+      run: pyright {staged_files}
+
     # JavaScript/TypeScript (React/Frontend)
     eslint:
       root: frontend
@@ -47,4 +51,4 @@ commit-msg:
   commands:
     commitlint:
       root: frontend
-      run: pnpm exec commitlint --edit {1} 
+      run: pnpm exec commitlint --edit {1}

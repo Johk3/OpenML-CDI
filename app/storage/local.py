@@ -4,13 +4,15 @@ import shutil
 from pathlib import Path
 from uuid import uuid4
 
+from app.storage.base import StorageBackend
+
 from .errors import StorageObjectNotFoundError, StorageVerificationError
 from .types import MultipartUpload, ObjectMetadata, UploadTarget
 
 SAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
 
 
-class LocalStorageBackend:
+class LocalStorageBackend(StorageBackend):
     def __init__(self, root_dir: str | Path):
         """Store uploads under a configured local root directory."""
         self._root = Path(root_dir).resolve()

@@ -43,7 +43,7 @@ from app.crud import dataset as dataset_crud
 from app.database.models import Dataset as DatasetModel
 import uuid
 from uuid import uuid4
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal, NoReturn
 from pathlib import Path, PurePosixPath
 from app.services.scan import scan_uploaded_files
 from app.services.dataset_objects import (
@@ -223,6 +223,7 @@ def create_upload_url(
             )
         )
 
+    dataset_metadata: dict[str, Any]
     if payload.description is None:
         dataset_metadata = {"description": ""}
     elif isinstance(payload.description, dict):
@@ -305,11 +306,14 @@ def _create_upload_contract_url(
             storage_key,
             content_type=content_type,
             expires_seconds=expires_seconds,
+            request=request,
         )
     return f"{request.url_for('upload_file', storage_key=storage_key)}"
 
 
-def _upload_mode_for_contract(*, request: Request, byte_size: int | None) -> str:
+def _upload_mode_for_contract(
+    *, request: Request, byte_size: int | None
+) -> Literal["direct", "multipart"]:
     storage = request.app.state.storage
     if (
         storage.backend_name() == "s3"
@@ -346,7 +350,7 @@ def initiate_multipart_upload(
 ) -> DatasetMultipartUploadResponse:
     storage = _require_multipart_storage(request)
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expert_or_owner(current_user, dataset)
+    dataset = expert_or_owner(current_user, dataset)
     metadata = dict(dataset.dataset_metadata or {})
     upload_object = _get_quarantine_upload_object(metadata, payload.object_key)
     expires_seconds = request.app.state.settings.upload.expires_seconds
@@ -410,7 +414,7 @@ def create_multipart_part_url(
 
     storage = _require_multipart_storage(request)
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expert_or_owner(current_user, dataset)
+    dataset = expert_or_owner(current_user, dataset)
     metadata = dict(dataset.dataset_metadata or {})
     _get_active_multipart_upload_session(metadata, upload_id, payload.object_key)
     expires_seconds = request.app.state.settings.upload.expires_seconds
@@ -450,7 +454,7 @@ def list_multipart_parts(
 ) -> DatasetMultipartPartsResponse:
     storage = _require_multipart_storage(request)
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expert_or_owner(current_user, dataset)
+    dataset = expert_or_owner(current_user, dataset)
     metadata = dict(dataset.dataset_metadata or {})
     _get_active_multipart_upload_session(metadata, upload_id, object_key)
 
@@ -491,7 +495,7 @@ def complete_multipart_upload(
 ):
     storage = _require_multipart_storage(request)
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expert_or_owner(current_user, dataset)
+    dataset = expert_or_owner(current_user, dataset)
     metadata = dict(dataset.dataset_metadata or {})
     upload_object = _get_quarantine_upload_object(metadata, payload.object_key)
     session = _get_multipart_upload_session(
@@ -626,7 +630,7 @@ def abort_multipart_upload(
 ) -> None:
     storage = _require_multipart_storage(request)
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expert_or_owner(current_user, dataset)
+    dataset = expert_or_owner(current_user, dataset)
     metadata = dict(dataset.dataset_metadata or {})
     session = _get_active_multipart_upload_session(metadata, upload_id, object_key)
 
@@ -663,7 +667,7 @@ def confirm_upload(
     db: Session = Depends(get_db),
 ):
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expert_or_owner(current_user, dataset)
+    dataset = expert_or_owner(current_user, dataset)
     settings = request.app.state.settings
 
     metadata = dict(dataset.dataset_metadata or {})
@@ -672,8 +676,10 @@ def confirm_upload(
         # Fallback for single-file datasets
         storage_key = metadata.get("storage_key")
         filename = metadata.get("filename")
-        if storage_key or filename:
-            storage_keys = [storage_key or filename]
+        if isinstance(storage_key, str) and storage_key:
+            storage_keys = [storage_key]
+        elif isinstance(filename, str) and filename:
+            storage_keys = [filename]
 
     if not storage_keys:
         raise HTTPException(
@@ -755,8 +761,8 @@ def confirm_upload(
     }
 
 
-def expert_or_owner(current_user: User, dataset: Dataset | None) -> None:
-    if not dataset or (
+def expert_or_owner(current_user: User, dataset: Dataset | None) -> Dataset:
+    if dataset is None or (
         dataset.owner_id != current_user.id and current_user.role != Roles.EXPERT
     ):
         raise HTTPException(
@@ -764,6 +770,7 @@ def expert_or_owner(current_user: User, dataset: Dataset | None) -> None:
             status_code=403,
             detail="Not authorized to access this dataset",
         )
+    return dataset
 
 
 def _metadata_record(value: object) -> dict | None:
@@ -1374,7 +1381,7 @@ def _delete_failed_upload(
         db.rollback()
 
 
-def _dataset_detail_response(dataset: DatasetModel) -> DatasetDetail:
+def _dataset_detail_response(dataset: DatasetModel | Dataset) -> DatasetDetail:
     metadata = dict(dataset.dataset_metadata or {})
     storage_objects = get_dataset_objects(metadata)
     lifecycle = lifecycle_summary(dataset)
@@ -1397,7 +1404,7 @@ def _dataset_detail_response(dataset: DatasetModel) -> DatasetDetail:
     )
 
 
-def _dataset_list_response(dataset: DatasetModel) -> DatasetListItem:
+def _dataset_list_response(dataset: DatasetModel | Dataset) -> DatasetListItem:
     lifecycle = lifecycle_summary(dataset)
     download_available = bool(lifecycle["download"]["available"])
     return DatasetListItem(
@@ -1467,10 +1474,8 @@ def get_dataset(
     Retrieve info about a dataset.
     """
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expert_or_owner(current_user, dataset)
-    if dataset:
-        return _dataset_detail_response(dataset)
-    raise HTTPException(status_code=404, detail="Dataset not found")
+    dataset = expert_or_owner(current_user, dataset)
+    return _dataset_detail_response(dataset)
 
 
 @router.get("/{dataset_id}", response_model=DatasetDetail)
@@ -1483,10 +1488,8 @@ def get_dataset_detail(
     Retrieve a dataset detail view with stable UI links and storage object metadata.
     """
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expert_or_owner(current_user, dataset)
-    if dataset:
-        return _dataset_detail_response(dataset)
-    raise HTTPException(status_code=404, detail="Dataset not found")
+    dataset = expert_or_owner(current_user, dataset)
+    return _dataset_detail_response(dataset)
 
 
 @router.post("/delete")
@@ -1589,7 +1592,7 @@ def update_metadata_dataset(
     Update a datasets metadata.
     """
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expert_or_owner(current_user, dataset)
+    dataset = expert_or_owner(current_user, dataset)
     settings = request.app.state.settings
     metadata_to_save = (
         metadata
@@ -1657,11 +1660,11 @@ def get_github_discussion(
     Proxy GitHub issue data and comments for the dataset.
     """
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expert_or_owner(current_user, dataset)
+    dataset = expert_or_owner(current_user, dataset)
 
-    issue_url = dataset.issue_url if dataset else ""
+    issue_url = dataset.issue_url
     if not issue_url:
-        github_state = lifecycle_summary(dataset)["github"] if dataset else {}
+        github_state = lifecycle_summary(dataset)["github"]
         state = github_state.get("state")
         if state in {"pending", "failed"}:
             return {
@@ -1703,9 +1706,7 @@ def download_dataset(
     Download the dataset file(s).
     """
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
-    expert_or_owner(current_user, dataset)
-    if dataset is None:
-        raise HTTPException(status_code=404, detail="Dataset not found")
+    dataset = expert_or_owner(current_user, dataset)
 
     downloadable_objects = _downloadable_objects(dataset)
     storage = request.app.state.storage
@@ -1823,7 +1824,7 @@ def _read_download_file(storage, storage_key: str) -> bytes:
         _close_download_file(context)
 
 
-def _raise_download_storage_error(error: Exception) -> None:
+def _raise_download_storage_error(error: Exception) -> NoReturn:
     if isinstance(error, (StorageObjectNotFoundError, FileNotFoundError, KeyError)):
         raise HTTPException(
             status_code=http_status.HTTP_404_NOT_FOUND,
