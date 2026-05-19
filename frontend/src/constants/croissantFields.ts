@@ -29,6 +29,7 @@ export const CROISSANT_GENERATED_FIELDS: GeneratedFieldDef[] = [
       jsonPath: 'cr:jsonPath',
       key: 'cr:key',
       md5: 'cr:md5',
+      openml: 'https://www.openml.org/ns/',
       parentField: 'cr:parentField',
       path: 'cr:path',
       personalSensitiveInformation: 'cr:personalSensitiveInformation',
@@ -95,8 +96,24 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     inputType: 'url',
     required: true,
     placeholder: 'https://creativecommons.org/licenses/by/4.0/',
+    options: [
+      {
+        label: 'CC BY 4.0',
+        value: 'https://creativecommons.org/licenses/by/4.0/',
+      },
+      {
+        label: 'CC0 1.0',
+        value: 'https://creativecommons.org/publicdomain/zero/1.0/',
+      },
+      {
+        label: 'Apache-2.0',
+        value: 'https://www.apache.org/licenses/LICENSE-2.0',
+      },
+    ],
+    allowCustomValue: true,
+    customValueLabel: 'Custom license URL',
     helperText:
-      'URL of the license for this dataset. Without one, others cannot legally reuse your data. Common options: CC BY 4.0, CC0 1.0, Apache-2.0.',
+      'Choose a common license or provide the URL for another license. Without one, others cannot legally reuse your data.',
   },
   {
     id: 'url',
@@ -104,9 +121,10 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     section: 'dataset',
     inputType: 'url',
     required: true,
+    expertOnly: true,
     placeholder: 'https://github.com/yourorg/your-dataset',
     helperText:
-      'The main web page for this dataset. A GitHub repo, Zenodo record, or institutional page works well.',
+      'The canonical page for this dataset. The app generates this from the dataset record; experts can adjust it during review.',
   },
   {
     id: 'creator',
@@ -260,6 +278,48 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
       'The real-world phenomena captured in this dataset, separate from column names. Examples: temperature, sentiment score, blood pressure.',
   },
 
+  // ── dataset: OpenML handoff hints ────────────────────────────────────────
+
+  {
+    id: 'openml:defaultTargetAttribute',
+    label: 'Default Target Attribute',
+    section: 'dataset',
+    inputType: 'text',
+    required: false,
+    placeholder: 'class',
+    helperText:
+      'The column experts should treat as the default target attribute when creating the OpenML dataset.',
+  },
+  {
+    id: 'openml:ignoreAttribute',
+    label: 'Ignore Attribute(s)',
+    section: 'dataset',
+    inputType: 'multi-text',
+    required: false,
+    placeholder: 'internal_id',
+    helperText:
+      'Columns that should usually be ignored for modelling, such as leakage fields or internal bookkeeping columns.',
+  },
+  {
+    id: 'openml:rowIdAttribute',
+    label: 'Row ID Attribute',
+    section: 'dataset',
+    inputType: 'text',
+    required: false,
+    placeholder: 'id',
+    helperText: 'The column that uniquely identifies each row, if one exists.',
+  },
+  {
+    id: 'openml:taskType',
+    label: 'Expected Task Type',
+    section: 'dataset',
+    inputType: 'select',
+    required: false,
+    options: ['classification', 'regression', 'clustering', 'other'],
+    helperText:
+      'Optional OpenML handoff hint for experts. This does not create an OpenML task automatically.',
+  },
+
   // ── dataset: Croissant-specific optional ─────────────────────────────────
 
   {
@@ -305,6 +365,17 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
   // ── distribution: FileObject ──────────────────────────────────────────────
 
   {
+    id: 'distribution.@id',
+    label: 'File Object ID',
+    section: 'distribution',
+    inputType: 'text',
+    required: false,
+    expertOnly: true,
+    placeholder: 'train.csv',
+    helperText:
+      'Stable JSON-LD identifier for this file object. Defaults to the uploaded file name; experts can adjust it during review.',
+  },
+  {
     id: 'distribution.name',
     label: 'File Name',
     section: 'distribution',
@@ -320,8 +391,10 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     section: 'distribution',
     inputType: 'url',
     required: true,
+    expertOnly: true,
     placeholder: 'https://example.com/data/train.csv',
-    helperText: 'A direct download URL for this file. Must be publicly accessible.',
+    helperText:
+      'A direct download URL for this file. The app generates this from the stored dataset; experts can adjust it during review.',
   },
   {
     id: 'distribution.encodingFormat',
@@ -350,9 +423,10 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     section: 'distribution',
     inputType: 'text',
     required: false,
+    expertOnly: true,
     placeholder: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
     helperText:
-      'The SHA-256 checksum of this file. Tools use it to verify the download is intact. Generate with `sha256sum <file>`.',
+      'The SHA-256 checksum of this file. This should match the stored file bytes; experts can adjust it during review if needed.',
     pattern: '^[A-Fa-f0-9]{64}$',
     patternMessage: 'Must be exactly 64 hexadecimal characters.',
   },
@@ -362,9 +436,10 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     section: 'distribution',
     inputType: 'text',
     required: false,
+    expertOnly: true,
     placeholder: 'd8e8fca2dc0f896fd7cb4cb0031ba249',
     helperText:
-      'The MD5 checksum of this file. SHA-256 is preferred, but MD5 is supported for legacy compatibility.',
+      'The MD5 checksum of this file. SHA-256 is preferred, but MD5 is supported for legacy compatibility. Experts can adjust it during review.',
     pattern: '^[A-Fa-f0-9]{32}$',
     patternMessage: 'Must be exactly 32 hexadecimal characters.',
   },
@@ -374,9 +449,10 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     section: 'distribution',
     inputType: 'text',
     required: false,
+    expertOnly: true,
     placeholder: '25585843 B',
     helperText:
-      'The size of the file in bytes (e.g. "25585843 B"). Used as informational metadata.',
+      'The stored file size in bytes (e.g. "25585843 B"). Experts can adjust it during review if storage metadata needs correction.',
   },
   {
     id: 'distribution.containedIn',
@@ -391,6 +467,17 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
 
   // ── fileSet: FileSet ──────────────────────────────────────────────────────
 
+  {
+    id: 'fileSet.@id',
+    label: 'File Set ID',
+    section: 'fileSet',
+    inputType: 'text',
+    required: false,
+    expertOnly: true,
+    placeholder: 'image-files',
+    helperText:
+      'Stable JSON-LD identifier for this file collection. Generated from the upload structure when possible; experts can adjust it during review.',
+  },
   {
     id: 'fileSet.name',
     label: 'File Set Name',
@@ -454,6 +541,16 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
   // ── recordSet ─────────────────────────────────────────────────────────────
 
   {
+    id: 'recordSet.@id',
+    label: 'Record Set ID',
+    section: 'recordSet',
+    inputType: 'text',
+    required: false,
+    placeholder: 'rows',
+    helperText:
+      'Stable JSON-LD identifier for this logical table. Other fields can reference this ID.',
+  },
+  {
     id: 'recordSet.name',
     label: 'Record Set Name',
     section: 'recordSet',
@@ -515,6 +612,16 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
 
   // ── field: identity and type ──────────────────────────────────────────────
 
+  {
+    id: 'field.@id',
+    label: 'Attribute ID',
+    section: 'field',
+    inputType: 'text',
+    required: false,
+    placeholder: 'rows/class',
+    helperText:
+      'Stable JSON-LD identifier for this attribute. Use this when another field references it.',
+  },
   {
     id: 'field.name',
     label: 'Column Name',

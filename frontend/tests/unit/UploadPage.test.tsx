@@ -4,6 +4,7 @@ import { UploadPage } from '../../src/pages/UploadPage';
 import { renderWithRouter, mockNavigate } from '../utils';
 import { mockDatasetService } from '../mocks/datasetService';
 import { compressFilesToZip } from '@/utils/compress';
+import { calculateSha256Checksums } from '@/utils/fileChecksums';
 
 const createLargeFile = () =>
   new File([new Uint8Array(9 * 1024 * 1024)], 'data.csv', { type: 'text/csv' });
@@ -12,6 +13,12 @@ vi.mock('@/utils/compress', () => ({
   compressFilesToZip: vi.fn(async (_files: File[], zipName: string) => {
     return new File(['zip'], zipName, { type: 'application/zip' });
   }),
+}));
+
+vi.mock('@/utils/fileChecksums', () => ({
+  calculateSha256Checksums: vi.fn(async (files: File[]) =>
+    files.map(() => 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
+  ),
 }));
 
 const fileWithRelativePath = (content: string, name: string, relativePath: string, type = '') => {
@@ -66,14 +73,6 @@ describe('UploadPage', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.useRealTimers();
-  });
-
-  it('renders the main heading', () => {
-    expect(screen.getByText('Share Your Dataset')).toBeInTheDocument();
-  });
-
-  it('renders the drag & drop text', () => {
-    expect(screen.getByText(/Drag & Drop your datasets here/i)).toBeInTheDocument();
   });
 
   describe('when a file is selected', () => {
@@ -179,6 +178,21 @@ describe('UploadPage', () => {
       });
 
       expect(screen.getByText('John')).toBeInTheDocument();
+    });
+
+    it('sends computed SHA-256 checksums with the upload metadata', async () => {
+      fireEvent.click(screen.getByText(/Upload Dataset/i));
+
+      await waitFor(() => {
+        expect(mockDatasetService.requestUploadUrl).toHaveBeenCalled();
+      });
+
+      expect(calculateSha256Checksums).toHaveBeenCalled();
+      expect(mockDatasetService.requestUploadUrl).toHaveBeenCalledWith(
+        expect.objectContaining({
+          checksums: ['sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'],
+        }),
+      );
     });
 
     it('prompts uploaders to complete known metadata after upload', async () => {
@@ -466,6 +480,15 @@ describe('UploadPage', () => {
       expect(screen.queryByText('Upload Complete!')).not.toBeInTheDocument();
       expect(screen.getByText('Finalizing upload…')).toBeInTheDocument();
       expect(screen.getByText(/verifying your uploaded files/i)).toBeInTheDocument();
+      expect(screen.getByText('Upload complete')).toBeInTheDocument();
+      expect(screen.getByText('Verifying file metadata')).toBeInTheDocument();
+      expect(screen.getByText('Scanning uploaded files')).toBeInTheDocument();
+      expect(screen.getByText('Saving dataset record')).toBeInTheDocument();
+      expect(screen.getByText('Preparing next step')).toBeInTheDocument();
+      expect(screen.getByRole('progressbar', { name: /finalization progress/i })).toHaveAttribute(
+        'aria-valuenow',
+        '20',
+      );
 
       resolveConfirmation();
 

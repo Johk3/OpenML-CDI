@@ -12,10 +12,12 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
+from copy import deepcopy
 from io import BytesIO
 from urllib.parse import quote
 from zipfile import BadZipFile, ZIP_DEFLATED, ZipFile
 import logging
+import re
 from app.database import get_db
 from app.schemas.datasets import (
     Dataset,
@@ -80,6 +82,16 @@ from app.database import SessionLocal
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 logger = logging.getLogger(__name__)
+
+SHA256_PATTERN = re.compile(r"^[A-Fa-f0-9]{64}$")
+MD5_PATTERN = re.compile(r"^[A-Fa-f0-9]{32}$")
+PROTECTED_CROISSANT_DISTRIBUTION_KEYS = {
+    "@id",
+    "contentUrl",
+    "contentSize",
+    "sha256",
+    "md5",
+}
 MULTIPART_UPLOADS_KEY = "multipart_uploads"
 MULTIPART_UPLOAD_THRESHOLD_BYTES = 8 * 1024 * 1024
 MULTIPART_UPLOAD_STATUS_ACTIVE = "active"
@@ -721,6 +733,319 @@ def expert_or_owner(current_user: User, dataset: Dataset | None) -> None:
         )
 
 
+def _metadata_record(value: object) -> dict | None:
+    return value if isinstance(value, dict) else None
+
+
+def _metadata_string(value: object) -> str | None:
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _metadata_number(value: object) -> int | float | None:
+    return (
+        value
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
+        else None
+    )
+
+
+def _dataset_page_url(app_base_url: str, dataset_id: uuid.UUID) -> str:
+    return f"{app_base_url.rstrip('/')}/datasets/{dataset_id}"
+
+
+def _dataset_download_url(app_base_url: str, dataset_id: uuid.UUID) -> str:
+    return f"{app_base_url.rstrip('/')}/api/datasets/{dataset_id}/download"
+
+
+def _checksum_fields(checksum: object) -> dict:
+    raw = _metadata_string(checksum)
+    if not raw:
+        return {}
+
+    algorithm, value = raw.split(":", 1) if ":" in raw else ("", raw)
+    if (algorithm == "sha256" or not algorithm) and SHA256_PATTERN.fullmatch(value):
+        return {"sha256": value}
+    if (algorithm == "md5" or not algorithm) and MD5_PATTERN.fullmatch(value):
+        return {"md5": value}
+    return {}
+
+
+def _generated_file_object_metadata(dataset: Dataset, app_base_url: str) -> list[dict]:
+    metadata = dataset.dataset_metadata or {}
+    download_url = _dataset_download_url(app_base_url, dataset.id)
+    objects = metadata.get("objects")
+
+    if isinstance(objects, list) and objects:
+        generated: list[dict] = []
+        for object_value in objects:
+            object_metadata = _metadata_record(object_value)
+            if not object_metadata:
+                continue
+
+            name = (
+                _metadata_string(object_metadata.get("original_path"))
+                or _metadata_string(object_metadata.get("object_key"))
+                or dataset.title
+            )
+            byte_size = _metadata_number(object_metadata.get("byte_size"))
+            generated.append(
+                {
+                    "@type": "cr:FileObject",
+                    "@id": name,
+                    "name": name,
+                    "contentUrl": download_url,
+                    **(
+                        {
+                            "encodingFormat": _metadata_string(
+                                object_metadata.get("content_type")
+                            )
+                        }
+                        if _metadata_string(object_metadata.get("content_type"))
+                        else {}
+                    ),
+                    **(
+                        {"contentSize": f"{byte_size:g} B"}
+                        if byte_size is not None
+                        else {}
+                    ),
+                    **_checksum_fields(object_metadata.get("checksum")),
+                }
+            )
+        return generated
+
+    filenames = metadata.get("filenames")
+    content_types = metadata.get("content_types")
+    content_sizes = metadata.get("byte_sizes")
+    checksums = metadata.get("checksums")
+
+    if not isinstance(filenames, list):
+        return []
+
+    generated = []
+    for index, filename in enumerate(filenames):
+        name = _metadata_string(filename) or f"file-{index + 1}"
+        byte_size = (
+            content_sizes[index]
+            if isinstance(content_sizes, list) and index < len(content_sizes)
+            else None
+        )
+        checksum = (
+            checksums[index]
+            if isinstance(checksums, list) and index < len(checksums)
+            else None
+        )
+        content_type = (
+            content_types[index]
+            if isinstance(content_types, list) and index < len(content_types)
+            else None
+        )
+        size = _metadata_number(byte_size)
+        generated.append(
+            {
+                "@type": "cr:FileObject",
+                "@id": name,
+                "name": name,
+                "contentUrl": download_url,
+                **(
+                    {"encodingFormat": _metadata_string(content_type)}
+                    if _metadata_string(content_type)
+                    else {}
+                ),
+                **({"contentSize": f"{size:g} B"} if size is not None else {}),
+                **_checksum_fields(checksum),
+            }
+        )
+    return generated
+
+
+def _generated_file_set_metadata(dataset: Dataset) -> list[dict]:
+    metadata = dataset.dataset_metadata or {}
+    directory_structure = _metadata_record(metadata.get("directory_structure"))
+    if not directory_structure or not isinstance(
+        directory_structure.get("paths"), list
+    ):
+        return []
+
+    name = (
+        _metadata_string(directory_structure.get("root"))
+        or _metadata_string(directory_structure.get("archive_path"))
+        or "uploaded-files"
+    )
+    return [{"@type": "cr:FileSet", "@id": name, "name": name}]
+
+
+def _generated_distribution_metadata(dataset: Dataset, app_base_url: str) -> list[dict]:
+    return [
+        *_generated_file_object_metadata(dataset, app_base_url),
+        *_generated_file_set_metadata(dataset),
+    ]
+
+
+def _distribution_metadata_items(metadata: dict) -> list[dict]:
+    distribution = metadata.get("distribution")
+    if not isinstance(distribution, list):
+        return []
+    return [item if isinstance(item, dict) else {} for item in distribution]
+
+
+def _distribution_identity_values(item: dict) -> set[str]:
+    return {
+        value
+        for value in (
+            _metadata_string(item.get("@id")),
+            _metadata_string(item.get("name")),
+        )
+        if value
+    }
+
+
+def _find_matching_distribution_item(
+    authoritative_item: dict,
+    candidate_items: list[dict],
+    used_indices: set[int],
+    *,
+    allow_single_fallback: bool,
+) -> dict | None:
+    authoritative_ids = _distribution_identity_values(authoritative_item)
+    if authoritative_ids:
+        for index, candidate in enumerate(candidate_items):
+            if index in used_indices:
+                continue
+            if authoritative_ids & _distribution_identity_values(candidate):
+                used_indices.add(index)
+                return candidate
+
+    if allow_single_fallback and candidate_items and 0 not in used_indices:
+        used_indices.add(0)
+        return candidate_items[0]
+
+    return None
+
+
+def _protected_distribution_values(
+    existing_item: dict | None, generated_item: dict | None
+) -> dict:
+    values: dict = {}
+    for key in PROTECTED_CROISSANT_DISTRIBUTION_KEYS:
+        if existing_item and key in existing_item:
+            values[key] = existing_item[key]
+        elif generated_item and key in generated_item:
+            values[key] = generated_item[key]
+    return values
+
+
+def _authoritative_distribution_values(
+    existing_distribution: list[dict],
+    generated_distribution: list[dict],
+) -> list[tuple[dict, dict | None]]:
+    if not existing_distribution:
+        return [
+            (generated_item, generated_item)
+            for generated_item in generated_distribution
+        ]
+
+    used_generated_indices: set[int] = set()
+    allow_single_fallback = (
+        len(existing_distribution) == 1 and len(generated_distribution) == 1
+    )
+    authoritative_values = []
+
+    for existing_item in existing_distribution:
+        generated_item = _find_matching_distribution_item(
+            existing_item,
+            generated_distribution,
+            used_generated_indices,
+            allow_single_fallback=allow_single_fallback,
+        )
+        authoritative_values.append((existing_item, generated_item))
+
+    return authoritative_values
+
+
+def _restore_owner_distribution_metadata(
+    submitted_distribution: object,
+    dataset: Dataset,
+    app_base_url: str,
+) -> list[dict] | None:
+    existing_distribution = _distribution_metadata_items(dataset.dataset_metadata or {})
+    generated_distribution = _generated_distribution_metadata(dataset, app_base_url)
+    authoritative_distribution = _authoritative_distribution_values(
+        existing_distribution, generated_distribution
+    )
+
+    submitted_items = (
+        [item for item in submitted_distribution if isinstance(item, dict)]
+        if isinstance(submitted_distribution, list)
+        else []
+    )
+
+    if not authoritative_distribution:
+        if not isinstance(submitted_distribution, list):
+            return None
+        return [
+            {
+                key: value
+                for key, value in item.items()
+                if key not in PROTECTED_CROISSANT_DISTRIBUTION_KEYS
+            }
+            for item in submitted_items
+        ]
+
+    used_submitted_indices: set[int] = set()
+    allow_single_fallback = (
+        len(authoritative_distribution) == 1 and len(submitted_items) == 1
+    )
+    restored_distribution = []
+
+    for authoritative_item, generated_item in authoritative_distribution:
+        restored_item = deepcopy(authoritative_item)
+        submitted_item = _find_matching_distribution_item(
+            authoritative_item,
+            submitted_items,
+            used_submitted_indices,
+            allow_single_fallback=allow_single_fallback,
+        )
+        if submitted_item:
+            for key, value in submitted_item.items():
+                if key not in PROTECTED_CROISSANT_DISTRIBUTION_KEYS:
+                    restored_item[key] = value
+
+        protected_values = _protected_distribution_values(
+            authoritative_item, generated_item
+        )
+        for key in PROTECTED_CROISSANT_DISTRIBUTION_KEYS:
+            if key in protected_values:
+                restored_item[key] = protected_values[key]
+            else:
+                restored_item.pop(key, None)
+        restored_distribution.append(restored_item)
+
+    return restored_distribution
+
+
+def _restore_owner_protected_croissant_metadata(
+    metadata: dict, dataset: Dataset, app_base_url: str
+) -> dict:
+    restored = deepcopy(metadata)
+    existing_metadata = dataset.dataset_metadata or {}
+
+    if "url" in restored:
+        restored["url"] = existing_metadata.get("url") or _dataset_page_url(
+            app_base_url, dataset.id
+        )
+
+    if "distribution" in restored:
+        restored_distribution = _restore_owner_distribution_metadata(
+            restored.get("distribution"), dataset, app_base_url
+        )
+        if restored_distribution is None:
+            restored.pop("distribution", None)
+        else:
+            restored["distribution"] = restored_distribution
+
+    return restored
+
+
 def ensure_status_update_allowed(
     dataset: Dataset,
     next_status: Statuses,
@@ -1219,28 +1544,35 @@ def update_metadata_dataset(
     """
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
     expert_or_owner(current_user, dataset)
+    settings = request.app.state.settings
+    metadata_to_save = (
+        metadata
+        if current_user.role == Roles.EXPERT
+        else _restore_owner_protected_croissant_metadata(
+            metadata, dataset, settings.email.app_base_url
+        )
+    )
     # Sync title if present in metadata
-    if isinstance(metadata, dict) and "name" in metadata:
+    if isinstance(metadata_to_save, dict) and "name" in metadata_to_save:
         dataset_crud.update_dataset_title(
-            db=db, dataset_id=dataset_id, title=metadata["name"]
+            db=db, dataset_id=dataset_id, title=metadata_to_save["name"]
         )
 
     dataset_crud.update_dataset_metadata(
-        db=db, dataset_id=dataset_id, metadata=metadata
+        db=db, dataset_id=dataset_id, metadata=metadata_to_save
     )
 
     if dataset.issue_url:
         from app.services.github_issues import update_issue_for_dataset
 
-        settings = request.app.state.settings
-        title = metadata.get("name", dataset.title)
+        title = metadata_to_save.get("name", dataset.title)
 
         background_tasks.add_task(
             update_issue_for_dataset,
             dataset_id=dataset_id,
             issue_url=dataset.issue_url,
             title=title,
-            metadata=metadata,
+            metadata=metadata_to_save,
             settings=settings.github_issues,
             app_base_url=settings.email.app_base_url,
         )

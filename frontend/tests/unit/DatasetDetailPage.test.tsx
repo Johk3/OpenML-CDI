@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, vi } from 'vitest';
-import { navigateTo } from '../utils';
+import { mockNavigate, navigateTo } from '../utils';
 import { mockDatasetService } from '../mocks/datasetService';
 import type { BackendDataset } from '@/types/dataset';
 import { useUserContext } from '@/hooks/useUserContext';
@@ -299,6 +299,45 @@ describe('DatasetDetailPage', () => {
     navigateTo('/datasets/ds-pending-review');
 
     expect(await screen.findByText(/approve or reject this dataset from the review queue/i));
+  });
+
+  it('lets experts open the metadata editor from reviewable dataset details', async () => {
+    mockDatasetService.getDataset.mockResolvedValueOnce(datasetWithLifecycle('pending_review'));
+    navigateTo('/datasets/ds-pending-review');
+
+    const editButton = await screen.findByRole('button', { name: /edit metadata/i });
+    fireEvent.click(editButton);
+
+    expect(mockNavigate).toHaveBeenCalledWith('/metadata', {
+      state: {
+        datasetId: 'ds-pending_review',
+        returnTo: '/datasets/ds-pending_review',
+      },
+    });
+  });
+
+  it('lets experts edit metadata after approval before publication', async () => {
+    mockDatasetService.getDataset.mockResolvedValueOnce(datasetWithLifecycle('approved'));
+    navigateTo('/datasets/ds-approved-edit');
+
+    expect(await screen.findByRole('button', { name: /edit metadata/i })).toBeInTheDocument();
+  });
+
+  it('hides metadata editing from non-expert users', async () => {
+    setUserRole('user');
+    mockDatasetService.getDataset.mockResolvedValueOnce(datasetWithLifecycle('pending_review'));
+    navigateTo('/datasets/ds-pending-review-uploader');
+
+    expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /edit metadata/i })).not.toBeInTheDocument();
+  });
+
+  it('does not show metadata editing after publication', async () => {
+    mockDatasetService.getDataset.mockResolvedValueOnce(datasetWithLifecycle('published'));
+    navigateTo('/datasets/ds-published');
+
+    expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /edit metadata/i })).not.toBeInTheDocument();
   });
 
   it('marks pending review downloads as not final approved', async () => {

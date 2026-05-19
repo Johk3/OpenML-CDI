@@ -331,8 +331,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({ onFilesSelect, c
       <div className="upload-processing-notice">
         <Info size={14} className="upload-processing-notice-icon" />
         <span>
-          Processing support may vary depending on your submission format so you'll see the status
-          after submission.
+          After upload, we’ll verify your files and show whether they’re ready for expert review.
         </span>
       </div>
     </div>

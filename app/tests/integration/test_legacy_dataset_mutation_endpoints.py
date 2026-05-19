@@ -164,6 +164,323 @@ def test_metadata_endpoint_allows_expert_to_update_metadata_and_title(
     assert dataset.dataset_metadata["name"] == "Expert updated title"
 
 
+def test_metadata_endpoint_preserves_storage_derived_metadata_for_owner(
+    client, db_test_session
+):
+    owner = _add_user(db_test_session)
+    dataset_id = _add_dataset(db_test_session, owner=owner, issue_url="")
+    original_sha256 = "a" * 64
+    original_md5 = "b" * 32
+
+    dataset = db_test_session.get(Dataset, dataset_id)
+    dataset.dataset_metadata = {
+        "name": "Original title",
+        "url": f"https://app.example/datasets/{dataset_id}",
+        "distribution": [
+            {
+                "@type": "cr:FileObject",
+                "@id": "original.csv",
+                "name": "original.csv",
+                "contentUrl": f"https://app.example/api/datasets/{dataset_id}/download",
+                "contentSize": "128 B",
+                "sha256": original_sha256,
+                "md5": original_md5,
+                "encodingFormat": "text/csv",
+            }
+        ],
+    }
+    db_test_session.commit()
+
+    response = client.post(
+        "/api/datasets/metadata",
+        headers=_headers(owner),
+        params={"dataset_id": str(dataset_id)},
+        json={
+            "name": "Owner updated title",
+            "description": "Owner updated description",
+            "url": "https://evil.example/datasets/other",
+            "distribution": [
+                {
+                    "@type": "cr:FileObject",
+                    "@id": "other.csv",
+                    "name": "renamed.csv",
+                    "contentUrl": "https://evil.example/download",
+                    "contentSize": "1 B",
+                    "sha256": "c" * 64,
+                    "md5": "d" * 32,
+                    "encodingFormat": "text/plain",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    db_test_session.refresh(dataset)
+    assert dataset.title == "Owner updated title"
+    assert dataset.dataset_metadata["description"] == "Owner updated description"
+    assert (
+        dataset.dataset_metadata["url"] == f"https://app.example/datasets/{dataset_id}"
+    )
+
+    distribution = dataset.dataset_metadata["distribution"][0]
+    assert distribution["@id"] == "original.csv"
+    assert (
+        distribution["contentUrl"]
+        == f"https://app.example/api/datasets/{dataset_id}/download"
+    )
+    assert distribution["contentSize"] == "128 B"
+    assert distribution["sha256"] == original_sha256
+    assert distribution["md5"] == original_md5
+    assert distribution["name"] == "renamed.csv"
+    assert distribution["encodingFormat"] == "text/plain"
+
+
+def test_metadata_endpoint_preserves_distribution_when_owner_submits_empty_list(
+    client, db_test_session
+):
+    owner = _add_user(db_test_session)
+    dataset_id = _add_dataset(db_test_session, owner=owner, issue_url="")
+
+    dataset = db_test_session.get(Dataset, dataset_id)
+    dataset.dataset_metadata = {
+        "name": "Original title",
+        "distribution": [
+            {
+                "@type": "cr:FileObject",
+                "@id": "original.csv",
+                "name": "original.csv",
+                "contentUrl": f"https://app.example/api/datasets/{dataset_id}/download",
+                "contentSize": "128 B",
+                "sha256": "a" * 64,
+            }
+        ],
+    }
+    db_test_session.commit()
+
+    response = client.post(
+        "/api/datasets/metadata",
+        headers=_headers(owner),
+        params={"dataset_id": str(dataset_id)},
+        json={"distribution": []},
+    )
+
+    assert response.status_code == 200
+    db_test_session.refresh(dataset)
+    assert dataset.dataset_metadata["distribution"] == [
+        {
+            "@type": "cr:FileObject",
+            "@id": "original.csv",
+            "name": "original.csv",
+            "contentUrl": f"https://app.example/api/datasets/{dataset_id}/download",
+            "contentSize": "128 B",
+            "sha256": "a" * 64,
+        }
+    ]
+
+
+def test_metadata_endpoint_matches_owner_distribution_by_name_not_position(
+    client, db_test_session
+):
+    owner = _add_user(db_test_session)
+    dataset_id = _add_dataset(db_test_session, owner=owner, issue_url="")
+
+    dataset = db_test_session.get(Dataset, dataset_id)
+    dataset.dataset_metadata = {
+        "name": "Original title",
+        "distribution": [
+            {
+                "@type": "cr:FileObject",
+                "@id": "a.csv",
+                "name": "a.csv",
+                "contentUrl": (
+                    f"https://app.example/api/datasets/{dataset_id}/download/a"
+                ),
+                "contentSize": "10 B",
+                "sha256": "a" * 64,
+            },
+            {
+                "@type": "cr:FileObject",
+                "@id": "b.csv",
+                "name": "b.csv",
+                "contentUrl": (
+                    f"https://app.example/api/datasets/{dataset_id}/download/b"
+                ),
+                "contentSize": "20 B",
+                "sha256": "b" * 64,
+            },
+        ],
+    }
+    db_test_session.commit()
+
+    response = client.post(
+        "/api/datasets/metadata",
+        headers=_headers(owner),
+        params={"dataset_id": str(dataset_id)},
+        json={
+            "distribution": [
+                {
+                    "@type": "cr:FileObject",
+                    "@id": "wrong-b.csv",
+                    "name": "b.csv",
+                    "description": "Updated B",
+                    "contentUrl": "https://evil.example/b",
+                    "contentSize": "1 B",
+                    "sha256": "c" * 64,
+                },
+                {
+                    "@type": "cr:FileObject",
+                    "@id": "wrong-a.csv",
+                    "name": "a.csv",
+                    "description": "Updated A",
+                    "contentUrl": "https://evil.example/a",
+                    "contentSize": "2 B",
+                    "sha256": "d" * 64,
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    db_test_session.refresh(dataset)
+
+    first, second = dataset.dataset_metadata["distribution"]
+    assert first["@id"] == "a.csv"
+    assert first["name"] == "a.csv"
+    assert first["description"] == "Updated A"
+    assert (
+        first["contentUrl"]
+        == f"https://app.example/api/datasets/{dataset_id}/download/a"
+    )
+    assert first["contentSize"] == "10 B"
+    assert first["sha256"] == "a" * 64
+
+    assert second["@id"] == "b.csv"
+    assert second["name"] == "b.csv"
+    assert second["description"] == "Updated B"
+    assert (
+        second["contentUrl"]
+        == f"https://app.example/api/datasets/{dataset_id}/download/b"
+    )
+    assert second["contentSize"] == "20 B"
+    assert second["sha256"] == "b" * 64
+
+
+def test_metadata_endpoint_generates_protected_metadata_from_upload_objects_for_owner(
+    client, db_test_session
+):
+    owner = _add_user(db_test_session)
+    dataset_id = _add_dataset(db_test_session, owner=owner, issue_url="")
+    original_sha256 = "e" * 64
+
+    dataset = db_test_session.get(Dataset, dataset_id)
+    dataset.dataset_metadata = {
+        "name": "Original title",
+        "objects": [
+            {
+                "original_path": "uploaded.csv",
+                "object_key": f"ready/{dataset_id}/uploaded.csv",
+                "byte_size": 512,
+                "checksum": f"sha256:{original_sha256}",
+            }
+        ],
+    }
+    db_test_session.commit()
+
+    response = client.post(
+        "/api/datasets/metadata",
+        headers=_headers(owner),
+        params={"dataset_id": str(dataset_id)},
+        json={
+            "url": "https://evil.example/datasets/other",
+            "distribution": [
+                {
+                    "@type": "cr:FileObject",
+                    "@id": "other.csv",
+                    "name": "uploaded.csv",
+                    "contentUrl": "https://evil.example/download",
+                    "contentSize": "1 B",
+                    "sha256": "f" * 64,
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    db_test_session.refresh(dataset)
+    assert (
+        dataset.dataset_metadata["url"]
+        == f"http://localhost:8000/datasets/{dataset_id}"
+    )
+
+    distribution = dataset.dataset_metadata["distribution"][0]
+    assert distribution["@id"] == "uploaded.csv"
+    assert (
+        distribution["contentUrl"]
+        == f"http://localhost:8000/api/datasets/{dataset_id}/download"
+    )
+    assert distribution["contentSize"] == "512 B"
+    assert distribution["sha256"] == original_sha256
+
+
+def test_metadata_endpoint_allows_expert_to_update_storage_derived_metadata(
+    client, db_test_session
+):
+    owner = _add_user(db_test_session)
+    expert = _add_user(db_test_session, role=Roles.EXPERT)
+    dataset_id = _add_dataset(db_test_session, owner=owner, issue_url="")
+
+    dataset = db_test_session.get(Dataset, dataset_id)
+    dataset.dataset_metadata = {
+        "name": "Original title",
+        "url": f"https://app.example/datasets/{dataset_id}",
+        "distribution": [
+            {
+                "@type": "cr:FileObject",
+                "@id": "original.csv",
+                "name": "original.csv",
+                "contentUrl": f"https://app.example/api/datasets/{dataset_id}/download",
+                "contentSize": "128 B",
+                "sha256": "a" * 64,
+                "md5": "b" * 32,
+            }
+        ],
+    }
+    db_test_session.commit()
+
+    response = client.post(
+        "/api/datasets/metadata",
+        headers=_headers(expert),
+        params={"dataset_id": str(dataset_id)},
+        json={
+            "url": "https://expert.example/datasets/canonical",
+            "distribution": [
+                {
+                    "@type": "cr:FileObject",
+                    "@id": "expert.csv",
+                    "name": "expert.csv",
+                    "contentUrl": "https://expert.example/download",
+                    "contentSize": "256 B",
+                    "sha256": "c" * 64,
+                    "md5": "d" * 32,
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    db_test_session.refresh(dataset)
+    assert (
+        dataset.dataset_metadata["url"] == "https://expert.example/datasets/canonical"
+    )
+
+    distribution = dataset.dataset_metadata["distribution"][0]
+    assert distribution["@id"] == "expert.csv"
+    assert distribution["contentUrl"] == "https://expert.example/download"
+    assert distribution["contentSize"] == "256 B"
+    assert distribution["sha256"] == "c" * 64
+    assert distribution["md5"] == "d" * 32
+
+
 def test_metadata_endpoint_rejects_other_users(client, db_test_session):
     owner = _add_user(db_test_session)
     other_user = _add_user(db_test_session)

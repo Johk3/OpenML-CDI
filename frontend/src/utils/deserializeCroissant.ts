@@ -6,11 +6,17 @@ function flatten(obj: Record<string, unknown>, prefix = ''): Record<string, unkn
 
   for (const [key, value] of Object.entries(obj)) {
     // Skip internal JSON-LD keys
-    if (key.startsWith('@')) continue;
+    if (key.startsWith('@') && key !== '@id') continue;
 
     const newKey = prefix ? `${prefix}.${key}` : key;
 
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    if (isJsonLdReference(value)) {
+      result[newKey] = (value as Record<string, unknown>)['@id'];
+    } else if (Array.isArray(value)) {
+      result[newKey] = value.map((item) =>
+        isJsonLdReference(item) ? (item as Record<string, unknown>)['@id'] : item,
+      );
+    } else if (value !== null && typeof value === 'object') {
       Object.assign(result, flatten(value as Record<string, unknown>, newKey));
     } else {
       result[newKey] = value;
@@ -20,6 +26,60 @@ function flatten(obj: Record<string, unknown>, prefix = ''): Record<string, unkn
   return result;
 }
 
+function isJsonLdReference(value: unknown): boolean {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    typeof (value as Record<string, unknown>)['@id'] === 'string' &&
+    Object.keys(value as Record<string, unknown>).every((key) => key === '@id')
+  );
+}
+
+function prefixFlattened(item: Record<string, unknown>, prefix: string): FormSection {
+  const flattened = flatten(item);
+  const prefixed: FormSection = {};
+
+  Object.entries(flattened).forEach(([key, val]) => {
+    prefixed[`${prefix}.${key}`] = val as FieldValue;
+  });
+
+  return prefixed;
+}
+
+function legacyOpenMlFields(dataset: FormSection): FormSection {
+  const migrated = { ...dataset };
+  const legacyFields = ['defaultTargetAttribute', 'ignoreAttribute', 'rowIdAttribute', 'taskType'];
+
+  legacyFields.forEach((field) => {
+    const legacyKey = `openml.${field}`;
+    const namespacedKey = `openml:${field}`;
+    if (legacyKey in migrated && !(namespacedKey in migrated)) {
+      migrated[namespacedKey] = migrated[legacyKey];
+    }
+    delete migrated[legacyKey];
+  });
+
+  return migrated;
+}
+
+function addRecordSetPrefixes(objList: unknown[]): RecordSetData[] {
+  if (!Array.isArray(objList)) return [];
+
+  return objList.map((item) => {
+    if (typeof item !== 'object' || item === null) return {};
+
+    const { field, ...recordSetFields } = item as Record<string, unknown>;
+    const prefixed = prefixFlattened(recordSetFields, 'recordSet') as RecordSetData;
+
+    if (Array.isArray(field)) {
+      prefixed.field = addPrefixes(field, 'field');
+    }
+
+    return prefixed;
+  });
+}
+
 // Add prefixes to items in a list
 function addPrefixes(objList: unknown[], prefix: string): FormSection[] {
   if (!Array.isArray(objList)) return [];
@@ -27,14 +87,7 @@ function addPrefixes(objList: unknown[], prefix: string): FormSection[] {
   return objList.map((item) => {
     if (typeof item !== 'object' || item === null) return {};
 
-    const flattened = flatten(item as Record<string, unknown>);
-    const prefixed: FormSection = {};
-
-    Object.entries(flattened).forEach(([key, val]) => {
-      prefixed[`${prefix}.${key}`] = val as FieldValue;
-    });
-
-    return prefixed;
+    return prefixFlattened(item as Record<string, unknown>, prefix);
   });
 }
 
@@ -68,21 +121,32 @@ export function deserializeCroissant(json: Record<string, unknown>): CroissantFo
     });
   }
 
-  result.dataset = flattenedDataset as FormSection;
+  result.dataset = legacyOpenMlFields(flattenedDataset as FormSection);
 
-  // Handle distribution
+  // Handle distribution. Croissant represents both FileObject and FileSet resources
+  // in distribution; the UI keeps them in separate editable sections.
   if (Array.isArray(json.distribution)) {
-    result.distribution = addPrefixes(json.distribution, 'distribution');
+    const distributionItems = json.distribution.filter((item) => {
+      if (typeof item !== 'object' || item === null) return false;
+      return (item as Record<string, unknown>)['@type'] !== 'cr:FileSet';
+    });
+    const fileSetItems = json.distribution.filter((item) => {
+      if (typeof item !== 'object' || item === null) return false;
+      return (item as Record<string, unknown>)['@type'] === 'cr:FileSet';
+    });
+
+    result.distribution = addPrefixes(distributionItems, 'distribution');
+    result.fileSet = addPrefixes(fileSetItems, 'fileSet');
   }
 
   //Handle fileSet
   if (Array.isArray(json.fileSet)) {
-    result.fileSet = addPrefixes(json.fileSet, 'fileSet');
+    result.fileSet = [...result.fileSet, ...addPrefixes(json.fileSet, 'fileSet')];
   }
 
   // Handle recordSet
   if (Array.isArray(json.recordSet)) {
-    result.recordSet = addPrefixes(json.recordSet, 'recordSet') as unknown as RecordSetData[];
+    result.recordSet = addRecordSetPrefixes(json.recordSet);
   }
 
   // Handle RAI

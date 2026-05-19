@@ -1,4 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { vi } from 'vitest';
 import { CroissantFieldInput } from '../../src/components/CroissantFieldInput';
@@ -177,5 +178,33 @@ describe('CroissantFieldInput', () => {
 
     // Check that standard inputs are replaced by parent select
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  });
+
+  it('uses display labels for select options while submitting their stored values', async () => {
+    const field: CroissantFieldDef = {
+      ...baseField,
+      id: 'license',
+      label: 'License',
+      inputType: 'select',
+      required: true,
+      options: [
+        {
+          label: 'CC BY 4.0',
+          value: 'https://creativecommons.org/licenses/by/4.0/',
+        },
+        {
+          label: 'CC0 1.0',
+          value: 'https://creativecommons.org/publicdomain/zero/1.0/',
+        },
+      ],
+    };
+
+    const user = userEvent.setup();
+    render(<CroissantFieldInput field={field} value="" onChange={mockOnChange} />);
+
+    await user.click(screen.getByRole('combobox'));
+    await user.click(await screen.findByText('CC BY 4.0'));
+
+    expect(mockOnChange).toHaveBeenCalledWith('https://creativecommons.org/licenses/by/4.0/');
   });
 });

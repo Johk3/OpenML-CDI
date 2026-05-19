@@ -8,8 +8,18 @@ import { Switch } from './ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Badge } from './ui/badge';
 import { cn } from '@/lib/utils';
-import type { CroissantFieldDef } from '../types/croissant';
+import type { CroissantFieldDef, FieldOption } from '../types/croissant';
 import type { FieldValue } from '../utils/serializeCroissant';
+
+const CUSTOM_OPTION_VALUE = '__custom__';
+
+function getOptionValue(option: FieldOption): string {
+  return typeof option === 'string' ? option : option.value;
+}
+
+function getOptionLabel(option: FieldOption): string {
+  return typeof option === 'string' ? option : option.label;
+}
 
 interface CroissantFieldInputProps {
   field: CroissantFieldDef;
@@ -17,6 +27,8 @@ interface CroissantFieldInputProps {
   onChange: (value: FieldValue) => void;
   itemData?: Record<string, FieldValue>;
   crossReferenceOptions?: Record<string, string[]>;
+  readOnly?: boolean;
+  readOnlyReason?: string;
 }
 
 export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
@@ -25,9 +37,12 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
   onChange,
   itemData,
   crossReferenceOptions,
+  readOnly = false,
+  readOnlyReason = 'Experts can edit this system-generated value.',
 }) => {
   const [showHelper, setShowHelper] = useState(false);
   const [jsonError, setJsonError] = useState<string | null>(null);
+  const [isCustomOptionSelected, setIsCustomOptionSelected] = useState(false);
 
   // Return null if conditional logic dictates hiding
   if (field.id === 'field.arrayShape' && itemData && !itemData['field.isArray']) {
@@ -47,23 +62,30 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
     if (!hasSource) return null;
   }
 
-  let isDisabled = false;
+  let isDisabled = readOnly;
+  let disabledReason = readOnly ? readOnlyReason : '';
   if (itemData) {
     if (
       field.id === 'field.source.fileObject' &&
       (itemData['field.source.fileSet'] || itemData['field.source.recordSet'])
-    )
+    ) {
       isDisabled = true;
+      disabledReason = 'Disabled due to conflicting choice';
+    }
     if (
       field.id === 'field.source.fileSet' &&
       (itemData['field.source.fileObject'] || itemData['field.source.recordSet'])
-    )
+    ) {
       isDisabled = true;
+      disabledReason = 'Disabled due to conflicting choice';
+    }
     if (
       field.id === 'field.source.recordSet' &&
       (itemData['field.source.fileObject'] || itemData['field.source.fileSet'])
-    )
+    ) {
       isDisabled = true;
+      disabledReason = 'Disabled due to conflicting choice';
+    }
   }
 
   const handleJsonBlur = (e: React.FocusEvent<HTMLTextAreaElement>) => {
@@ -83,7 +105,11 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
     if (crossReferenceOptions && field.id in crossReferenceOptions) {
       const options = crossReferenceOptions[field.id] || [];
       return (
-        <Select value={String(value ?? '')} onValueChange={(val) => onChange(val)}>
+        <Select
+          value={String(value ?? '')}
+          onValueChange={(val) => onChange(val)}
+          disabled={isDisabled}
+        >
           <SelectTrigger id={field.id} className="w-full h-10">
             <SelectValue placeholder="Select a referenced item" />
           </SelectTrigger>
@@ -103,6 +129,64 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
       );
     }
 
+    if (field.options && ['select', 'url'].includes(field.inputType)) {
+      const optionValues = field.options.map(getOptionValue);
+      const valueText = String(value ?? '');
+      const hasMatchingOption = optionValues.includes(valueText);
+      const showsCustomInput =
+        field.allowCustomValue &&
+        (isCustomOptionSelected || (valueText !== '' && !hasMatchingOption));
+      const selectedValue = showsCustomInput ? CUSTOM_OPTION_VALUE : valueText;
+
+      return (
+        <div className="space-y-2">
+          <Select
+            value={selectedValue}
+            disabled={isDisabled}
+            onValueChange={(val) => {
+              if (val === CUSTOM_OPTION_VALUE) {
+                setIsCustomOptionSelected(true);
+                if (hasMatchingOption) onChange('');
+                return;
+              }
+
+              setIsCustomOptionSelected(false);
+              onChange(val);
+            }}
+          >
+            <SelectTrigger id={field.id} className="w-full h-10">
+              <SelectValue placeholder="Select an option" />
+            </SelectTrigger>
+            <SelectContent>
+              {field.options.map((opt) => (
+                <SelectItem key={getOptionValue(opt)} value={getOptionValue(opt)}>
+                  {getOptionLabel(opt)}
+                </SelectItem>
+              ))}
+              {field.allowCustomValue && (
+                <SelectItem value={CUSTOM_OPTION_VALUE}>
+                  {field.customValueLabel ?? 'Custom value'}
+                </SelectItem>
+              )}
+            </SelectContent>
+          </Select>
+          {showsCustomInput && (
+            <Input
+              id={`${field.id}-custom`}
+              type={field.inputType === 'url' ? 'url' : 'text'}
+              required={field.required}
+              disabled={isDisabled}
+              pattern={field.pattern}
+              title={field.patternMessage}
+              value={valueText}
+              onChange={(e) => onChange(e.target.value)}
+              aria-label={`${field.label} URL`}
+            />
+          )}
+        </div>
+      );
+    }
+
     switch (field.inputType) {
       case 'textarea':
         return (
@@ -110,6 +194,7 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
             <Textarea
               id={field.id}
               required={field.required}
+              disabled={isDisabled}
               value={String(value ?? '')}
               onChange={(e) => {
                 onChange(e.target.value);
@@ -127,6 +212,7 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
             <Switch
               id={field.id}
               checked={!!value}
+              disabled={isDisabled}
               onCheckedChange={(checked) => onChange(checked)}
             />
             <Label htmlFor={field.id} className="text-sm font-normal text-muted-foreground">
@@ -136,14 +222,18 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
         );
       case 'select':
         return (
-          <Select value={String(value ?? '')} onValueChange={(val) => onChange(val)}>
+          <Select
+            value={String(value ?? '')}
+            onValueChange={(val) => onChange(val)}
+            disabled={isDisabled}
+          >
             <SelectTrigger id={field.id} className="w-full h-10">
               <SelectValue placeholder="Select an option" />
             </SelectTrigger>
             <SelectContent>
               {field.options?.map((opt) => (
-                <SelectItem key={opt} value={opt}>
-                  {opt}
+                <SelectItem key={getOptionValue(opt)} value={getOptionValue(opt)}>
+                  {getOptionLabel(opt)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -151,6 +241,7 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
         );
       case 'multi-text':
         if (field.options && field.options.length > 0) {
+          const optionValues = field.options.map(getOptionValue);
           const arrValue: string[] = Array.isArray(value)
             ? value
             : value
@@ -163,33 +254,37 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
             <div className="space-y-3 p-1">
               <div className="flex flex-wrap gap-2">
                 {field.options.map((opt) => {
-                  const isSelected = arrValue.includes(opt);
+                  const optionValue = getOptionValue(opt);
+                  const isSelected = arrValue.includes(optionValue);
                   return (
                     <Badge
-                      key={opt}
+                      key={optionValue}
                       variant={isSelected ? 'default' : 'outline'}
                       className="cursor-pointer hover:bg-primary/80 transition-colors"
                       onClick={() => {
                         if (isSelected) {
-                          onChange(arrValue.filter((v) => v !== opt));
+                          if (isDisabled) return;
+                          onChange(arrValue.filter((v) => v !== optionValue));
                         } else {
-                          onChange([...arrValue, opt]);
+                          if (isDisabled) return;
+                          onChange([...arrValue, optionValue]);
                         }
                       }}
                     >
-                      {opt}
+                      {getOptionLabel(opt)}
                     </Badge>
                   );
                 })}
               </div>
               <Input
-                value={arrValue.filter((v) => !field.options!.includes(v)).join(', ')}
+                value={arrValue.filter((v) => !optionValues.includes(v)).join(', ')}
+                disabled={isDisabled}
                 onChange={(e) => {
                   const customVals = e.target.value
                     .split(',')
                     .map((s) => s.trim())
                     .filter(Boolean);
-                  const selectedOptions = arrValue.filter((v) => field.options!.includes(v));
+                  const selectedOptions = arrValue.filter((v) => optionValues.includes(v));
                   onChange([...selectedOptions, ...customVals]);
                 }}
               />
@@ -201,6 +296,7 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
             id={field.id}
             type="text"
             required={field.required}
+            disabled={isDisabled}
             pattern={field.pattern}
             title={field.patternMessage}
             value={Array.isArray(value) ? value.join(', ') : String(value ?? '')}
@@ -226,6 +322,7 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
               field.inputType === 'date' || field.inputType === 'url' ? field.inputType : 'text'
             }
             required={field.required}
+            disabled={isDisabled}
             pattern={field.pattern}
             title={field.patternMessage}
             value={String(value ?? '')}
@@ -255,9 +352,7 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
           )}
         </div>
         {isDisabled && (
-          <span className="text-xs text-muted-foreground italic">
-            Disabled due to conflicting choice
-          </span>
+          <span className="text-xs text-muted-foreground italic">{disabledReason}</span>
         )}
       </div>
 

@@ -81,6 +81,7 @@ export const mockDatasetService = {
     } as unknown as BackendDataset;
   }),
   deleteDataset: vi.fn().mockResolvedValue(undefined),
+  updateMetadata: vi.fn().mockResolvedValue(undefined),
   updateStatus: vi.fn().mockResolvedValue(undefined),
   downloadDataset: vi.fn().mockResolvedValue({
     blob: new Blob(['mock content'], { type: 'application/octet-stream' }),

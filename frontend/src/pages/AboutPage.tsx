@@ -76,7 +76,6 @@ export const AboutPage: React.FC = () => {
       <div className="mb-8">
         <div>
           <h1 className="heading-1">About OpenML CDI</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Community Data Interface · OpenML</p>
         </div>
       </div>
 

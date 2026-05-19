@@ -21,6 +21,7 @@ import {
   ChevronUp,
   FileJson,
   ExternalLink,
+  Pencil,
 } from 'lucide-react';
 import {
   CroissantDistribution,
@@ -202,6 +203,12 @@ const statusLabel: Partial<Record<DatasetStatus, string>> = {
   published: 'Published',
   integration_failed: 'Integration Failed',
 };
+
+const metadataEditableStates = new Set(['pending', 'pending_review', 'approved', 'converted']);
+
+function canExpertEditMetadata(state: string | undefined, isExpert: boolean): boolean {
+  return isExpert && Boolean(state && metadataEditableStates.has(state));
+}
 
 type ApiErrorPayload = {
   error?: {
@@ -601,6 +608,7 @@ export const DatasetDetailPage: React.FC = () => {
   const isExpert = user.role === 'expert';
   const canDownloadDataset = Boolean(lifecycle?.download.available);
   const canPublishDataset = isExpert && (lifecycle?.state || dataset.status) === 'approved';
+  const canEditMetadata = canExpertEditMetadata(lifecycle?.state || dataset.status, isExpert);
   const visibleFiles = dataset.files ?? [];
   const showFilesSection = visibleFiles.length > 0 || canDownloadDataset;
 
@@ -1057,6 +1065,23 @@ export const DatasetDetailPage: React.FC = () => {
                     onClick={() => navigate('/expert-queue')}
                   >
                     Open review queue
+                  </Button>
+                ) : null}
+                {canEditMetadata ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-1"
+                    onClick={() =>
+                      navigate('/metadata', {
+                        state: {
+                          datasetId: dataset.id,
+                          returnTo: `/datasets/${dataset.id}`,
+                        },
+                      })
+                    }
+                  >
+                    <Pencil className="mr-2 h-3 w-3" /> Edit Metadata
                   </Button>
                 ) : null}
                 {canPublishDataset ? (

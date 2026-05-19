@@ -2,6 +2,13 @@ export type InputType = 'text' | 'textarea' | 'url' | 'date' | 'select' | 'boole
 
 export type FieldSection = 'dataset' | 'distribution' | 'fileSet' | 'recordSet' | 'field' | 'rai';
 
+export type FieldOption =
+  | string
+  | {
+      label: string;
+      value: string;
+    };
+
 export interface CroissantFieldDef {
   id: string;
   label: string;
@@ -9,7 +16,10 @@ export interface CroissantFieldDef {
   inputType: InputType;
   required: boolean;
   placeholder?: string;
-  options?: string[];
+  options?: FieldOption[];
+  allowCustomValue?: boolean;
+  customValueLabel?: string;
+  expertOnly?: boolean;
   helperText: string;
   pattern?: string;
   patternMessage?: string;

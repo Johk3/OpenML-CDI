@@ -25,6 +25,7 @@ import { AxiosError } from 'axios';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { compressFilesToZip } from '@/utils/compress';
+import { calculateSha256Checksums } from '@/utils/fileChecksums';
 import {
   ChunkedUploadController,
   ChunkedUploadProgress,
@@ -147,6 +148,14 @@ const TIPS = [
   'Remember to fill in the Croissant Metadata to the best of your ability, this will help the expert greatly!',
 ];
 
+const FINALIZATION_STEPS = [
+  'Upload complete',
+  'Verifying file metadata',
+  'Scanning uploaded files',
+  'Saving dataset record',
+  'Preparing next step',
+];
+
 const TipsCarousel: React.FC = () => {
   const [current, setCurrent] = useState(0);
 
@@ -192,6 +201,7 @@ export const UploadPage: React.FC = () => {
   const [totalChunks, setTotalChunks] = useState(1);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [hasMultipartControls, setHasMultipartControls] = useState(false);
+  const [finalizationStepIndex, setFinalizationStepIndex] = useState(0);
   const uploadControllerRef = useRef<ChunkedUploadController | null>(null);
 
   // Prevention of accidental page closure during compression or upload
@@ -208,6 +218,19 @@ export const UploadPage: React.FC = () => {
       window.addEventListener('beforeunload', handleBeforeUnload);
       return () => window.removeEventListener('beforeunload', handleBeforeUnload);
     }
+  }, [uploadState]);
+
+  React.useEffect(() => {
+    if (uploadState !== 'finalizing') {
+      setFinalizationStepIndex(0);
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setFinalizationStepIndex((current) => Math.min(current + 1, FINALIZATION_STEPS.length - 1));
+    }, 2500);
+
+    return () => window.clearInterval(timer);
   }, [uploadState]);
 
   const [formData, setFormData] = useState({
@@ -240,6 +263,9 @@ export const UploadPage: React.FC = () => {
     : willCompressSelection
       ? 'Files will be packed into one ZIP archive before upload.'
       : '';
+  const finalizationProgress = Math.round(
+    ((finalizationStepIndex + 1) / FINALIZATION_STEPS.length) * 100,
+  );
 
   // Concurrency helper for large batches
   const runWithLimit = async <T,>(limit: number, tasks: (() => Promise<T>)[]): Promise<T[]> => {
@@ -297,6 +323,7 @@ export const UploadPage: React.FC = () => {
     setTotalChunks(1);
     setUploadedFileName(null);
     setHasMultipartControls(false);
+    setFinalizationStepIndex(0);
     setOriginalFileCount(selectedFiles.length);
     let createdDatasetId: string | null = null;
     let usedMultipartUpload = false;
@@ -327,6 +354,8 @@ export const UploadPage: React.FC = () => {
 
       // Request presigned urls
       setUploadState('uploading');
+      const checksums = await calculateSha256Checksums(filesToUpload);
+      const uploadChecksums = checksums.some(Boolean) ? checksums : undefined;
 
       const restorableMultipartSession =
         filesToUpload.length === 1
@@ -354,6 +383,7 @@ export const UploadPage: React.FC = () => {
             filenames: filesToUpload.map(getUploadPath),
             content_types: filesToUpload.map((f) => f.type || undefined),
             byte_sizes: filesToUpload.map((f) => f.size),
+            checksums: uploadChecksums,
             directory_structure: buildUploadDirectoryStructure(
               selectedPaths,
               filesToUpload,
@@ -426,6 +456,7 @@ export const UploadPage: React.FC = () => {
         );
         if (progress.status === 'finalizing') {
           setUploadProgress(100);
+          setFinalizationStepIndex(0);
           setUploadState('finalizing');
         }
         updateProgress(index, progress.loadedBytes);
@@ -466,6 +497,7 @@ export const UploadPage: React.FC = () => {
               controller: uploadController,
               onFinalizing: () => {
                 setUploadProgress(100);
+                setFinalizationStepIndex(0);
                 setUploadState('finalizing');
               },
               onProgress: (progress) => updateChunkProgress(index, file, progress),
@@ -483,6 +515,7 @@ export const UploadPage: React.FC = () => {
 
       await runWithLimit(6, tasks);
       setUploadProgress(100);
+      setFinalizationStepIndex(0);
       setUploadState('finalizing');
 
       if (!usedMultipartUpload) {
@@ -561,8 +594,7 @@ export const UploadPage: React.FC = () => {
               </Badge>
               <h1 className="heading-1 mb-3">Share Your Dataset</h1>
               <p className="subheading max-w-xl mx-auto">
-                Contribute to the OpenML community. Every dataset you share helps experts build
-                better models.
+                Upload your dataset, add Croissant metadata, and send it for expert OpenML review.
               </p>
             </div>
             <FileUploadZone onFilesSelect={handleFilesSelect} />
@@ -570,7 +602,7 @@ export const UploadPage: React.FC = () => {
             {/* Feature strip */}
             <div className="grid grid-cols-3 gap-4 mt-8 text-center">
               {[
-                { label: 'Secure Upload', desc: 'End-to-end encrypted' },
+                { label: 'Secure Upload', desc: 'Verified before review' },
                 { label: 'Open Access', desc: 'Free for everyone' },
                 { label: 'Expert Review', desc: 'Reviews by experts ensure quality' },
               ].map((f) => (
@@ -894,16 +926,54 @@ export const UploadPage: React.FC = () => {
                     </motion.div>
                     <h2 className="heading-2 mb-2">Finalizing upload…</h2>
                     <p className="text-muted-foreground text-sm mb-6 max-w-xs">
-                      Verifying your uploaded files with the server. The completion message will
-                      appear after every file is confirmed.
+                      Verifying your uploaded files with the server. We are checking each
+                      server-side step before showing the completion message.
                     </p>
-                    <div className="w-full max-w-xs bg-muted rounded-full h-1.5 overflow-hidden">
+                    <div
+                      className="w-full max-w-xs bg-muted rounded-full h-1.5 overflow-hidden"
+                      role="progressbar"
+                      aria-label="Finalization progress"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={finalizationProgress}
+                    >
                       <motion.div
                         className="h-full bg-primary"
                         initial={{ width: 0 }}
-                        animate={{ width: '100%' }}
+                        animate={{ width: `${finalizationProgress}%` }}
                         transition={{ duration: 0.2 }}
                       />
+                    </div>
+                    <div className="mt-6 w-full max-w-sm space-y-3 text-left">
+                      {FINALIZATION_STEPS.map((step, index) => {
+                        const isComplete = index < finalizationStepIndex;
+                        const isActive = index === finalizationStepIndex;
+                        return (
+                          <div
+                            key={step}
+                            className={`flex items-center gap-3 text-sm ${
+                              isActive
+                                ? 'text-foreground'
+                                : isComplete
+                                  ? 'text-primary'
+                                  : 'text-muted-foreground'
+                            }`}
+                          >
+                            <span
+                              className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs font-semibold ${
+                                isComplete
+                                  ? 'border-primary bg-primary text-primary-foreground'
+                                  : isActive
+                                    ? 'border-primary text-primary'
+                                    : 'border-border text-muted-foreground'
+                              }`}
+                            >
+                              {isComplete ? <CheckCircle size={14} /> : index + 1}
+                            </span>
+                            <span className={isActive ? 'font-medium' : ''}>{step}</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   </>
                 ) : uploadState === 'success' ? (

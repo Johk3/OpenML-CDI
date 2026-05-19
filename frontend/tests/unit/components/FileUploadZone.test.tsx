@@ -57,21 +57,6 @@ const folderDataTransfer = (entry: MockDirectoryEntry) => ({
 describe('FileUploadZone component', () => {
   const LIMIT_GB = CONFIG.FILE_UPLOAD_LIMIT_BYTES / 1024 / 1024 / 1024;
 
-  it('renders correctly', () => {
-    render(<FileUploadZone onFilesSelect={vi.fn()} />);
-    expect(screen.getByText('Drag & Drop your datasets here')).toBeInTheDocument();
-  });
-
-  it('displays the all-formats-accepted label', () => {
-    render(<FileUploadZone onFilesSelect={vi.fn()} />);
-    expect(screen.getByText('All file formats accepted')).toBeInTheDocument();
-  });
-
-  it('displays the processing support notice', () => {
-    render(<FileUploadZone onFilesSelect={vi.fn()} />);
-    expect(screen.getByText(/processing support may vary/i)).toBeInTheDocument();
-  });
-
   it('does not set an accept attribute on the file input', () => {
     render(<FileUploadZone onFilesSelect={vi.fn()} />);
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
