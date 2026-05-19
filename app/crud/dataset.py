@@ -1,8 +1,51 @@
+import uuid
+
+from sqlalchemy import func
 from sqlalchemy.orm import Session
+
 from app.database import models
 from app.database.models import Statuses
 from app.schemas import datasets as schemas
-import uuid
+
+
+def _normalized_dataset_title(title: str) -> str:
+    return title.strip().lower()
+
+
+def _normalized_dataset_checksums(
+    checksums: list[str | None] | tuple[str | None, ...] | None,
+) -> tuple[str, ...]:
+    if not checksums:
+        return ()
+    return tuple(
+        sorted(
+            {
+                str(checksum).strip().lower()
+                for checksum in checksums
+                if checksum is not None and str(checksum).strip()
+            }
+        )
+    )
+
+
+def dataset_checksums_from_metadata(metadata: dict | None) -> tuple[str, ...]:
+    if not isinstance(metadata, dict):
+        return ()
+
+    checksums = []
+    raw_checksums = metadata.get("checksums")
+    if isinstance(raw_checksums, list):
+        checksums.extend(raw_checksums)
+
+    objects = metadata.get("objects")
+    if isinstance(objects, list):
+        checksums.extend(
+            obj.get("checksum")
+            for obj in objects
+            if isinstance(obj, dict) and obj.get("checksum") is not None
+        )
+
+    return _normalized_dataset_checksums(checksums)
 
 
 def get_dataset(db: Session, dataset_id: uuid.UUID) -> schemas.Dataset | None:
@@ -52,6 +95,41 @@ def update_dataset_title(db: Session, dataset_id: uuid.UUID, title: str):
     db.commit()
     db.refresh(db_dataset)
     return schemas.Dataset.model_validate(db_dataset)
+
+
+def dataset_duplicate_match_for_owner(
+    db: Session,
+    *,
+    owner_id: uuid.UUID | None,
+    title: str,
+    checksums: list[str | None] | tuple[str | None, ...] | None = None,
+    exclude_dataset_id: uuid.UUID | None = None,
+) -> str | None:
+    if owner_id is None:
+        return None
+
+    query = db.query(models.Dataset.id).filter(
+        models.Dataset.owner_id == owner_id,
+        func.lower(func.trim(models.Dataset.title)) == _normalized_dataset_title(title),
+    )
+    if exclude_dataset_id is not None:
+        query = query.filter(models.Dataset.id != exclude_dataset_id)
+    matches = query.all()
+    if not matches:
+        return None
+
+    normalized_checksums = _normalized_dataset_checksums(checksums)
+    if not normalized_checksums:
+        return "title"
+
+    for row in matches:
+        existing_dataset = _get_dataset(db, row.id)
+        if (
+            dataset_checksums_from_metadata(existing_dataset.dataset_metadata)
+            == normalized_checksums
+        ):
+            return "title_checksum"
+    return None
 
 
 def delete_dataset(db: Session, dataset_id: uuid.UUID) -> None:

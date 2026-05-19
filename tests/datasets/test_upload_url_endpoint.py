@@ -254,6 +254,190 @@ def test_upload_url_creates_pending_dataset_and_returns_presigned_url(
         assert dataset.status == Statuses.PENDING_UPLOAD
 
 
+def test_upload_url_rejects_duplicate_dataset_name_for_same_owner(
+    client: TestClient, db_session_factory, monkeypatch
+):
+    uploader_id = uuid.uuid4()
+    access_token = _create_access_token_for_user(db_session_factory, uploader_id)
+    with db_session_factory() as db:
+        db.add(
+            Dataset(
+                title=" My Dataset ",
+                owner_id=uploader_id,
+                dataset_metadata={"filenames": ["existing.csv"]},
+                status=Statuses.PENDING_UPLOAD,
+            )
+        )
+        db.commit()
+
+    upload_target_calls = []
+
+    def create_upload_target(filename: str, **kwargs):
+        upload_target_calls.append({"filename": filename, **kwargs})
+        return UploadTarget(
+            storage_key=f"datasets/fixed_{filename}",
+            local_path=Path(f"/tmp/datasets/fixed_{filename}"),
+        )
+
+    monkeypatch.setattr(
+        client.app.state.storage,
+        "create_upload_target",
+        create_upload_target,
+    )
+
+    response = client.post(
+        "/api/datasets/upload-url",
+        json={
+            "name": "my dataset",
+            "description": {"field": "value"},
+            "filenames": ["duplicate.csv"],
+        },
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Dataset with this name already exists"}
+    assert upload_target_calls == []
+    with db_session_factory() as db:
+        assert db.query(Dataset).count() == 1
+
+
+def test_upload_url_rejects_duplicate_dataset_name_and_checksum_for_same_owner(
+    client: TestClient, db_session_factory, monkeypatch
+):
+    uploader_id = uuid.uuid4()
+    access_token = _create_access_token_for_user(db_session_factory, uploader_id)
+    with db_session_factory() as db:
+        db.add(
+            Dataset(
+                title=" My Dataset ",
+                owner_id=uploader_id,
+                dataset_metadata={"checksums": [" ABC123 "]},
+                status=Statuses.PENDING_UPLOAD,
+            )
+        )
+        db.commit()
+
+    upload_target_calls = []
+
+    def create_upload_target(filename: str, **kwargs):
+        upload_target_calls.append({"filename": filename, **kwargs})
+        return UploadTarget(
+            storage_key=f"datasets/fixed_{filename}",
+            local_path=Path(f"/tmp/datasets/fixed_{filename}"),
+        )
+
+    monkeypatch.setattr(
+        client.app.state.storage,
+        "create_upload_target",
+        create_upload_target,
+    )
+
+    response = client.post(
+        "/api/datasets/upload-url",
+        json={
+            "name": "my dataset",
+            "filenames": ["duplicate.csv"],
+            "checksums": ["abc123"],
+        },
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "Dataset with this name and checksum already exists"
+    }
+    assert upload_target_calls == []
+    with db_session_factory() as db:
+        assert db.query(Dataset).count() == 1
+
+
+def test_upload_url_allows_same_dataset_name_with_different_checksum(
+    client: TestClient, db_session_factory, monkeypatch
+):
+    uploader_id = uuid.uuid4()
+    access_token = _create_access_token_for_user(db_session_factory, uploader_id)
+    with db_session_factory() as db:
+        db.add(
+            Dataset(
+                title="My Dataset",
+                owner_id=uploader_id,
+                dataset_metadata={"checksums": ["abc123"]},
+                status=Statuses.PENDING_UPLOAD,
+            )
+        )
+        db.commit()
+
+    monkeypatch.setattr(
+        client.app.state.storage,
+        "create_upload_target",
+        lambda filename, **kwargs: UploadTarget(
+            storage_key=f"datasets/fixed_{filename}",
+            local_path=Path(f"/tmp/datasets/fixed_{filename}"),
+        ),
+    )
+
+    response = client.post(
+        "/api/datasets/upload-url",
+        json={
+            "name": " my dataset ",
+            "filenames": ["different.csv"],
+            "checksums": ["def456"],
+        },
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 201
+    with db_session_factory() as db:
+        assert db.query(Dataset).count() == 2
+
+
+def test_upload_url_allows_duplicate_dataset_name_for_different_owner(
+    client: TestClient, db_session_factory, monkeypatch
+):
+    owner_id = uuid.uuid4()
+    uploader_id = uuid.uuid4()
+    _create_access_token_for_user(
+        db_session_factory,
+        owner_id,
+        email="owner@example.com",
+        username="owner",
+    )
+    access_token = _create_access_token_for_user(db_session_factory, uploader_id)
+    with db_session_factory() as db:
+        db.add(
+            Dataset(
+                title="Shared dataset",
+                owner_id=owner_id,
+                dataset_metadata={"filenames": ["existing.csv"]},
+                status=Statuses.PENDING_UPLOAD,
+            )
+        )
+        db.commit()
+
+    monkeypatch.setattr(
+        client.app.state.storage,
+        "create_upload_target",
+        lambda filename, **kwargs: UploadTarget(
+            storage_key=f"datasets/fixed_{filename}",
+            local_path=Path(f"/tmp/datasets/fixed_{filename}"),
+        ),
+    )
+
+    response = client.post(
+        "/api/datasets/upload-url",
+        json={
+            "name": "shared dataset",
+            "filenames": ["allowed.csv"],
+        },
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 201
+    with db_session_factory() as db:
+        assert db.query(Dataset).count() == 2
+
+
 def test_confirm_upload_triggers_scan_and_returns_202(
     client: TestClient, db_session_factory, monkeypatch
 ):
@@ -903,6 +1087,18 @@ def test_upload_url_rolls_back_and_returns_500_on_db_commit_failure(monkeypatch)
             self.rollback_called = False
 
         def add(self, _value):
+            return None
+
+        def query(self, *_args):
+            return self
+
+        def filter(self, *_args):
+            return self
+
+        def all(self):
+            return []
+
+        def first(self):
             return None
 
         def commit(self):

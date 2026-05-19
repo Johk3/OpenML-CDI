@@ -30,15 +30,20 @@ def _add_dataset(
     db_test_session,
     *,
     owner: User,
+    title: str = "Original title",
+    checksums: list[str] | None = None,
     issue_url: str = "https://github.com/openml/original/issues/1",
 ) -> uuid.UUID:
     dataset_id = uuid.uuid4()
+    metadata = {"name": title}
+    if checksums is not None:
+        metadata["checksums"] = checksums
     db_test_session.add(
         Dataset(
             id=dataset_id,
-            title="Original title",
+            title=title,
             owner_id=owner.id,
-            dataset_metadata={"name": "Original title"},
+            dataset_metadata=metadata,
             status=Statuses.PENDING_UPLOAD,
             issue_url=issue_url,
         )
@@ -162,6 +167,120 @@ def test_metadata_endpoint_allows_expert_to_update_metadata_and_title(
     dataset = db_test_session.get(Dataset, dataset_id)
     assert dataset.title == "Expert updated title"
     assert dataset.dataset_metadata["name"] == "Expert updated title"
+
+
+def test_metadata_endpoint_rejects_duplicate_dataset_name_for_same_owner(
+    client, db_test_session
+):
+    owner = _add_user(db_test_session)
+    existing_dataset_id = _add_dataset(
+        db_test_session,
+        owner=owner,
+        title=" Existing Dataset ",
+        issue_url="",
+    )
+    dataset_id = _add_dataset(
+        db_test_session,
+        owner=owner,
+        title="Editable dataset",
+        issue_url="",
+    )
+
+    response = client.post(
+        "/api/datasets/metadata",
+        headers=_headers(owner),
+        params={"dataset_id": str(dataset_id)},
+        json={"name": "existing dataset", "description": "Duplicate rename"},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Dataset with this name already exists"}
+    db_test_session.refresh(db_test_session.get(Dataset, dataset_id))
+    db_test_session.refresh(db_test_session.get(Dataset, existing_dataset_id))
+    changed_dataset = db_test_session.get(Dataset, dataset_id)
+    existing_dataset = db_test_session.get(Dataset, existing_dataset_id)
+    assert changed_dataset.title == "Editable dataset"
+    assert changed_dataset.dataset_metadata == {"name": "Editable dataset"}
+    assert existing_dataset.title == " Existing Dataset "
+
+
+def test_metadata_endpoint_rejects_duplicate_title_and_checksum_for_same_owner(
+    client, db_test_session
+):
+    owner = _add_user(db_test_session)
+    existing_dataset_id = _add_dataset(
+        db_test_session,
+        owner=owner,
+        title=" Existing Dataset ",
+        checksums=[" ABC123 "],
+        issue_url="",
+    )
+    dataset_id = _add_dataset(
+        db_test_session,
+        owner=owner,
+        title="Editable dataset",
+        checksums=["abc123"],
+        issue_url="",
+    )
+
+    response = client.post(
+        "/api/datasets/metadata",
+        headers=_headers(owner),
+        params={"dataset_id": str(dataset_id)},
+        json={"name": "existing dataset", "description": "Duplicate rename"},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "Dataset with this name and checksum already exists"
+    }
+    db_test_session.refresh(db_test_session.get(Dataset, dataset_id))
+    db_test_session.refresh(db_test_session.get(Dataset, existing_dataset_id))
+    changed_dataset = db_test_session.get(Dataset, dataset_id)
+    existing_dataset = db_test_session.get(Dataset, existing_dataset_id)
+    assert changed_dataset.title == "Editable dataset"
+    assert changed_dataset.dataset_metadata == {
+        "name": "Editable dataset",
+        "checksums": ["abc123"],
+    }
+    assert existing_dataset.title == " Existing Dataset "
+
+
+def test_metadata_endpoint_allows_same_title_when_checksum_differs(
+    client, db_test_session
+):
+    owner = _add_user(db_test_session)
+    _add_dataset(
+        db_test_session,
+        owner=owner,
+        title=" Existing Dataset ",
+        checksums=["abc123"],
+        issue_url="",
+    )
+    dataset_id = _add_dataset(
+        db_test_session,
+        owner=owner,
+        title="Editable dataset",
+        checksums=["def456"],
+        issue_url="",
+    )
+
+    response = client.post(
+        "/api/datasets/metadata",
+        headers=_headers(owner),
+        params={"dataset_id": str(dataset_id)},
+        json={"name": "existing dataset", "description": "Allowed rename"},
+    )
+
+    assert response.status_code == 200
+    db_test_session.refresh(db_test_session.get(Dataset, dataset_id))
+    changed_dataset = db_test_session.get(Dataset, dataset_id)
+    assert changed_dataset.title == "existing dataset"
+    assert changed_dataset.dataset_metadata == {
+        "name": "existing dataset",
+        "checksums": ["def456"],
+        "description": "Allowed rename",
+    }
 
 
 def test_metadata_endpoint_preserves_storage_derived_metadata_for_owner(

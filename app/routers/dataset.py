@@ -126,12 +126,38 @@ DOWNLOADABLE_LIFECYCLE_STATES = {
     Statuses.APPROVED,
     Statuses.PUBLISHED,
 }
+DUPLICATE_DATASET_NAME_DETAIL = {
+    "title": "Dataset with this name already exists",
+    "title_checksum": "Dataset with this name and checksum already exists",
+}
 
 
 def _github_discussion_fetch_message(error: GitHubAPIError) -> str:
     return GITHUB_DISCUSSION_FETCH_MESSAGES.get(
         error.reason, GITHUB_DISCUSSION_FETCH_MESSAGES["unknown_error"]
     )
+
+
+def _ensure_dataset_name_available(
+    *,
+    db: Session,
+    owner_id: uuid.UUID | None,
+    title: str,
+    checksums: list[str | None] | tuple[str | None, ...] | None = None,
+    exclude_dataset_id: uuid.UUID | None = None,
+) -> None:
+    duplicate_match = dataset_crud.dataset_duplicate_match_for_owner(
+        db=db,
+        owner_id=owner_id,
+        title=title,
+        checksums=checksums,
+        exclude_dataset_id=exclude_dataset_id,
+    )
+    if duplicate_match:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail=DUPLICATE_DATASET_NAME_DETAIL[duplicate_match],
+        )
 
 
 @router.post(
@@ -145,6 +171,12 @@ def create_upload_url(
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Session = Depends(get_db),
 ) -> DatasetUploadURLResponse:
+    _ensure_dataset_name_available(
+        db=db,
+        owner_id=current_user.id,
+        title=payload.name,
+        checksums=payload.checksums,
+    )
     storage_keys = []
     presigned_urls = []
     upload_contracts = []
@@ -1554,6 +1586,18 @@ def update_metadata_dataset(
     )
     # Sync title if present in metadata
     if isinstance(metadata_to_save, dict) and "name" in metadata_to_save:
+        if isinstance(metadata_to_save["name"], str):
+            candidate_metadata = dict(dataset.dataset_metadata or {})
+            candidate_metadata.update(metadata_to_save)
+            _ensure_dataset_name_available(
+                db=db,
+                owner_id=dataset.owner_id,
+                title=metadata_to_save["name"],
+                checksums=dataset_crud.dataset_checksums_from_metadata(
+                    candidate_metadata
+                ),
+                exclude_dataset_id=dataset_id,
+            )
         dataset_crud.update_dataset_title(
             db=db, dataset_id=dataset_id, title=metadata_to_save["name"]
         )
