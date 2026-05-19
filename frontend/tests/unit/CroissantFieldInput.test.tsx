@@ -1,25 +1,8 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import React from 'react';
 import { vi } from 'vitest';
 import { CroissantFieldInput } from '../../src/components/CroissantFieldInput';
 import type { CroissantFieldDef } from '../../src/types/croissant';
-
-vi.mock('motion/react', () => ({
-  motion: new Proxy(
-    {},
-    {
-      get:
-        (_target, tag: string) =>
-        ({
-          children,
-          ...props
-        }: React.HTMLAttributes<HTMLElement> & { children?: React.ReactNode }) =>
-          React.createElement(tag, props, children),
-    },
-  ),
-  AnimatePresence: ({ children }: { children: React.ReactNode }) => children,
-}));
 
 describe('CroissantFieldInput', () => {
   const mockOnChange = vi.fn();

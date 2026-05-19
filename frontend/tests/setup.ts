@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
-import { vi } from 'vitest';
+import { beforeEach, vi } from 'vitest';
 import { mockNavigate, navigationMocks } from './mocks/navigation';
-import { mockDatasetService } from './mocks/datasetService';
+import { mockDatasetService, resetDatasetServiceMocks } from './mocks/datasetService';
 import { configure } from '@testing-library/react';
 
 // Prevents HTML dump on error message
@@ -10,6 +10,10 @@ configure({
 });
 
 vi.setConfig({ testTimeout: 15000 });
+
+beforeEach(() => {
+  resetDatasetServiceMocks();
+});
 
 // Global mock for dataset service
 vi.mock('@/services/datasetService', () => ({

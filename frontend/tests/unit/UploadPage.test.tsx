@@ -35,38 +35,6 @@ describe('UploadPage', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.clearAllMocks();
     mockNavigate.mockClear();
-    mockDatasetService.requestUploadUrl.mockResolvedValue({
-      id: 'test-dataset-id',
-      presigned_urls: ['http://example.com/presigned'],
-      upload_contracts: [
-        {
-          original_path: 'data.csv',
-          object_key: 'quarantine/batch/data.csv',
-          url: 'http://example.com/presigned',
-          method: 'PUT',
-          headers: { 'Content-Type': 'text/csv' },
-          content_type: 'text/csv',
-          expires_seconds: 3600,
-        },
-      ],
-    });
-    mockDatasetService.uploadFileMultipart.mockImplementation(
-      async (_datasetId, _contract, file, options) => {
-        options?.onProgress?.({
-          loadedBytes: file.size,
-          totalBytes: file.size,
-          chunkIndex: 0,
-          totalChunks: 1,
-          status: 'completed',
-        });
-      },
-    );
-    mockDatasetService.confirmUpload.mockResolvedValue(undefined);
-    mockDatasetService.shouldUseMultipartUpload.mockImplementation(
-      (file: File, contract?: { url?: string }) =>
-        file.size > 8 * 1024 * 1024 && !contract?.url?.includes('/api/datasets/upload/'),
-    );
-    mockDatasetService.getRestorableMultipartUpload.mockReturnValue(null);
     renderWithRouter(<UploadPage />);
   });
 
