@@ -30,10 +30,10 @@ Review the Acceptance Criteria in the related issue.
 <!--
 Please provide exact steps for the reviewer to verify your changes.
 -->
-1. Run the backend: `uvicorn main:app --reload`
-2. Run the frontend: `npm start`
-3. Go to `http://localhost:3000/route`
-4. Do action X and observe Y...
+1. Run the service: `sops exec-env encrypted.env 'docker compose -f compose.yml up -d --build --force-recreate'`
+2. Go to `http://localhost:8000`
+3. Do action X and observe Y...
+
 
 ## Screenshots (if applicable)
 <!--

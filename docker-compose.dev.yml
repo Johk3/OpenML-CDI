@@ -14,6 +14,7 @@ services:
     environment:
       - ENVIRONMENT=development
       - JWT_SECRET=dev-only-change-me
+      - GITHUB_REDIRECT=http://localhost:5173/login/callback
       - AUTH_DEV_MODE_APPROVE_ALL_LOGINS=true
       - COOKIE_SECURE=false
       - STORAGE_BACKEND=s3
@@ -26,7 +27,6 @@ services:
       - S3_FORCE_PATH_STYLE=true
       - QUARANTINE_DIR=/backend/app/data/quarantine
       - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
-      - GITHUB_REDIRECT=http://localhost:5173/login/callback
       - CLAMD_HOST=clamd
       - CLAMD_PORT=3310
       - CLAMD_TIMEOUT_SECONDS=60

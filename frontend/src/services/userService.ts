@@ -11,11 +11,6 @@ type UserActionResponse = {
 export const UserService = {
   getMe: () => apiClient.get<User>('/auth/me').then((res) => res.data),
 
-  getUser: (userId: string) =>
-    apiClient
-      .get<User>(`${USER_ENDPOINT}/get`, { params: { user_id: userId } })
-      .then((res) => res.data),
-
   deleteAccount: () =>
     apiClient.post<UserActionResponse>(`${USER_ENDPOINT}/delete`).then((res) => res.data),
 };

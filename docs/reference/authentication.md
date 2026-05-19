@@ -23,7 +23,6 @@ reference only and should be treated as legacy from the frontend point of view.
   - [POST /auth/token](#legacy--backend-only-post-authtoken)
   - [POST /auth/refresh](#post-authrefresh)
 - [Protect Routes](#protect-routes)
-- [Environment variables](#environment-variables)
 
 This document describes the current backend authentication endpoints and the
 new registration flow.
@@ -221,23 +220,6 @@ def delete_user(
     user_crud.del_user(db, current_user.id)
     return {"status_code": 200, "message": "User deleted"}
 ```
-
-## Environment variables
-
-Legacy registration and email delivery use the following settings:
-
-- `EMAIL_BACKEND` default `console`
-- `EMAIL_FROM` default `noreply@example.com`
-- `APP_BASE_URL` default `http://localhost:8000`
-- `EMAIL_VERIFICATION_TTL_HOURS` default `24`
-- `SMTP_HOST`
-- `SMTP_PORT`
-- `SMTP_USERNAME`
-- `SMTP_PASSWORD`
-- `SMTP_USE_TLS`
-
-When `EMAIL_BACKEND=console`, verification links are printed locally instead of
-being sent through SMTP.
 
 ## Frontend environment and CORS assumptions
 

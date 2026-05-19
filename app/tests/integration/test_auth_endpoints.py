@@ -272,21 +272,13 @@ def test_github_login_configuration_error_uses_public_message(client, monkeypatc
     assert "GITHUB_SECRET" not in response.text
 
 
-def test_legacy_auth_endpoints_are_removed(client):
-    token_response = client.post("/api/auth/token")
-    register_response = client.post("/api/auth/register")
-    update_password_response = client.post("/api/user/update_password")
-
-    assert token_response.status_code in {404, 405}
-    assert register_response.status_code in {404, 405}
-    assert update_password_response.status_code in {404, 405}
-
-
 @pytest.mark.parametrize(
     ("method", "path", "kwargs"),
     [
+        ("POST", "/api/auth/token", {}),
+        ("POST", "/api/auth/register", {}),
+        ("POST", "/api/user/update_password", {}),
         ("GET", "/api/user/get", {"params": {"user_id": uuid.uuid4()}}),
-        ("POST", "/api/user/delete", {}),
         ("POST", "/api/user/change_email", {"params": {"email": "new@example.com"}}),
         (
             "POST",
@@ -296,81 +288,23 @@ def test_legacy_auth_endpoints_are_removed(client):
         ("GET", "/api/user/get_family_name", {"params": {"family_id": uuid.uuid4()}}),
     ],
 )
+def test_legacy_auth_endpoints_are_removed(client, method, path, kwargs):
+    response = client.request(method, path, **kwargs)
+
+    assert response.status_code in {404, 405}
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "kwargs"),
+    [
+        ("POST", "/api/user/delete", {}),
+    ],
+)
 def test_user_endpoints_require_authentication(client, method, path, kwargs):
     response = client.request(method, path, **kwargs)
 
     assert response.status_code == 401
     assert response.json() == {"detail": "Not authenticated"}
-
-
-def test_get_user_requires_authentication(client, db_test_session, monkeypatch):
-    _login_user(
-        client,
-        monkeypatch,
-        email="private@example.com",
-        username="private-user",
-    )
-    stored_user = (
-        db_test_session.query(models.User)
-        .filter(models.User.email == "private@example.com")
-        .one()
-    )
-
-    response = client.get("/api/user/get", params={"user_id": stored_user.id})
-
-    assert response.status_code == 401
-    assert response.json() == {"detail": "Not authenticated"}
-
-
-def test_get_user_rejects_other_users_private_profile(
-    client, db_test_session, monkeypatch
-):
-    first_login_response = _login_user(
-        client,
-        monkeypatch,
-        email="first-private@example.com",
-        username="first-private-user",
-    )
-    first_access_token = first_login_response.json()["access_token"]
-    _login_user(
-        client,
-        monkeypatch,
-        email="second-private@example.com",
-        username="second-private-user",
-    )
-    second_user = (
-        db_test_session.query(models.User)
-        .filter(models.User.email == "second-private@example.com")
-        .one()
-    )
-
-    response = client.get(
-        "/api/user/get",
-        params={"user_id": second_user.id},
-        headers={"Authorization": f"Bearer {first_access_token}"},
-    )
-
-    assert response.status_code == 403
-    assert response.json() == {"detail": "Forbidden"}
-
-
-def test_get_user_does_not_return_ok_for_missing_user(client, monkeypatch):
-    login_response = _login_user(
-        client,
-        monkeypatch,
-        email="missing-lookup@example.com",
-        username="missing-lookup-user",
-    )
-    access_token = login_response.json()["access_token"]
-
-    response = client.get(
-        "/api/user/get",
-        params={"user_id": uuid.uuid4()},
-        headers={"Authorization": f"Bearer {access_token}"},
-    )
-
-    assert response.status_code == 403
-    assert response.json() == {"detail": "Forbidden"}
 
 
 def test_refresh_rejects_missing_cookie(client):
@@ -455,119 +389,6 @@ def test_logout_clears_cookie_and_revokes_refresh_family(client, monkeypatch):
 
     assert refresh_response.status_code == 401
     assert refresh_response.json() == {"detail": "Invalid JTI"}
-
-
-def test_get_family_name_returns_404_when_family_has_no_name(client, monkeypatch):
-    login_response = _login_user(client, monkeypatch)
-    access_token = login_response.json()["access_token"]
-    family_id = decode_refresh_JWT(login_response.cookies["refresh_token"])["family_id"]
-
-    response = client.get(
-        "/api/user/get_family_name",
-        params={"family_id": family_id},
-        headers={"Authorization": f"Bearer {access_token}"},
-    )
-
-    assert response.status_code == 404
-    assert response.json() == {
-        "detail": "Family id does not exist or has no name associated"
-    }
-
-
-def test_change_device_name_allows_owner_to_read_family_name(client, monkeypatch):
-    login_response = _login_user(client, monkeypatch)
-    access_token = login_response.json()["access_token"]
-    refresh_payload = decode_refresh_JWT(login_response.cookies["refresh_token"])
-    family_id = refresh_payload["family_id"]
-
-    change_name_response = client.post(
-        "/api/user/change_device_name",
-        params={"family_id": family_id, "device_name": "Laptop"},
-        headers={"Authorization": f"Bearer {access_token}"},
-    )
-
-    assert change_name_response.status_code == 200
-    assert change_name_response.json() == {
-        "status_code": 200,
-        "message": "Family name changed",
-    }
-
-    get_name_response = client.get(
-        "/api/user/get_family_name",
-        params={"family_id": family_id},
-        headers={"Authorization": f"Bearer {access_token}"},
-    )
-
-    assert get_name_response.status_code == 200
-    assert get_name_response.json() == {
-        "status_code": 200,
-        "family_name": "Laptop",
-    }
-
-
-def test_change_device_name_rejects_other_users_session_metadata(client, monkeypatch):
-    first_login_response = _login_user(
-        client,
-        monkeypatch,
-        email="first-device@example.com",
-        username="first-device-user",
-    )
-    first_access_token = first_login_response.json()["access_token"]
-
-    second_login_response = _login_user(
-        client,
-        monkeypatch,
-        email="second-device@example.com",
-        username="second-device-user",
-    )
-    second_family_id = decode_refresh_JWT(
-        second_login_response.cookies["refresh_token"]
-    )["family_id"]
-
-    response = client.post(
-        "/api/user/change_device_name",
-        params={"family_id": second_family_id, "device_name": "Private laptop"},
-        headers={"Authorization": f"Bearer {first_access_token}"},
-    )
-
-    assert response.status_code == 403
-    assert response.json() == {"detail": "Forbidden"}
-
-
-def test_get_family_name_rejects_other_users_session_metadata(client, monkeypatch):
-    first_login_response = _login_user(
-        client,
-        monkeypatch,
-        email="first-session@example.com",
-        username="first-session-user",
-    )
-    first_access_token = first_login_response.json()["access_token"]
-
-    second_login_response = _login_user(
-        client,
-        monkeypatch,
-        email="second-session@example.com",
-        username="second-session-user",
-    )
-    second_access_token = second_login_response.json()["access_token"]
-    second_family_id = decode_refresh_JWT(
-        second_login_response.cookies["refresh_token"]
-    )["family_id"]
-    set_name_response = client.post(
-        "/api/user/change_device_name",
-        params={"family_id": second_family_id, "device_name": "Private laptop"},
-        headers={"Authorization": f"Bearer {second_access_token}"},
-    )
-    assert set_name_response.status_code == 200
-
-    response = client.get(
-        "/api/user/get_family_name",
-        params={"family_id": second_family_id},
-        headers={"Authorization": f"Bearer {first_access_token}"},
-    )
-
-    assert response.status_code == 403
-    assert response.json() == {"detail": "Forbidden"}
 
 
 def test_revoke_only_revokes_token_families_owned_by_current_user(client, monkeypatch):

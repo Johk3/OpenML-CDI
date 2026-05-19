@@ -1,7 +1,6 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import models
@@ -33,14 +32,6 @@ def get_user_model_by_github_id(db: Session, github_id: str) -> models.User | No
 
 def get_user_model_by_username(db: Session, username: str) -> models.User | None:
     return db.query(models.User).filter(models.User.username == username).first()
-
-
-def change_user_email(db: Session, user_email: str, user_id: uuid.UUID) -> schemas.User:
-    db_user = _get_user(db, user_id)
-    db_user.email = user_email
-    db.commit()
-    db.refresh(db_user)
-    return schemas.User.model_validate(db_user)
 
 
 def _get_user(db: Session, user_id: uuid.UUID) -> models.User:
@@ -144,33 +135,6 @@ def get_family_owner(db: Session, family_id: uuid.UUID) -> schemas.User | None:
     if db_family:
         return _get_user(db, db_family.owner_id)
     return None
-
-
-def set_family_name(db: Session, family_id: uuid.UUID, device_name: str) -> None:
-    db_name = (
-        db.query(models.TokenFamilyName)
-        .filter(models.TokenFamilyName.family_id == family_id)
-        .first()
-    )
-    if db_name:
-        db_name.family_name = device_name
-    else:
-        db_name = models.TokenFamilyName(family_id=family_id, family_name=device_name)
-        db.add(db_name)
-    db.commit()
-
-
-def get_family_name(db: Session, family_id: uuid.UUID) -> str:
-    db_name = (
-        db.query(models.TokenFamilyName)
-        .filter(models.TokenFamilyName.family_id == family_id)
-        .first()
-    )
-    if db_name:
-        return db_name.family_name
-    raise HTTPException(
-        status_code=404, detail="Family id does not exist or has no name associated"
-    )
 
 
 def get_families(db: Session, user_id: uuid.UUID) -> list[uuid.UUID]:

@@ -19,6 +19,7 @@ UPLOAD_TARGET_ENV = "UPLOAD_TARGET"
 UPLOAD_LOCATION_ENV = "UPLOAD_LOCATION"
 UPLOAD_URL_EXPIRES_SECONDS_ENV = "UPLOAD_URL_EXPIRES_SECONDS"
 COOKIE_SECURE_ENV = "COOKIE_SECURE"
+APP_BASE_URL_ENV = "APP_BASE_URL"
 DEFAULT_STORAGE_BACKEND = "local"
 DEFAULT_LOCAL_UPLOAD_DIR = ".local_uploads"
 DEFAULT_UPLOAD_TARGET = "uploads"
@@ -29,10 +30,7 @@ SUPPORTED_STORAGE_BACKENDS = {"local", "smart", "s3"}
 DEFAULT_CLAMD_HOST = "127.0.0.1"
 DEFAULT_CLAMD_PORT = 3310
 DEFAULT_CLAMD_TIMEOUT_SECONDS = 60.0
-DEFAULT_EMAIL_BACKEND = "console"
-DEFAULT_EMAIL_FROM = "noreply@example.com"
 DEFAULT_APP_BASE_URL = "http://localhost:8000"
-DEFAULT_EMAIL_VERIFICATION_TTL_HOURS = 24
 DEFAULT_QUARANTINE_DIR = ".quarantine"
 DEFAULT_CORS_ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
 DEFAULT_GITHUB_ISSUES_OWNER = "koevoet1221"
@@ -130,41 +128,6 @@ class StorageSettings:
 
 
 @dataclass(frozen=True)
-class EmailSettings:
-    backend: str = DEFAULT_EMAIL_BACKEND
-    from_email: str = DEFAULT_EMAIL_FROM
-    app_base_url: str = DEFAULT_APP_BASE_URL
-    verification_ttl_hours: int = DEFAULT_EMAIL_VERIFICATION_TTL_HOURS
-    smtp_host: str = ""
-    smtp_port: int = 587
-    smtp_username: str = ""
-    smtp_password: str = ""
-    smtp_use_tls: bool = True
-
-    @classmethod
-    def from_env(cls) -> "EmailSettings":
-        return cls(
-            backend=os.getenv("EMAIL_BACKEND", DEFAULT_EMAIL_BACKEND).strip().lower()
-            or DEFAULT_EMAIL_BACKEND,
-            from_email=os.getenv("EMAIL_FROM", DEFAULT_EMAIL_FROM).strip()
-            or DEFAULT_EMAIL_FROM,
-            app_base_url=os.getenv("APP_BASE_URL", DEFAULT_APP_BASE_URL).strip()
-            or DEFAULT_APP_BASE_URL,
-            verification_ttl_hours=int(
-                os.getenv(
-                    "EMAIL_VERIFICATION_TTL_HOURS",
-                    str(DEFAULT_EMAIL_VERIFICATION_TTL_HOURS),
-                )
-            ),
-            smtp_host=os.getenv("SMTP_HOST", "").strip(),
-            smtp_port=int(os.getenv("SMTP_PORT", "587")),
-            smtp_username=os.getenv("SMTP_USERNAME", "").strip(),
-            smtp_password=os.getenv("SMTP_PASSWORD", ""),
-            smtp_use_tls=_get_bool_env("SMTP_USE_TLS", True),
-        )
-
-
-@dataclass(frozen=True)
 class UploadURLSettings:
     target: str = DEFAULT_UPLOAD_TARGET
     location: str = DEFAULT_UPLOAD_LOCATION
@@ -242,18 +205,18 @@ class GitHubIssuesSettings:
 class Settings:
     # Group settings by domain so config stays centralized and maintainable.
     storage: StorageSettings
-    email: EmailSettings
     upload: UploadURLSettings
     auth: AuthSettings
     github_issues: GitHubIssuesSettings
     cors_allowed_origins: list[str]
+    app_base_url: str
 
     @classmethod
     def from_env(cls) -> "Settings":
         """Build application settings from centralized domain settings."""
+        app_base_url = os.getenv(APP_BASE_URL_ENV, DEFAULT_APP_BASE_URL).strip()
         return cls(
             storage=StorageSettings.from_env(),
-            email=EmailSettings.from_env(),
             upload=UploadURLSettings.from_env(),
             auth=AuthSettings.from_env(),
             github_issues=GitHubIssuesSettings.from_env(),
@@ -264,4 +227,5 @@ class Settings:
                 ).split(",")
                 if origin.strip()
             ],
+            app_base_url=app_base_url or DEFAULT_APP_BASE_URL,
         )

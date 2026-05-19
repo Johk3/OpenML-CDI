@@ -36,7 +36,6 @@ services:
       UPLOAD_URL_EXPIRES_SECONDS: ${UPLOAD_URL_EXPIRES_SECONDS:-3600}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_SECRET: ${GITHUB_SECRET:-}
-      GITHUB_REDIRECT: ${GITHUB_REDIRECT:-http://localhost:8000/login/callback}
       GITHUB_OAUTH_SCOPES: ${GITHUB_OAUTH_SCOPES:-read:user,user:email,read:org}
       GH_APP_ID: ${GH_APP_ID:-}
       GH_INSTALL_ID: ${GH_INSTALL_ID:-}

@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from .config import Settings
-from .services.email import build_email_sender
 from .storage import get_storage_backend
 
 from .routers import auth, dataset, user
@@ -36,8 +35,6 @@ def initialize_storage() -> None:
     settings = Settings.from_env()
     app.state.settings = settings
     app.state.storage = get_storage_backend(settings)
-    if not hasattr(app.state, "email_sender"):
-        app.state.email_sender = build_email_sender(settings)
 
 
 @app.exception_handler(RequestValidationError)

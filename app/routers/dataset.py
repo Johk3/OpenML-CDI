@@ -60,6 +60,7 @@ from app.services.github_issues import (
     GitHubAPIError,
     create_issue_for_dataset,
     get_issue_with_comments,
+    create_comment_for_dataset,
 )
 from app.services.dataset_lifecycle import (
     DatasetLifecycleError,
@@ -745,7 +746,7 @@ def confirm_upload(
         title=dataset.title,
         metadata=metadata,
         settings=settings.github_issues,
-        app_base_url=settings.email.app_base_url,
+        app_base_url=settings.app_base_url,
         db_factory=SessionLocal,
     )
     return {
@@ -1521,7 +1522,7 @@ def delete_dataset(
         background_tasks=background_tasks,
         updates=result.github_updates,
         settings=settings.github_issues,
-        app_base_url=settings.email.app_base_url,
+        app_base_url=settings.app_base_url,
     )
 
     if result.action == "requested":
@@ -1537,7 +1538,9 @@ def delete_dataset(
 def update_status_dataset(
     dataset_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_active_user)],
+    request: Request,
     status: Statuses,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """
@@ -1554,6 +1557,17 @@ def update_status_dataset(
         raise HTTPException(status_code=404, detail="Dataset not found")
 
     ensure_status_update_allowed(dataset, status, actor_role=current_user.role)
+    settings = request.app.state.settings
+    background_tasks.add_task(
+        create_comment_for_dataset,
+        dataset_id=dataset_id,
+        issue_url=dataset.issue_url,
+        comment_body=f"""Dataset status was changed from
+**{dataset.status.value.replace("_", " ").title()}**
+to **{status.value.replace("_", " ").title()}**
+by expert {current_user.username}!""".replace("\n", " "),
+        settings=settings.github_issues,
+    )
     dataset_crud.update_dataset_status(
         db=db,
         dataset_id=dataset_id,
@@ -1581,7 +1595,7 @@ def update_metadata_dataset(
         metadata
         if current_user.role == Roles.EXPERT
         else _restore_owner_protected_croissant_metadata(
-            metadata, dataset, settings.email.app_base_url
+            metadata, dataset, settings.app_base_url
         )
     )
     # Sync title if present in metadata
@@ -1618,8 +1632,16 @@ def update_metadata_dataset(
             title=title,
             metadata=metadata_to_save,
             settings=settings.github_issues,
-            app_base_url=settings.email.app_base_url,
+            app_base_url=settings.app_base_url,
         )
+        if dataset.owner_id == current_user.id:
+            background_tasks.add_task(
+                create_comment_for_dataset,
+                dataset_id=dataset_id,
+                issue_url=dataset.issue_url,
+                comment_body="Dataset Owner modified the metadata.",
+                settings=settings.github_issues,
+            )
 
     return {"status_code": 200, "message": "Dataset metadata updated successfully"}
 

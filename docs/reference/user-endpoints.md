@@ -1,8 +1,11 @@
 # User Endpoint Contract
 
-This document specifies the backend contract for `/api/user` endpoints.
+This document specifies the backend contract for retained `/api/user` endpoints.
+The app is GitHub-authenticated, so profile fields controlled by GitHub, such as
+email, username, first name, and last name, are read-only in this API surface.
+Use `GET /api/auth/me` for the authenticated user's profile.
 
-All endpoints in this document require an access token:
+All retained `/api/user` endpoints require an access token:
 
 ```http
 Authorization: Bearer <access_token>
@@ -29,7 +32,8 @@ failures return `401 Unauthorized`.
 
 ## User Shape
 
-User responses use this shape:
+Authenticated profile responses are provided by `GET /api/auth/me` and use this
+shape:
 
 ```json
 {
@@ -46,149 +50,61 @@ User responses use this shape:
 
 `role` is currently `user` or `expert`.
 
-## `GET /api/user/get`
-
-Returns the authenticated user's profile. The `user_id` query parameter must
-match the authenticated token subject.
-
-Request:
-
-```http
-GET /api/user/get?user_id=3fa85f64-5717-4562-b3fc-2c963f66afa6
-Authorization: Bearer <access_token>
-```
-
-Success response (`200 OK`):
-
-```json
-{
-  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "email": "user@example.com",
-  "username": "user-name",
-  "first_name": "Example",
-  "last_name": "User",
-  "role": "user",
-  "created_at": "2026-05-13T12:00:00Z",
-  "datasets": []
-}
-```
-
-Failure responses:
-
-- `400 Bad Request`: `user_id` is missing or is not a valid UUID.
-- `401 Unauthorized`: access token is missing or invalid.
-- `403 Forbidden`: `user_id` does not match the authenticated user.
-
 ## `POST /api/user/delete`
 
-Deletes the authenticated user's account.
+Deletes the authenticated user's account. By default, datasets owned by the user
+are preserved and marked as pending deletion review. Clients may request owned
+dataset deletion explicitly.
 
 Request:
 
 ```http
 POST /api/user/delete
 Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "mode": "account_only"
+}
 ```
+
+Supported `mode` values:
+
+- `account_only`: delete the user account and preserve owned datasets.
+- `account_and_datasets`: delete the user account and delete owned datasets.
 
 Success response (`200 OK`):
 
 ```json
 {
   "status_code": 200,
-  "message": "User deleted"
+  "message": "User deleted",
+  "datasets_preserved": 1,
+  "datasets_deleted": 0,
+  "dataset_deletion_requests": 1
 }
 ```
 
 Failure responses:
 
 - `401 Unauthorized`: access token is missing or invalid.
+- `502 Bad Gateway`: account deletion could not finish storage cleanup.
 
-## `POST /api/user/change_email`
+## Removed Legacy Endpoints
 
-Changes the authenticated user's email address.
+These legacy endpoints are intentionally not part of the retained `/api/user`
+surface:
 
-Request:
-
-```http
-POST /api/user/change_email?email=new.user@example.com
-Authorization: Bearer <access_token>
-```
-
-Success response (`200 OK`):
-
-```json
-{
-  "status_code": 200,
-  "message": "User email changed"
-}
-```
-
-Failure responses:
-
-- `400 Bad Request`: `email` is missing or is not a valid email address.
-- `401 Unauthorized`: access token is missing or invalid.
-- `409 Conflict`: another user already uses the email address.
-
-## `POST /api/user/change_device_name`
-
-Sets a display name for one of the authenticated user's refresh-token families.
-The API currently refers to this display name as a device name.
-
-Request:
-
-```http
-POST /api/user/change_device_name?family_id=9cf6314b-c18e-4a01-8f74-22bbf90a8d55&device_name=Laptop
-Authorization: Bearer <access_token>
-```
-
-Success response (`200 OK`):
-
-```json
-{
-  "status_code": 200,
-  "message": "Family name changed"
-}
-```
-
-Failure responses:
-
-- `400 Bad Request`: `family_id` is missing, invalid, or not known.
-- `401 Unauthorized`: access token is missing or invalid.
-- `403 Forbidden`: `family_id` belongs to a different user.
-
-## `GET /api/user/get_family_name`
-
-Returns the display name for one of the authenticated user's refresh-token
-families.
-
-Request:
-
-```http
-GET /api/user/get_family_name?family_id=9cf6314b-c18e-4a01-8f74-22bbf90a8d55
-Authorization: Bearer <access_token>
-```
-
-Success response (`200 OK`):
-
-```json
-{
-  "status_code": 200,
-  "family_name": "Laptop"
-}
-```
-
-Failure responses:
-
-- `400 Bad Request`: `family_id` is missing, invalid, or not known.
-- `401 Unauthorized`: access token is missing or invalid.
-- `403 Forbidden`: `family_id` belongs to a different user.
-- `404 Not Found`: `family_id` exists but no display name has been set.
+- `GET /api/user/get`: use `GET /api/auth/me`.
+- `POST /api/user/change_email`: email comes from the GitHub profile.
+- `POST /api/user/change_device_name`: session family display names are not
+  exposed.
+- `GET /api/user/get_family_name`: session family display names are not
+  exposed.
 
 ## Security Rules
 
-- No `/api/user` endpoint is public.
-- `/api/user/get` may only return the authenticated user's own profile.
-- Session metadata endpoints may only read or modify refresh-token families owned
-  by the authenticated user.
+- No retained `/api/user` endpoint is public.
+- GitHub-controlled profile fields are not editable through `/api/user`.
 - Private user fields such as email and role are never exposed through
   unauthenticated requests or cross-user lookups.

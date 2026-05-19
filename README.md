@@ -32,7 +32,6 @@ For real GitHub login, also set:
 ```env
 GITHUB_CLIENT_ID=your-client-id
 GITHUB_SECRET=your-client-secret
-GITHUB_REDIRECT=http://localhost:8000/login/callback
 ```
 
 These GitHub values are not user account details. They identify this deployed application to GitHub before any user can log in. The GitHub OAuth App callback URL must exactly match `GITHUB_REDIRECT`.

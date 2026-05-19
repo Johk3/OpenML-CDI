@@ -13,6 +13,7 @@ def test_settings_defaults(monkeypatch):
     monkeypatch.delenv("CLAMD_PORT", raising=False)
     monkeypatch.delenv("CLAMD_TIMEOUT_SECONDS", raising=False)
     monkeypatch.delenv("COOKIE_SECURE", raising=False)
+    monkeypatch.delenv("APP_BASE_URL", raising=False)
 
     settings = Settings.from_env()
 
@@ -26,6 +27,7 @@ def test_settings_defaults(monkeypatch):
     assert settings.storage.clamd_timeout_seconds == 60.0
     assert settings.github_issues.owner == "koevoet1221"
     assert settings.github_issues.repo == "openmlupload-testing"
+    assert settings.app_base_url == "http://localhost:8000"
 
 
 def test_cookie_secure_can_be_disabled_for_local_http(monkeypatch):
@@ -34,6 +36,14 @@ def test_cookie_secure_can_be_disabled_for_local_http(monkeypatch):
     settings = Settings.from_env()
 
     assert settings.auth.cookie_secure is False
+
+
+def test_app_base_url_can_be_overridden(monkeypatch):
+    monkeypatch.setenv("APP_BASE_URL", " https://upload.example.com ")
+
+    settings = Settings.from_env()
+
+    assert settings.app_base_url == "https://upload.example.com"
 
 
 def test_invalid_backend_raises(monkeypatch):

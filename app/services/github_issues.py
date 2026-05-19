@@ -40,8 +40,7 @@ USER_MESSAGES = {
         "does not have permission to create issues in the configured repository."
     ),
     RATE_LIMITED: (
-        "GitHub discussion creation is delayed because GitHub rate limits "
-        "were reached."
+        "GitHub discussion creation is delayed because GitHub rate limits were reached."
     ),
     TRANSIENT_ERROR: (
         "GitHub discussion creation is temporarily unavailable. The upload "
@@ -529,6 +528,63 @@ def create_issue_for_dataset(
             message=last_error.user_message,
         ),
     )
+
+
+def create_issue_comment(
+    settings: GitHubIssuesSettings,
+    issue_url: str,
+    comment_body: str,
+) -> None:
+    """Post a new comment to an existing issue."""
+    parsed = _parse_owner_repo_number(issue_url)
+    if not parsed:
+        raise GitHubAPIError("Invalid GitHub issue URL format")
+
+    owner, repo_name, number = parsed
+
+    try:
+        gh = _get_github_client(settings)
+        repo = gh.get_repo(f"{owner}/{repo_name}")
+        issue = repo.get_issue(number)
+        issue.create_comment(comment_body)
+    except GithubException as e:
+        error = _github_api_error_from_exception(e)
+        raise GitHubAPIError(
+            f"GitHub API error creating comment: {_github_exception_message(e)}",
+            error.status_code,
+            reason=error.reason,
+            retryable=error.retryable,
+            user_message=error.user_message,
+        )
+
+
+def create_comment_for_dataset(
+    *,
+    dataset_id: Any,
+    issue_url: str,
+    comment_body: str,
+    settings: GitHubIssuesSettings,
+) -> None:
+    """Background task: post a comment to an existing issue."""
+    if not settings.app_id or not settings.install_id or not settings.private_key:
+        logger.info(
+            "GitHub comment failed, GitHub App credentials not fully configured"
+        )
+        return
+
+    try:
+        create_issue_comment(
+            settings=settings,
+            issue_url=issue_url,
+            comment_body=comment_body,
+        )
+        logger.info("GitHub comment posted for dataset %s", dataset_id)
+    except GitHubAPIError:
+        logger.exception("Failed to post GitHub comment for dataset %s", dataset_id)
+    except Exception:
+        logger.exception(
+            "Network error posting GitHub comment for dataset %s", dataset_id
+        )
 
 
 def _retry_delay_seconds(attempt: int) -> float:

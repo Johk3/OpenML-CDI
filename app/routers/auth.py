@@ -43,11 +43,11 @@ from app.services.registration import (
 load_dotenv()
 
 DEV_LOGIN_BYPASS_ENV = "AUTH_DEV_MODE_APPROVE_ALL_LOGINS"
-DEFAULT_DEV_CALLBACK_URL = "http://localhost:5173/login/callback"
 DEFAULT_DEV_EMAIL = "dev.user@example.com"
 DEFAULT_DEV_USERNAME = "dev-user"
 DEFAULT_DEV_FIRST_NAME = "Dev"
 DEFAULT_DEV_LAST_NAME = "User"
+DEV_CALLBACK_URL = "http://localhost:5173/login/callback"
 DEFAULT_GITHUB_OAUTH_SCOPES = ("read:user", "user:email", "read:org")
 GITHUB_OAUTH_CONFIGURATION_MESSAGE = (
     "GitHub login is not configured correctly. Please contact an administrator."
@@ -201,26 +201,21 @@ def _append_query_params(url: str, params: dict[str, str]) -> str:
     )
 
 
-def _resolve_github_oauth_settings() -> tuple[str, str, str]:
+def _resolve_github_oauth_settings() -> tuple[str, str]:
     github_client_id = os.getenv("GITHUB_CLIENT_ID", "").strip()
     github_secret = os.getenv("GITHUB_SECRET", "").strip()
-    github_redirect = (
-        os.getenv("GITHUB_REDIRECT", "").strip() or DEFAULT_DEV_CALLBACK_URL
-    )
     missing_values: list[str] = []
     if not github_client_id:
         missing_values.append("GITHUB_CLIENT_ID")
     if not github_secret:
         missing_values.append("GITHUB_SECRET")
-    if not github_redirect:
-        missing_values.append("GITHUB_REDIRECT")
     if missing_values:
         logger.error(
             "GitHub OAuth settings are incomplete",
             extra={"missing_values": missing_values},
         )
         raise GitHubOAuthConfigurationError(missing_values)
-    return github_client_id, github_secret, github_redirect
+    return github_client_id, github_secret
 
 
 def _github_oauth_scopes() -> list[str]:
@@ -445,13 +440,10 @@ def revoke_family(
 def github_login(request: Request):
     cookie_secure = _cookie_secure(request)
     if _is_dev_login_bypass_enabled():
-        callback_url = (
-            os.getenv("GITHUB_REDIRECT", "").strip() or DEFAULT_DEV_CALLBACK_URL
-        )
         state = secrets.token_urlsafe(16)
         # In dev mode, short-circuit external OAuth and treat callback as approved.
         redirect_url = _append_query_params(
-            callback_url,
+            DEV_CALLBACK_URL,
             {"code": "dev-mode", "state": state},
         )
         response = RedirectResponse(redirect_url)
@@ -459,9 +451,7 @@ def github_login(request: Request):
         return response
 
     try:
-        github_client_id, _github_secret, github_redirect = (
-            _resolve_github_oauth_settings()
-        )
+        github_client_id, _github_secret = _resolve_github_oauth_settings()
     except GitHubOAuthConfigurationError:
         return _github_auth_error_response(
             status_code=500,
@@ -471,7 +461,6 @@ def github_login(request: Request):
     github = OAuth2Session(
         github_client_id,
         scope=_github_oauth_scopes(),
-        redirect_uri=github_redirect,
     )
     authorization_url, state = github.authorization_url(
         "https://github.com/login/oauth/authorize"
@@ -546,9 +535,7 @@ def auth_github_callback(
         )
 
     try:
-        github_client_id, github_secret, github_redirect = (
-            _resolve_github_oauth_settings()
-        )
+        github_client_id, github_secret = _resolve_github_oauth_settings()
     except GitHubOAuthConfigurationError:
         return _github_auth_error_response(
             status_code=500,
@@ -559,7 +546,6 @@ def auth_github_callback(
     github = OAuth2Session(
         github_client_id,
         state=saved_state,
-        redirect_uri=github_redirect,
     )
     try:
         github.fetch_token(

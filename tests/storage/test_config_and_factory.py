@@ -16,6 +16,7 @@ def test_settings_defaults(monkeypatch):
     monkeypatch.delenv("UPLOAD_LOCATION", raising=False)
     monkeypatch.delenv("UPLOAD_URL_EXPIRES_SECONDS", raising=False)
     monkeypatch.delenv("COOKIE_SECURE", raising=False)
+    monkeypatch.delenv("APP_BASE_URL", raising=False)
 
     settings = Settings.from_env()
 
@@ -27,7 +28,7 @@ def test_settings_defaults(monkeypatch):
     assert settings.storage.clamd_host == "127.0.0.1"
     assert settings.storage.clamd_port == 3310
     assert settings.storage.clamd_timeout_seconds == 60.0
-    assert settings.email.backend == "console"
+    assert settings.app_base_url == "http://localhost:8000"
     assert settings.upload.target == "uploads"
     assert settings.upload.location == "default"
     assert settings.upload.expires_seconds == 3600
@@ -39,6 +40,14 @@ def test_cookie_secure_can_be_disabled_for_local_http(monkeypatch):
     settings = Settings.from_env()
 
     assert settings.auth.cookie_secure is False
+
+
+def test_app_base_url_can_be_overridden(monkeypatch):
+    monkeypatch.setenv("APP_BASE_URL", " https://upload.example.com ")
+
+    settings = Settings.from_env()
+
+    assert settings.app_base_url == "https://upload.example.com"
 
 
 def test_upload_settings_can_be_overridden(monkeypatch):
