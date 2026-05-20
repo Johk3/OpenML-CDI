@@ -5,3 +5,5 @@ allowBuilds:
   esbuild: true
   gitleaks-secret-scanner: true
   msw: true
+minimumReleaseAge: 1440
+blockExoticSubdeps: true
