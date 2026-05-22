@@ -229,10 +229,8 @@ contract:
 - frontend origin: `http://localhost:5173`
 - backend API origin: `http://localhost:8000` with frontend requests pointed at
   `http://localhost:8000/api`
-- `VITE_API_BASE_URL` stores the backend origin only (for example
-  `http://localhost:8000`). The frontend appends `/api` when building axios
-  requests and the GitHub login link, so paths must not include a second `/api`
-  prefix.
+- `VITE_API_BASE_URL` stores the backend origin with the `/api` (for example
+  `http://localhost:8000/api`). The frontend uses the full api url to make requests so there is no need ot include the `/api` in the forntend requests.
 - refresh and logout requests must be sent with credentials enabled
 - backend CORS must allow the exact frontend origin and `allow_credentials=true`
 - refresh cookie must be scoped server-side to the refresh path and kept
