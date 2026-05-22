@@ -6,6 +6,7 @@ import { AxiosError } from 'axios';
 import { AlertTriangle, Loader2, ShieldAlert, Trash2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import React, { useState } from 'react';
+import { ConfirmationDialog } from '@/components/ConfirmationDialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import type { UserRole } from '@/types/auth';
@@ -31,6 +32,7 @@ export const AccountPage: React.FC = () => {
   const { user, isLoading } = useUserContext();
   const { logout } = useAuth();
   const [deleteFeedback, setDeleteFeedback] = useState<string | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   const deleteAccountMutation = useMutation({
     mutationFn: UserService.deleteAccount,
@@ -44,12 +46,11 @@ export const AccountPage: React.FC = () => {
 
   const handleDeleteAccount = () => {
     setDeleteFeedback(null);
-    const shouldDelete = window.confirm(
-      'Delete account permanently? This action cannot be undone.',
-    );
-    if (!shouldDelete) {
-      return;
-    }
+    setIsDeleteDialogOpen(true);
+  };
+
+  const confirmDeleteAccount = () => {
+    setIsDeleteDialogOpen(false);
     deleteAccountMutation.mutate();
   };
 
@@ -136,6 +137,17 @@ export const AccountPage: React.FC = () => {
           </Button>
         </CardContent>
       </Card>
+
+      <ConfirmationDialog
+        open={isDeleteDialogOpen}
+        title="Delete account"
+        description="Delete your account permanently? This action cannot be undone and will end your current session."
+        confirmLabel="Delete account"
+        tone="destructive"
+        isConfirming={isDeleting}
+        onCancel={() => setIsDeleteDialogOpen(false)}
+        onConfirm={confirmDeleteAccount}
+      />
     </motion.div>
   );
 };

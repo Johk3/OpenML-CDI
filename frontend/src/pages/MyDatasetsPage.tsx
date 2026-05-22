@@ -13,6 +13,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { Dataset, DatasetStatus } from '../types/auth';
+import { ConfirmationDialog } from '../components/ConfirmationDialog';
 import { Card, CardContent, CardHeader } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import {
@@ -175,6 +176,24 @@ const DOWNLOADABLE_DATASET_STATUSES: DatasetStatus[] = [
 const isDatasetStatusDownloadable = (status: DatasetStatus): boolean =>
   DOWNLOADABLE_DATASET_STATUSES.includes(status);
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const getActionErrorMessage = (error: unknown, fallback: string): string => {
+  if (isRecord(error) && isRecord(error.response)) {
+    const data = error.response.data;
+    if (isRecord(data) && typeof data.detail === 'string') {
+      return data.detail;
+    }
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return fallback;
+};
+
 const downloadMessageForStatus = (status: DatasetStatus, available: boolean): string => {
   if (!available) return 'Dataset files are not ready for download.';
   if (toExpertSelectStatus(status) === 'pending_review') {
@@ -233,12 +252,19 @@ const EXPERT_STATUS_TRANSITIONS: Partial<Record<DatasetStatus, DatasetStatus[]>>
 
 const getExpertStatusLabel = (status: DatasetStatus) => STATUS_CONFIG[status]?.label || status;
 
+const getExpertStatusTransitions = (dataset: Dataset): DatasetStatus[] => {
+  const current = toExpertSelectStatus(dataset.status);
+  if (current === 'rejected' && !canReopenRejectedDataset(dataset)) return [];
+
+  const transitions = EXPERT_STATUS_TRANSITIONS[current] || [];
+  if (!hasReviewReadyFiles(dataset)) return transitions;
+
+  return transitions.filter((status) => status !== 'scanning');
+};
+
 const getExpertStatusOptions = (dataset: Dataset): DatasetStatus[] => {
   const current = toExpertSelectStatus(dataset.status);
-  const transitions =
-    current === 'rejected' && !canReopenRejectedDataset(dataset)
-      ? []
-      : EXPERT_STATUS_TRANSITIONS[current] || [];
+  const transitions = getExpertStatusTransitions(dataset);
   return [current, ...transitions].filter(
     (value, index, values) => values.indexOf(value) === index,
   );
@@ -253,6 +279,7 @@ export const MyDatasetsPage: React.FC = () => {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [datasetPendingDelete, setDatasetPendingDelete] = useState<Dataset | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusUpdateError, setStatusUpdateError] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
@@ -299,8 +326,15 @@ export const MyDatasetsPage: React.FC = () => {
     navigate('/metadata', { state: { datasetId: datasetId } });
   };
 
-  const handleDelete = (id: string) => {
-    if (!confirm('Are you sure you want to delete this dataset?')) return;
+  const handleDelete = (dataset: Dataset) => {
+    setDatasetPendingDelete(dataset);
+  };
+
+  const confirmDeleteDataset = () => {
+    if (!datasetPendingDelete) return;
+
+    const id = datasetPendingDelete.id;
+    setDatasetPendingDelete(null);
     setDeleting(id);
     DatasetService.deleteDataset(id)
       .then(() => setDatasets((cur) => cur.filter((ds) => ds.id !== id)))
@@ -325,7 +359,7 @@ export const MyDatasetsPage: React.FC = () => {
       a.remove();
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      setDownloadError(error instanceof Error ? error.message : 'Failed to download dataset.');
+      setDownloadError(getActionErrorMessage(error, 'Failed to download dataset.'));
     } finally {
       setDownloadingDatasetId(null);
     }
@@ -351,9 +385,9 @@ export const MyDatasetsPage: React.FC = () => {
     );
     try {
       await DatasetService.updateStatus(id, newStatus);
-    } catch {
+    } catch (error) {
       setDatasets((cur) => cur.map((ds) => (ds.id === id ? { ...ds, status: previous } : ds)));
-      setStatusUpdateError('Failed to update dataset status.');
+      setStatusUpdateError(getActionErrorMessage(error, 'Failed to update dataset status.'));
     } finally {
       setUpdatingStatusId(null);
     }
@@ -450,7 +484,7 @@ export const MyDatasetsPage: React.FC = () => {
                               size="xs"
                               onClick={(e) => {
                                 e.preventDefault();
-                                handleDelete(dataset.id);
+                                handleDelete(dataset);
                               }}
                             >
                               <Trash2 size={12} /> Delete
@@ -547,6 +581,20 @@ export const MyDatasetsPage: React.FC = () => {
             })}
           </div>
         )}
+
+        <ConfirmationDialog
+          open={Boolean(datasetPendingDelete)}
+          title="Delete dataset"
+          description={
+            datasetPendingDelete
+              ? `Delete "${datasetPendingDelete.title}"? This cannot be undone.`
+              : 'Delete this dataset? This cannot be undone.'
+          }
+          confirmLabel="Delete dataset"
+          tone="destructive"
+          onCancel={() => setDatasetPendingDelete(null)}
+          onConfirm={confirmDeleteDataset}
+        />
       </div>
     </motion.div>
   );

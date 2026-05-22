@@ -8,8 +8,10 @@ from app.services.dataset_lifecycle import (
     DatasetLifecycleError,
     DatasetLifecyclePermissionError,
     assert_lifecycle_transition_allowed,
+    allowed_transitions,
     lifecycle_state,
     lifecycle_summary,
+    metadata_is_review_ready,
 )
 
 
@@ -30,32 +32,50 @@ def _dataset(
     )
 
 
+def _review_ready_metadata() -> dict:
+    return {
+        "objects": [
+            {
+                "backend": "s3",
+                "provider": "s3",
+                "bucket": "datasets",
+                "object_key": "quarantine/batch/clean.csv",
+                "quarantine_key": "quarantine/batch/clean.csv",
+                "final_object_key": "ready/dataset/clean.csv",
+                "original_path": "clean.csv",
+                "content_type": "text/csv",
+                "byte_size": 11,
+                "checksum": None,
+                "etag": "etag",
+                "upload_state": "promoted",
+                "scan_state": "clean",
+                "download_state": "downloadable",
+            }
+        ]
+    }
+
+
 def test_legacy_pending_clean_dataset_maps_to_pending_review():
     dataset = _dataset(
         status=Statuses.PENDING,
-        metadata={
-            "objects": [
-                {
-                    "backend": "s3",
-                    "provider": "s3",
-                    "bucket": "datasets",
-                    "object_key": "quarantine/batch/clean.csv",
-                    "quarantine_key": "quarantine/batch/clean.csv",
-                    "final_object_key": "ready/dataset/clean.csv",
-                    "original_path": "clean.csv",
-                    "content_type": "text/csv",
-                    "byte_size": 11,
-                    "checksum": None,
-                    "etag": "etag",
-                    "upload_state": "promoted",
-                    "scan_state": "clean",
-                    "download_state": "downloadable",
-                }
-            ]
-        },
+        metadata=_review_ready_metadata(),
     )
 
     assert lifecycle_state(dataset) == Statuses.PENDING_REVIEW
+
+
+def test_scanning_clean_promoted_dataset_maps_to_pending_review():
+    dataset = _dataset(
+        status=Statuses.SCANNING,
+        metadata=_review_ready_metadata(),
+    )
+
+    summary = lifecycle_summary(dataset)
+
+    assert lifecycle_state(dataset) == Statuses.PENDING_REVIEW
+    assert summary["state"] == "pending_review"
+    assert summary["upload"]["scanning"] is False
+    assert summary["review"]["ready"] is True
 
 
 def test_pending_clean_dataset_without_promotion_stays_in_scanning_state():
@@ -86,29 +106,27 @@ def test_pending_clean_dataset_without_promotion_stays_in_scanning_state():
     assert lifecycle_state(dataset) == Statuses.SCANNING
 
 
+def test_metadata_review_ready_requires_promoted_downloadable_objects():
+    metadata = _review_ready_metadata()
+    assert metadata_is_review_ready(metadata)
+
+    metadata["objects"][0]["upload_state"] = "uploaded"
+
+    assert metadata_is_review_ready(metadata) is False
+    assert Statuses.SCANNING not in allowed_transitions(
+        Statuses.PENDING_REVIEW,
+        review_ready=True,
+    )
+    assert Statuses.SCANNING in allowed_transitions(
+        Statuses.PENDING_REVIEW,
+        review_ready=False,
+    )
+
+
 def test_lifecycle_summary_marks_pending_review_download_as_review_only():
     dataset = _dataset(
         status=Statuses.PENDING_REVIEW,
-        metadata={
-            "objects": [
-                {
-                    "backend": "s3",
-                    "provider": "s3",
-                    "bucket": "datasets",
-                    "object_key": "quarantine/batch/clean.csv",
-                    "quarantine_key": "quarantine/batch/clean.csv",
-                    "final_object_key": "ready/dataset/clean.csv",
-                    "original_path": "clean.csv",
-                    "content_type": "text/csv",
-                    "byte_size": 11,
-                    "checksum": None,
-                    "etag": "etag",
-                    "upload_state": "promoted",
-                    "scan_state": "clean",
-                    "download_state": "downloadable",
-                }
-            ]
-        },
+        metadata=_review_ready_metadata(),
     )
 
     summary = lifecycle_summary(dataset)
@@ -249,6 +267,24 @@ def test_expert_can_mark_reviewed_dataset_as_ongoing_processing():
     ):
         dataset = _dataset(status=current_status)
 
+        assert_lifecycle_transition_allowed(
+            dataset,
+            Statuses.SCANNING,
+            actor_role=Roles.EXPERT,
+            system=False,
+        )
+
+
+def test_expert_cannot_return_review_ready_dataset_to_scanning():
+    dataset = _dataset(
+        status=Statuses.PENDING_REVIEW,
+        metadata=_review_ready_metadata(),
+    )
+
+    with pytest.raises(
+        DatasetLifecycleError,
+        match="Invalid dataset lifecycle transition: pending_review -> scanning",
+    ):
         assert_lifecycle_transition_allowed(
             dataset,
             Statuses.SCANNING,

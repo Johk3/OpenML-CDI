@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { renderWithRouter } from '../utils';
@@ -48,6 +48,75 @@ describe('MyDatasetsPage', () => {
     expect(screen.queryByText(/expert mode active/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /download/i })).not.toBeInTheDocument();
     expect(mockDatasetService.listDatasets).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not delete a dataset when the in-app confirmation is cancelled', async () => {
+    const user = userEvent.setup();
+    const nativeConfirm = vi.spyOn(window, 'confirm');
+
+    renderWithRouter(<MyDatasetsPage />, {
+      userContext: {
+        user: {
+          id: 'test-user',
+          first_name: 'Test',
+          last_name: 'User',
+          role: 'user',
+          email: 'test@test.com',
+          username: 'testuser',
+          datasets: ['dataset'],
+          created_at: 'a',
+        },
+      },
+    });
+
+    expect(
+      await screen.findByRole('heading', { level: 3, name: /sample dataset/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /delete/i }));
+    const dialog = screen.getByRole('dialog', { name: /delete dataset/i });
+    expect(dialog).toHaveTextContent(/this cannot be undone/i);
+    expect(nativeConfirm).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole('button', { name: /cancel/i }));
+
+    expect(mockDatasetService.deleteDataset).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog', { name: /delete dataset/i })).not.toBeInTheDocument();
+    nativeConfirm.mockRestore();
+  });
+
+  it('deletes a dataset after the in-app confirmation is accepted', async () => {
+    const user = userEvent.setup();
+
+    renderWithRouter(<MyDatasetsPage />, {
+      userContext: {
+        user: {
+          id: 'test-user',
+          first_name: 'Test',
+          last_name: 'User',
+          role: 'user',
+          email: 'test@test.com',
+          username: 'testuser',
+          datasets: ['dataset'],
+          created_at: 'a',
+        },
+      },
+    });
+
+    expect(
+      await screen.findByRole('heading', { level: 3, name: /sample dataset/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /delete/i }));
+    const dialog = screen.getByRole('dialog', { name: /delete dataset/i });
+    await user.click(within(dialog).getByRole('button', { name: /delete dataset/i }));
+
+    await waitFor(() => {
+      expect(mockDatasetService.deleteDataset).toHaveBeenCalledWith('dataset-1');
+    });
+    expect(
+      screen.queryByRole('heading', { level: 3, name: /sample dataset/i }),
+    ).not.toBeInTheDocument();
   });
 
   it('should render expert user view with additional controls', async () => {
@@ -304,7 +373,13 @@ describe('MyDatasetsPage', () => {
         dataset_metadata: { description: 'Published dataset' },
       } as unknown as BackendDataset,
     ]);
-    mockDatasetService.updateStatus.mockRejectedValueOnce(new Error('Invalid transition'));
+    mockDatasetService.updateStatus.mockRejectedValueOnce({
+      response: {
+        data: {
+          detail: 'Invalid dataset lifecycle transition: pending_review -> scanning',
+        },
+      },
+    });
 
     renderWithRouter(<MyDatasetsPage />, {
       userContext: {
@@ -338,7 +413,9 @@ describe('MyDatasetsPage', () => {
     expect(
       screen.getByRole('heading', { level: 3, name: /published dataset/i }),
     ).toBeInTheDocument();
-    expect(await screen.findByText('Failed to update dataset status.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Invalid dataset lifecycle transition: pending_review -> scanning'),
+    ).toBeInTheDocument();
     expect(screen.getAllByText('Published').length).toBeGreaterThan(0);
   });
 
@@ -387,6 +464,49 @@ describe('MyDatasetsPage', () => {
     });
   });
 
+  it('does not offer scanning for review-ready clean datasets', async () => {
+    const user = userEvent.setup();
+    mockDatasetService.listDatasets.mockResolvedValueOnce([
+      {
+        id: 'dataset-clean-review-ready',
+        title: 'Clean Review Ready Dataset',
+        status: 'pending_review',
+        created_at: '2026-05-17T00:00:00Z',
+        dataset_metadata: {
+          description: 'Ready for review',
+          malware_scan: {
+            files: [{ file: 'data.csv', status: 'clean' }],
+          },
+        },
+      } as unknown as BackendDataset,
+    ]);
+
+    renderWithRouter(<MyDatasetsPage />, {
+      userContext: {
+        user: {
+          id: 'test-user',
+          first_name: 'Test',
+          last_name: 'User',
+          role: 'expert',
+          email: 'test@test.com',
+          username: 'testuser',
+          datasets: ['dataset'],
+          created_at: 'a',
+        },
+      },
+    });
+
+    expect(
+      await screen.findByRole('heading', { level: 3, name: /clean review ready dataset/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('combobox', { name: /pending expert review/i }));
+
+    expect(screen.queryByRole('option', { name: /ongoing processing/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /approved/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /rejected/i })).toBeInTheDocument();
+  });
+
   it('allows experts to reopen rejected datasets for review', async () => {
     const user = userEvent.setup();
     mockDatasetService.listDatasets.mockResolvedValueOnce([
@@ -399,6 +519,7 @@ describe('MyDatasetsPage', () => {
           description: 'Rejected dataset',
           objects: [
             {
+              upload_state: 'promoted',
               scan_state: 'clean',
               download_state: 'downloadable',
               final_object_key: 'datasets/rejected/clean.csv',
@@ -562,7 +683,7 @@ describe('MyDatasetsPage', () => {
     await user.click(screen.getByRole('combobox', { name: /pending expert review/i }));
     await user.click(screen.getByRole('option', { name: /ongoing processing/i }));
 
-    expect(await screen.findByText('Failed to update dataset status.')).toBeInTheDocument();
+    expect(await screen.findByText('invalid transition')).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: /pending expert review/i })).toHaveTextContent(
       'Pending Expert Review',
     );

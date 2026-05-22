@@ -141,6 +141,7 @@ describe('ExpertQueuePage', () => {
           description: 'Rejected dataset',
           objects: [
             {
+              upload_state: 'promoted',
               scan_state: 'clean',
               download_state: 'downloadable',
               final_object_key: 'datasets/rejected/clean.csv',
@@ -202,6 +203,7 @@ describe('ExpertQueuePage', () => {
           description: 'Rejected dataset',
           objects: [
             {
+              upload_state: 'promoted',
               scan_state: 'clean',
               download_state: 'downloadable',
               final_object_key: 'datasets/rejected/clean.csv',

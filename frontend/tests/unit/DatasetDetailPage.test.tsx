@@ -116,8 +116,117 @@ describe('DatasetDetailPage', () => {
 
     // Assert structural sections are displayed without depending on specific text from data
     expect(screen.getByRole('heading', { name: /croissant metadata/i })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /croissant title/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: /croissant description/i }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText(/Contributors/i)).toBeInTheDocument();
     expect(screen.getByText(/License & Info/i)).toBeInTheDocument();
+  });
+
+  it('does not render Croissant title or description values in the metadata section', async () => {
+    mockDatasetService.getDataset.mockResolvedValueOnce({
+      id: 'ds-croissant-title',
+      title: 'Visible Dataset Title',
+      status: 'pending',
+      created_at: '2026-04-01T00:00:00Z',
+      owner_id: 'test-user',
+      issue_url: '',
+      dataset_metadata: {
+        description: 'Visible dataset description',
+        croissantMetadata: {
+          title: 'Hidden Croissant Title Value',
+          description: 'Visible Croissant Description',
+          license: 'CC-BY-4.0',
+          contributors: ['OpenML Team'],
+          variables: [],
+        },
+        filenames: ['part-0001.parquet'],
+        malware_scan: {
+          engine: 'clamav',
+          files: [{ file: 'part-0001.parquet', status: 'clean' }],
+        },
+      },
+    } as unknown as Awaited<ReturnType<typeof mockDatasetService.getDataset>>);
+
+    navigateTo('/datasets/ds-croissant-title');
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Visible Dataset Title' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Hidden Croissant Title Value')).not.toBeInTheDocument();
+    expect(screen.queryByText('Visible Croissant Description')).not.toBeInTheDocument();
+  });
+
+  it('does not render a Croissant URL link when it points to the current dataset page', async () => {
+    mockDatasetService.getDataset.mockResolvedValueOnce({
+      id: 'ds-self-url',
+      title: 'Visible Dataset Title',
+      status: 'pending',
+      created_at: '2026-04-01T00:00:00Z',
+      owner_id: 'test-user',
+      issue_url: '',
+      dataset_metadata: {
+        description: 'Visible dataset description',
+        croissantMetadata: {
+          title: 'Hidden Croissant Title Value',
+          description: 'Hidden Croissant Description',
+          license: 'CC-BY-4.0',
+          contributors: ['OpenML Team'],
+          variables: [],
+          url: `${window.location.origin}/datasets/ds-self-url`,
+        },
+        filenames: ['part-0001.parquet'],
+        malware_scan: {
+          engine: 'clamav',
+          files: [{ file: 'part-0001.parquet', status: 'clean' }],
+        },
+      },
+    } as unknown as Awaited<ReturnType<typeof mockDatasetService.getDataset>>);
+
+    navigateTo('/datasets/ds-self-url');
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Visible Dataset Title' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /link/i })).not.toBeInTheDocument();
+  });
+
+  it('renders an external Croissant URL link', async () => {
+    mockDatasetService.getDataset.mockResolvedValueOnce({
+      id: 'ds-external-url',
+      title: 'Visible Dataset Title',
+      status: 'pending',
+      created_at: '2026-04-01T00:00:00Z',
+      owner_id: 'test-user',
+      issue_url: '',
+      dataset_metadata: {
+        description: 'Visible dataset description',
+        croissantMetadata: {
+          title: 'Hidden Croissant Title Value',
+          description: 'Hidden Croissant Description',
+          license: 'CC-BY-4.0',
+          contributors: ['OpenML Team'],
+          variables: [],
+          url: 'https://example.org/source-dataset',
+        },
+        filenames: ['part-0001.parquet'],
+        malware_scan: {
+          engine: 'clamav',
+          files: [{ file: 'part-0001.parquet', status: 'clean' }],
+        },
+      },
+    } as unknown as Awaited<ReturnType<typeof mockDatasetService.getDataset>>);
+
+    navigateTo('/datasets/ds-external-url');
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Visible Dataset Title' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /link/i })).toHaveAttribute(
+      'href',
+      'https://example.org/source-dataset',
+    );
   });
 
   it('should render the variables section', async () => {
@@ -299,6 +408,20 @@ describe('DatasetDetailPage', () => {
     navigateTo('/datasets/ds-pending-review');
 
     expect(await screen.findByText(/approve or reject this dataset from the review queue/i));
+  });
+
+  it('levels review action buttons in one aligned row', async () => {
+    mockDatasetService.getDataset.mockResolvedValueOnce(datasetWithLifecycle('pending_review'));
+    navigateTo('/datasets/ds-pending-review');
+
+    const reviewQueueButton = await screen.findByRole('button', { name: /open review queue/i });
+    const editButton = screen.getByRole('button', { name: /edit metadata/i });
+    const actionRow = reviewQueueButton.parentElement;
+
+    expect(actionRow).toBe(editButton.parentElement);
+    expect(actionRow).toHaveClass('flex', 'items-center', 'gap-2');
+    expect(reviewQueueButton).not.toHaveClass('mt-1');
+    expect(editButton).not.toHaveClass('mt-1');
   });
 
   it('lets experts open the metadata editor from reviewable dataset details', async () => {

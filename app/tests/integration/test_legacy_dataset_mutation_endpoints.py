@@ -305,6 +305,7 @@ def test_metadata_endpoint_preserves_storage_derived_metadata_for_owner(
                 "sha256": original_sha256,
                 "md5": original_md5,
                 "encodingFormat": "text/csv",
+                "containedIn": "original.zip",
             }
         ],
     }
@@ -328,6 +329,7 @@ def test_metadata_endpoint_preserves_storage_derived_metadata_for_owner(
                     "sha256": "c" * 64,
                     "md5": "d" * 32,
                     "encodingFormat": "text/plain",
+                    "containedIn": "other.zip",
                 }
             ],
         },
@@ -350,8 +352,9 @@ def test_metadata_endpoint_preserves_storage_derived_metadata_for_owner(
     assert distribution["contentSize"] == "128 B"
     assert distribution["sha256"] == original_sha256
     assert distribution["md5"] == original_md5
-    assert distribution["name"] == "renamed.csv"
-    assert distribution["encodingFormat"] == "text/plain"
+    assert distribution["name"] == "original.csv"
+    assert distribution["encodingFormat"] == "text/csv"
+    assert distribution["containedIn"] == "original.zip"
 
 
 def test_metadata_endpoint_preserves_distribution_when_owner_submits_empty_list(
@@ -498,8 +501,20 @@ def test_metadata_endpoint_generates_protected_metadata_from_upload_objects_for_
             {
                 "original_path": "uploaded.csv",
                 "object_key": f"ready/{dataset_id}/uploaded.csv",
+                "content_type": "text/csv",
                 "byte_size": 512,
                 "checksum": f"sha256:{original_sha256}",
+            }
+        ],
+        "distribution": [
+            {
+                "@type": "cr:FileObject",
+                "@id": "uploaded.csv",
+                "name": "uploaded.csv",
+                "contentUrl": "https://stale.example/download",
+                "contentSize": "1 B",
+                "sha256": "f" * 64,
+                "encodingFormat": "application/json",
             }
         ],
     }
@@ -539,9 +554,10 @@ def test_metadata_endpoint_generates_protected_metadata_from_upload_objects_for_
     )
     assert distribution["contentSize"] == "512 B"
     assert distribution["sha256"] == original_sha256
+    assert distribution["encodingFormat"] == "text/csv"
 
 
-def test_metadata_endpoint_allows_expert_to_update_storage_derived_metadata(
+def test_metadata_endpoint_preserves_storage_derived_metadata_for_expert(
     client, db_test_session
 ):
     owner = _add_user(db_test_session)
@@ -561,6 +577,8 @@ def test_metadata_endpoint_allows_expert_to_update_storage_derived_metadata(
                 "contentSize": "128 B",
                 "sha256": "a" * 64,
                 "md5": "b" * 32,
+                "encodingFormat": "text/csv",
+                "containedIn": "original.zip",
             }
         ],
     }
@@ -581,6 +599,8 @@ def test_metadata_endpoint_allows_expert_to_update_storage_derived_metadata(
                     "contentSize": "256 B",
                     "sha256": "c" * 64,
                     "md5": "d" * 32,
+                    "encodingFormat": "application/json",
+                    "containedIn": "expert.zip",
                 }
             ],
         },
@@ -589,15 +609,21 @@ def test_metadata_endpoint_allows_expert_to_update_storage_derived_metadata(
     assert response.status_code == 200
     db_test_session.refresh(dataset)
     assert (
-        dataset.dataset_metadata["url"] == "https://expert.example/datasets/canonical"
+        dataset.dataset_metadata["url"] == f"https://app.example/datasets/{dataset_id}"
     )
 
     distribution = dataset.dataset_metadata["distribution"][0]
-    assert distribution["@id"] == "expert.csv"
-    assert distribution["contentUrl"] == "https://expert.example/download"
-    assert distribution["contentSize"] == "256 B"
-    assert distribution["sha256"] == "c" * 64
-    assert distribution["md5"] == "d" * 32
+    assert distribution["@id"] == "original.csv"
+    assert distribution["name"] == "original.csv"
+    assert (
+        distribution["contentUrl"]
+        == f"https://app.example/api/datasets/{dataset_id}/download"
+    )
+    assert distribution["contentSize"] == "128 B"
+    assert distribution["sha256"] == "a" * 64
+    assert distribution["md5"] == "b" * 32
+    assert distribution["encodingFormat"] == "text/csv"
+    assert distribution["containedIn"] == "original.zip"
 
 
 def test_metadata_endpoint_rejects_other_users(client, db_test_session):

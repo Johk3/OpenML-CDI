@@ -88,10 +88,14 @@ SHA256_PATTERN = re.compile(r"^[A-Fa-f0-9]{64}$")
 MD5_PATTERN = re.compile(r"^[A-Fa-f0-9]{32}$")
 PROTECTED_CROISSANT_DISTRIBUTION_KEYS = {
     "@id",
+    "name",
     "contentUrl",
+    "encodingFormat",
     "contentSize",
     "sha256",
     "md5",
+    "containedIn",
+    "includes",
 }
 MULTIPART_UPLOADS_KEY = "multipart_uploads"
 MULTIPART_UPLOAD_THRESHOLD_BYTES = 8 * 1024 * 1024
@@ -898,7 +902,18 @@ def _generated_file_object_metadata(dataset: Dataset, app_base_url: str) -> list
     return generated
 
 
-def _generated_file_set_metadata(dataset: Dataset) -> list[dict]:
+def _common_distribution_encoding_format(distribution: list[dict]) -> str | None:
+    formats = {
+        format_value
+        for item in distribution
+        if (format_value := _metadata_string(item.get("encodingFormat")))
+    }
+    return next(iter(formats)) if len(formats) == 1 else None
+
+
+def _generated_file_set_metadata(
+    dataset: Dataset, generated_distribution: list[dict]
+) -> list[dict]:
     metadata = dataset.dataset_metadata or {}
     directory_structure = _metadata_record(metadata.get("directory_structure"))
     if not directory_structure or not isinstance(
@@ -906,18 +921,27 @@ def _generated_file_set_metadata(dataset: Dataset) -> list[dict]:
     ):
         return []
 
-    name = (
-        _metadata_string(directory_structure.get("root"))
-        or _metadata_string(directory_structure.get("archive_path"))
-        or "uploaded-files"
-    )
-    return [{"@type": "cr:FileSet", "@id": name, "name": name}]
+    archive_path = _metadata_string(directory_structure.get("archive_path"))
+    root = _metadata_string(directory_structure.get("root"))
+    name = root or archive_path or "uploaded-files"
+    item = {
+        "@type": "cr:FileSet",
+        "@id": name,
+        "name": name,
+        "includes": f"{root}/**/*" if root else "**/*",
+    }
+    if archive_path:
+        item["containedIn"] = archive_path
+    if encoding_format := _common_distribution_encoding_format(generated_distribution):
+        item["encodingFormat"] = encoding_format
+    return [item]
 
 
 def _generated_distribution_metadata(dataset: Dataset, app_base_url: str) -> list[dict]:
+    file_object_metadata = _generated_file_object_metadata(dataset, app_base_url)
     return [
-        *_generated_file_object_metadata(dataset, app_base_url),
-        *_generated_file_set_metadata(dataset),
+        *file_object_metadata,
+        *_generated_file_set_metadata(dataset, file_object_metadata),
     ]
 
 
@@ -967,10 +991,10 @@ def _protected_distribution_values(
 ) -> dict:
     values: dict = {}
     for key in PROTECTED_CROISSANT_DISTRIBUTION_KEYS:
-        if existing_item and key in existing_item:
-            values[key] = existing_item[key]
-        elif generated_item and key in generated_item:
+        if generated_item and key in generated_item:
             values[key] = generated_item[key]
+        elif existing_item and key in existing_item:
+            values[key] = existing_item[key]
     return values
 
 
@@ -1385,6 +1409,7 @@ def _dataset_detail_response(dataset: DatasetModel | Dataset) -> DatasetDetail:
     metadata = dict(dataset.dataset_metadata or {})
     storage_objects = get_dataset_objects(metadata)
     lifecycle = lifecycle_summary(dataset)
+    response_status = Statuses(lifecycle["state"])
     download_available = bool(lifecycle["download"]["available"])
     return DatasetDetail(
         id=dataset.id,
@@ -1393,7 +1418,7 @@ def _dataset_detail_response(dataset: DatasetModel | Dataset) -> DatasetDetail:
         owner_id=dataset.owner_id,
         issue_url=dataset.issue_url or "",
         created_at=dataset.created_at,
-        status=dataset.status,
+        status=response_status,
         dataset_url=f"/datasets/{dataset.id}",
         download_url=(
             f"/api/datasets/{dataset.id}/download" if download_available else None
@@ -1406,6 +1431,7 @@ def _dataset_detail_response(dataset: DatasetModel | Dataset) -> DatasetDetail:
 
 def _dataset_list_response(dataset: DatasetModel | Dataset) -> DatasetListItem:
     lifecycle = lifecycle_summary(dataset)
+    response_status = Statuses(lifecycle["state"])
     download_available = bool(lifecycle["download"]["available"])
     return DatasetListItem(
         id=dataset.id,
@@ -1414,7 +1440,7 @@ def _dataset_list_response(dataset: DatasetModel | Dataset) -> DatasetListItem:
         owner_id=dataset.owner_id,
         issue_url=dataset.issue_url or "",
         created_at=dataset.created_at,
-        status=dataset.status,
+        status=response_status,
         download_url=(
             f"/api/datasets/{dataset.id}/download" if download_available else None
         ),
@@ -1594,12 +1620,8 @@ def update_metadata_dataset(
     dataset = dataset_crud.get_dataset(db=db, dataset_id=dataset_id)
     dataset = expert_or_owner(current_user, dataset)
     settings = request.app.state.settings
-    metadata_to_save = (
-        metadata
-        if current_user.role == Roles.EXPERT
-        else _restore_owner_protected_croissant_metadata(
-            metadata, dataset, settings.app_base_url
-        )
+    metadata_to_save = _restore_owner_protected_croissant_metadata(
+        metadata, dataset, settings.app_base_url
     )
     # Sync title if present in metadata
     if isinstance(metadata_to_save, dict) and "name" in metadata_to_save:

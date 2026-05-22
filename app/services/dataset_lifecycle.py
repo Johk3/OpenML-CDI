@@ -62,6 +62,12 @@ DOWNLOADABLE_STATES = {
     Statuses.APPROVED,
     Statuses.PUBLISHED,
 }
+SCAN_BACK_BLOCKED_STATES = {
+    Statuses.PENDING_REVIEW,
+    Statuses.APPROVED,
+    Statuses.PUBLISHED,
+    Statuses.UPLOADED,
+}
 
 
 class DatasetLifecycleError(ValueError):
@@ -86,22 +92,22 @@ def requested_lifecycle_state(status: Statuses) -> Statuses:
 
 def lifecycle_state(dataset: Any) -> Statuses:
     status = canonical_status(dataset.status)
+    metadata = dict(dataset.dataset_metadata or {})
+    objects = _safe_dataset_objects(metadata)
+
+    if status == Statuses.SCANNING and metadata_is_review_ready(metadata, objects):
+        return Statuses.PENDING_REVIEW
+
     if status != Statuses.PENDING:
         return status
 
-    metadata = dict(dataset.dataset_metadata or {})
-    objects = _safe_dataset_objects(metadata)
     if objects:
+        if objects_are_review_ready(objects):
+            return Statuses.PENDING_REVIEW
+
         scan_states = {str(obj.get("scan_state")) for obj in objects}
-        download_states = {str(obj.get("download_state")) for obj in objects}
         upload_states = {str(obj.get("upload_state")) for obj in objects}
 
-        if (
-            scan_states <= {"clean"}
-            and download_states <= {"downloadable"}
-            and upload_states <= {"promoted"}
-        ):
-            return Statuses.PENDING_REVIEW
         if scan_states & {"infected", "error", "missing"}:
             return Statuses.QUARANTINED
         if upload_states & {"uploaded", "promoted"}:
@@ -122,14 +128,9 @@ def lifecycle_summary(dataset: Any) -> dict[str, Any]:
     state = lifecycle_state(dataset)
     metadata = dict(dataset.dataset_metadata or {})
     objects = _safe_dataset_objects(metadata)
-    clean_downloadable = bool(objects) and all(
-        obj.get("upload_state") == "promoted"
-        and obj.get("scan_state") == "clean"
-        and obj.get("download_state") == "downloadable"
-        and obj.get("final_object_key")
-        for obj in objects
+    download_available = (
+        objects_are_review_ready(objects) and state in DOWNLOADABLE_STATES
     )
-    download_available = clean_downloadable and state in DOWNLOADABLE_STATES
     review_only_download = download_available and state == Statuses.PENDING_REVIEW
     final_approved_download = download_available and state in {
         Statuses.APPROVED,
@@ -202,6 +203,8 @@ def assert_lifecycle_transition_allowed(
 ) -> None:
     current_state = lifecycle_state(dataset)
     next_state = requested_lifecycle_state(next_status)
+    metadata = dict(dataset.dataset_metadata or {})
+    review_ready = metadata_is_review_ready(metadata)
 
     if current_state == next_state:
         return
@@ -215,11 +218,22 @@ def assert_lifecycle_transition_allowed(
                 "Only experts can change dataset status"
             )
 
-    if next_state not in ALLOWED_TRANSITIONS.get(current_state, set()):
+    if next_state not in allowed_transitions(current_state, review_ready=review_ready):
         raise DatasetLifecycleError(
             f"Invalid dataset lifecycle transition: "
             f"{current_state.value} -> {next_state.value}"
         )
+
+
+def allowed_transitions(
+    current_state: Statuses,
+    *,
+    review_ready: bool,
+) -> set[Statuses]:
+    transitions = set(ALLOWED_TRANSITIONS.get(current_state, set()))
+    if review_ready and current_state in SCAN_BACK_BLOCKED_STATES:
+        transitions.discard(Statuses.SCANNING)
+    return transitions
 
 
 def _github_state(*, state: Statuses, issue_url: str) -> str:
@@ -293,3 +307,31 @@ def _safe_dataset_objects(metadata: dict[str, Any]) -> list[dict[str, Any]]:
         return get_dataset_objects(metadata)
     except DatasetObjectValidationError:
         return []
+
+
+def objects_are_review_ready(objects: list[dict[str, Any]]) -> bool:
+    if not objects:
+        return False
+
+    return all(
+        obj.get("scan_state") == "clean"
+        and obj.get("download_state") == "downloadable"
+        and obj.get("upload_state") == "promoted"
+        and obj.get("final_object_key")
+        for obj in objects
+    )
+
+
+def metadata_is_review_ready(
+    metadata: dict[str, Any],
+    objects: list[dict[str, Any]] | None = None,
+) -> bool:
+    resolved_objects = _safe_dataset_objects(metadata) if objects is None else objects
+    if resolved_objects:
+        return objects_are_review_ready(resolved_objects)
+
+    scan_files = (metadata.get("malware_scan") or {}).get("files") or []
+    return bool(scan_files) and all(
+        isinstance(result, dict) and result.get("status") == "clean"
+        for result in scan_files
+    )

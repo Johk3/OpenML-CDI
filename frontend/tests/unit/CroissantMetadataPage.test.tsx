@@ -177,27 +177,33 @@ describe('CroissantMetadataPage', () => {
     expect(screen.getByLabelText(/^description/i)).not.toBeDisabled();
     await openTab(/distribution/i);
     expect(screen.getByLabelText(/file object id/i)).toBeDisabled();
+    expect(screen.getByLabelText(/^file name/i)).toBeDisabled();
     expect(screen.getByLabelText(/file url/i)).toBeDisabled();
+    expect(screen.getByLabelText(/file format/i)).toBeDisabled();
+    expect(screen.getByLabelText(/contained in archive/i)).toBeDisabled();
     expect(screen.getByLabelText(/file size/i)).toBeDisabled();
     expect(screen.getByLabelText(/sha-256 hash/i)).toBeDisabled();
     expect(screen.getByLabelText(/md5 hash/i)).toBeDisabled();
     expect(
-      screen.getAllByText(/experts can edit this system-generated value/i).length,
+      screen.getAllByText(/generated from the uploaded files and cannot be edited/i).length,
     ).toBeGreaterThan(0);
   });
 
-  it('lets experts edit storage-derived metadata during review', async () => {
+  it('keeps storage-derived metadata read-only for experts during review', async () => {
     renderPageWithDataset('ds-edit', {}, 'expert');
 
     expect(await screen.findByDisplayValue('Demo Dataset')).toBeInTheDocument();
 
-    expect(screen.getByLabelText(/dataset url/i)).not.toBeDisabled();
+    expect(screen.getByLabelText(/dataset url/i)).toBeDisabled();
     await openTab(/distribution/i);
-    expect(screen.getByLabelText(/file object id/i)).not.toBeDisabled();
-    expect(screen.getByLabelText(/file url/i)).not.toBeDisabled();
-    expect(screen.getByLabelText(/file size/i)).not.toBeDisabled();
-    expect(screen.getByLabelText(/sha-256 hash/i)).not.toBeDisabled();
-    expect(screen.getByLabelText(/md5 hash/i)).not.toBeDisabled();
+    expect(screen.getByLabelText(/file object id/i)).toBeDisabled();
+    expect(screen.getByLabelText(/^file name/i)).toBeDisabled();
+    expect(screen.getByLabelText(/file url/i)).toBeDisabled();
+    expect(screen.getByLabelText(/file format/i)).toBeDisabled();
+    expect(screen.getByLabelText(/contained in archive/i)).toBeDisabled();
+    expect(screen.getByLabelText(/file size/i)).toBeDisabled();
+    expect(screen.getByLabelText(/sha-256 hash/i)).toBeDisabled();
+    expect(screen.getByLabelText(/md5 hash/i)).toBeDisabled();
   });
 
   it('lets users add a record set and an attribute field', async () => {

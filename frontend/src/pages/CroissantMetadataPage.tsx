@@ -31,6 +31,25 @@ const SECTIONS = [
   { id: 'rai', label: 'Responsible AI', description: 'Use, limitations, and sensitive data' },
 ];
 
+const UPLOADED_DATASET_IMMUTABLE_FIELD_IDS = new Set([
+  'url',
+  'distribution.@id',
+  'distribution.name',
+  'distribution.contentUrl',
+  'distribution.encodingFormat',
+  'distribution.sha256',
+  'distribution.md5',
+  'distribution.contentSize',
+  'distribution.containedIn',
+  'fileSet.@id',
+  'fileSet.name',
+  'fileSet.containedIn',
+  'fileSet.encodingFormat',
+  'fileSet.includes',
+]);
+
+const UPLOADED_DATASET_IMMUTABLE_REASON = 'Generated from the uploaded files and cannot be edited.';
+
 type InvalidFormTarget = {
   section: string;
   itemIndex?: number;
@@ -171,10 +190,16 @@ export const CroissantMetadataPage: React.FC = () => {
   const fieldFields = CROISSANT_USER_FIELDS.filter((f) => f.section === 'field');
   const raiFields = CROISSANT_USER_FIELDS.filter((f) => f.section === 'rai');
 
+  const isUploadedDatasetImmutableField = (field: CroissantFieldDef): boolean =>
+    Boolean(datasetId) && UPLOADED_DATASET_IMMUTABLE_FIELD_IDS.has(field.id);
+
   const canEditField = (field: CroissantFieldDef): boolean =>
-    !field.expertOnly || canEditExpertOnlyFields;
+    !isUploadedDatasetImmutableField(field) && (!field.expertOnly || canEditExpertOnlyFields);
 
   const isFieldReadOnly = (field: CroissantFieldDef): boolean => !canEditField(field);
+
+  const getFieldReadOnlyReason = (field: CroissantFieldDef): string | undefined =>
+    isUploadedDatasetImmutableField(field) ? UPLOADED_DATASET_IMMUTABLE_REASON : undefined;
 
   const handleDatasetChange = (fieldId: string, value: FieldValue) => {
     setFormData((prev) => ({
@@ -603,6 +628,7 @@ export const CroissantMetadataPage: React.FC = () => {
                         value={formData.dataset[field.id]}
                         onChange={(val) => handleDatasetChange(field.id, val)}
                         readOnly={isFieldReadOnly(field)}
+                        readOnlyReason={getFieldReadOnlyReason(field)}
                       />
                     </div>
                   ))}
@@ -696,17 +722,19 @@ export const CroissantMetadataPage: React.FC = () => {
                           field.id === 'distribution.md5' || field.id === 'distribution.sha256';
                         return (
                           <React.Fragment key={field.id}>
-                            {canEditExpertOnlyFields && field.id === 'distribution.sha256' && (
-                              <div
-                                className={`flex items-start gap-2 rounded-md border px-4 py-3 text-sm ${showHashError ? 'border-destructive/50 bg-destructive/10 text-destructive' : 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-400'}`}
-                              >
-                                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                                <span>
-                                  Provide at least one checksum, either SHA-256 or MD5. SHA-256 is
-                                  preferred.
-                                </span>
-                              </div>
-                            )}
+                            {canEditExpertOnlyFields &&
+                              !isFieldReadOnly(field) &&
+                              field.id === 'distribution.sha256' && (
+                                <div
+                                  className={`flex items-start gap-2 rounded-md border px-4 py-3 text-sm ${showHashError ? 'border-destructive/50 bg-destructive/10 text-destructive' : 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-400'}`}
+                                >
+                                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                                  <span>
+                                    Provide at least one checksum, either SHA-256 or MD5. SHA-256 is
+                                    preferred.
+                                  </span>
+                                </div>
+                              )}
                             <div
                               className={
                                 isHashField && showHashError
@@ -721,6 +749,7 @@ export const CroissantMetadataPage: React.FC = () => {
                                   handleDistributionChange(activeDistIdx, field.id, val)
                                 }
                                 readOnly={isFieldReadOnly(field)}
+                                readOnlyReason={getFieldReadOnlyReason(field)}
                               />
                             </div>
                           </React.Fragment>
@@ -803,6 +832,7 @@ export const CroissantMetadataPage: React.FC = () => {
                             value={activeFileSetItem[field.id]}
                             onChange={(val) => handleFileSetChange(activeFileSetIdx, field.id, val)}
                             readOnly={isFieldReadOnly(field)}
+                            readOnlyReason={getFieldReadOnlyReason(field)}
                           />
                         </div>
                       ))}
@@ -887,6 +917,7 @@ export const CroissantMetadataPage: React.FC = () => {
                                 handleRecordSetChange(activeRecordSetIdx, field.id, val)
                               }
                               readOnly={isFieldReadOnly(field)}
+                              readOnlyReason={getFieldReadOnlyReason(field)}
                             />
                           </div>
                         ))}
@@ -965,6 +996,7 @@ export const CroissantMetadataPage: React.FC = () => {
                                   itemData={activeFieldItem}
                                   crossReferenceOptions={crossReferenceOptions}
                                   readOnly={isFieldReadOnly(field)}
+                                  readOnlyReason={getFieldReadOnlyReason(field)}
                                 />
                               </div>
                             ))}
@@ -994,6 +1026,7 @@ export const CroissantMetadataPage: React.FC = () => {
                         value={formData.rai[field.id]}
                         onChange={(val) => handleRaiChange(field.id, val)}
                         readOnly={isFieldReadOnly(field)}
+                        readOnlyReason={getFieldReadOnlyReason(field)}
                       />
                     </div>
                   ))}

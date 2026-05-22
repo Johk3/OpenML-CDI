@@ -965,9 +965,7 @@ def test_expert_can_mark_reviewed_dataset_as_processing_error(client, db_test_se
         )
 
 
-def test_expert_can_mark_reviewed_dataset_as_ongoing_processing(
-    client, db_test_session
-):
+def test_expert_cannot_return_review_ready_dataset_to_scanning(client, db_test_session):
     owner_id = uuid.uuid4()
     expert_id = uuid.uuid4()
     db_test_session.add(_user(user_id=owner_id, role=Roles.USER))
@@ -1011,16 +1009,25 @@ def test_expert_can_mark_reviewed_dataset_as_ongoing_processing(
     db_test_session.commit()
     access_token = create_access_token({"sub": str(expert_id), "type": "access"})
 
-    for dataset_id in dataset_ids:
+    for dataset_id, initial_status in zip(
+        dataset_ids,
+        (Statuses.PENDING_REVIEW, Statuses.APPROVED, Statuses.PUBLISHED),
+    ):
         response = client.post(
             "/api/datasets/status",
             params={"dataset_id": str(dataset_id), "status": "scanning"},
             headers={"Authorization": f"Bearer {access_token}"},
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 409
+        assert response.json() == {
+            "detail": (
+                "Invalid dataset lifecycle transition: "
+                f"{initial_status.value} -> scanning"
+            )
+        }
         db_test_session.expire_all()
-        assert db_test_session.get(Dataset, dataset_id).status == Statuses.SCANNING
+        assert db_test_session.get(Dataset, dataset_id).status == initial_status
 
 
 def test_expert_can_reopen_rejected_review_ready_dataset(client, db_test_session):
@@ -1287,12 +1294,56 @@ def test_list_datasets_includes_lifecycle_download_visibility(client, db_test_se
     datasets = {dataset["id"]: dataset for dataset in response.json()}
     downloadable = datasets[str(downloadable_id)]
     rejected = datasets[str(rejected_id)]
+    assert downloadable["status"] == "pending_review"
     assert downloadable["lifecycle"]["state"] == "pending_review"
     assert downloadable["lifecycle"]["download"]["available"] is True
     assert downloadable["download_url"] == (f"/api/datasets/{downloadable_id}/download")
+    assert rejected["status"] == "rejected"
     assert rejected["lifecycle"]["state"] == "rejected"
     assert rejected["lifecycle"]["download"]["available"] is False
     assert rejected["download_url"] is None
+
+
+def test_get_dataset_normalizes_scanning_clean_promoted_dataset(
+    client, db_test_session
+):
+    owner_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    clean_object = _object_metadata(
+        final_object_key="ready/dataset/clean.csv",
+        scan_state="clean",
+        download_state="downloadable",
+    )
+    db_test_session.add_all(
+        [
+            _user(user_id=owner_id),
+            Dataset(
+                id=dataset_id,
+                title="Clean but persisted scanning",
+                owner_id=owner_id,
+                dataset_metadata={
+                    "filenames": ["clean.csv"],
+                    "objects": [clean_object],
+                },
+                status=Statuses.SCANNING,
+            ),
+        ]
+    )
+    db_test_session.commit()
+    access_token = create_access_token({"sub": str(owner_id), "type": "access"})
+
+    response = client.get(
+        "/api/datasets/get",
+        params={"dataset_id": str(dataset_id)},
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "pending_review"
+    assert payload["lifecycle"]["state"] == "pending_review"
+    assert payload["lifecycle"]["upload"]["scanning"] is False
+    assert payload["download_url"] == f"/api/datasets/{dataset_id}/download"
 
 
 def test_regular_user_default_list_only_includes_owned_datasets(

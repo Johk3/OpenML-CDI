@@ -13,6 +13,7 @@ const hasReviewReadyObjects = (objects: unknown): boolean => {
       isRecord(object) &&
       object.scan_state === 'clean' &&
       object.download_state === 'downloadable' &&
+      object.upload_state === 'promoted' &&
       typeof object.final_object_key === 'string' &&
       object.final_object_key.length > 0,
   );
@@ -29,7 +30,9 @@ const hasCleanLegacyScan = (malwareScan: unknown): boolean => {
 
 export const hasReviewReadyFiles = (dataset: Pick<Dataset, 'rawMetadata'>): boolean => {
   const metadata = dataset.rawMetadata ?? {};
-  if (hasReviewReadyObjects(metadata.objects)) return true;
+  if (Array.isArray(metadata.objects) && metadata.objects.length > 0) {
+    return hasReviewReadyObjects(metadata.objects);
+  }
 
   return hasCleanLegacyScan(metadata.malware_scan);
 };

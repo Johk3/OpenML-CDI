@@ -301,6 +301,15 @@ function parseUploadPackage(value: unknown): UploadDirectoryStructure | undefine
   };
 }
 
+function isDatasetPageUrl(url: string, datasetId: string): boolean {
+  try {
+    const parsedUrl = new URL(url, window.location.origin);
+    return parsedUrl.pathname.replace(/\/$/, '') === `/datasets/${datasetId}`;
+  } catch {
+    return false;
+  }
+}
+
 function toFrontendDataset(b: BackendDatasetWithPackage): DatasetWithUploadPackage {
   const metadata = b.dataset_metadata || {};
   const uploadPackage = parseUploadPackage(b.upload_package ?? metadata.directory_structure);
@@ -603,12 +612,19 @@ export const DatasetDetailPage: React.FC = () => {
   }
 
   const { croissantMetadata } = dataset;
+  const visibleCroissantUrl =
+    croissantMetadata?.url && !isDatasetPageUrl(croissantMetadata.url, dataset.id)
+      ? croissantMetadata.url
+      : undefined;
   const lifecycle = dataset.lifecycle;
   const lifecycleCopy = getLifecycleStateCopy(lifecycle?.state || dataset.status);
   const isExpert = user.role === 'expert';
   const canDownloadDataset = Boolean(lifecycle?.download.available);
   const canPublishDataset = isExpert && (lifecycle?.state || dataset.status) === 'approved';
   const canEditMetadata = canExpertEditMetadata(lifecycle?.state || dataset.status, isExpert);
+  const hasReviewActions = Boolean(
+    (isExpert && lifecycle?.review.ready) || canEditMetadata || canPublishDataset,
+  );
   const visibleFiles = dataset.files ?? [];
   const showFilesSection = visibleFiles.length > 0 || canDownloadDataset;
 
@@ -704,16 +720,6 @@ export const DatasetDetailPage: React.FC = () => {
               </div>
 
               <div className="space-y-6">
-                <div>
-                  <h3 className="font-medium text-foreground mb-1">Croissant Title</h3>
-                  <p className="text-sm text-muted-foreground">{croissantMetadata.title}</p>
-                </div>
-
-                <div>
-                  <h3 className="font-medium text-foreground mb-1">Croissant Description</h3>
-                  <p className="text-sm text-muted-foreground">{croissantMetadata.description}</p>
-                </div>
-
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="bg-muted/30 p-4 rounded-lg border">
                     <h3 className="font-medium flex items-center gap-2 mb-2 text-sm">
@@ -735,11 +741,11 @@ export const DatasetDetailPage: React.FC = () => {
                         <span className="font-medium text-foreground">License:</span>{' '}
                         {croissantMetadata.license}
                       </p>
-                      {croissantMetadata.url && (
+                      {visibleCroissantUrl && (
                         <p className="flex items-center gap-1">
                           <span className="font-medium text-foreground">URL:</span>
                           <a
-                            href={croissantMetadata.url}
+                            href={visibleCroissantUrl}
                             target="_blank"
                             rel="noreferrer"
                             className="text-primary hover:underline flex items-center gap-1"
@@ -1057,49 +1063,46 @@ export const DatasetDetailPage: React.FC = () => {
                 <p className="text-muted-foreground">
                   {getReviewLifecycleCopy(lifecycle, isExpert)}
                 </p>
-                {isExpert && lifecycle?.review.ready ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-1"
-                    onClick={() => navigate('/expert-queue')}
-                  >
-                    Open review queue
-                  </Button>
-                ) : null}
-                {canEditMetadata ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-1"
-                    onClick={() =>
-                      navigate('/metadata', {
-                        state: {
-                          datasetId: dataset.id,
-                          returnTo: `/datasets/${dataset.id}`,
-                        },
-                      })
-                    }
-                  >
-                    <Pencil className="mr-2 h-3 w-3" /> Edit Metadata
-                  </Button>
-                ) : null}
-                {canPublishDataset ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-1"
-                    onClick={publishDataset}
-                    disabled={publishing}
-                  >
-                    {publishing ? (
-                      <>
-                        <Loader2 className="mr-2 h-3 w-3 animate-spin" /> Publishing
-                      </>
-                    ) : (
-                      'Publish dataset'
-                    )}
-                  </Button>
+                {hasReviewActions ? (
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    {isExpert && lifecycle?.review.ready ? (
+                      <Button variant="outline" size="sm" onClick={() => navigate('/expert-queue')}>
+                        Open review queue
+                      </Button>
+                    ) : null}
+                    {canEditMetadata ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          navigate('/metadata', {
+                            state: {
+                              datasetId: dataset.id,
+                              returnTo: `/datasets/${dataset.id}`,
+                            },
+                          })
+                        }
+                      >
+                        <Pencil className="h-3 w-3" /> Edit Metadata
+                      </Button>
+                    ) : null}
+                    {canPublishDataset ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={publishDataset}
+                        disabled={publishing}
+                      >
+                        {publishing ? (
+                          <>
+                            <Loader2 className="h-3 w-3 animate-spin" /> Publishing
+                          </>
+                        ) : (
+                          'Publish dataset'
+                        )}
+                      </Button>
+                    ) : null}
+                  </div>
                 ) : null}
                 {actionError ? (
                   <p className="text-xs font-medium text-destructive">{actionError}</p>

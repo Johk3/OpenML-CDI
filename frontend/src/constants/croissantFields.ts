@@ -124,7 +124,7 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     expertOnly: true,
     placeholder: 'https://github.com/yourorg/your-dataset',
     helperText:
-      'The canonical page for this dataset. The app generates this from the dataset record; experts can adjust it during review.',
+      'The canonical page for this dataset. For uploaded datasets, the app generates this from the dataset record.',
   },
   {
     id: 'creator',
@@ -373,7 +373,7 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     expertOnly: true,
     placeholder: 'train.csv',
     helperText:
-      'Stable JSON-LD identifier for this file object. Defaults to the uploaded file name; experts can adjust it during review.',
+      'Stable JSON-LD identifier for this file object. For uploaded datasets, this is generated from the uploaded file name.',
   },
   {
     id: 'distribution.name',
@@ -394,7 +394,7 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     expertOnly: true,
     placeholder: 'https://example.com/data/train.csv',
     helperText:
-      'A direct download URL for this file. The app generates this from the stored dataset; experts can adjust it during review.',
+      'A direct download URL for this file. For uploaded datasets, the app generates this from the stored dataset.',
   },
   {
     id: 'distribution.encodingFormat',
@@ -426,7 +426,7 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     expertOnly: true,
     placeholder: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
     helperText:
-      'The SHA-256 checksum of this file. This should match the stored file bytes; experts can adjust it during review if needed.',
+      'The SHA-256 checksum of this file. For uploaded datasets, this must match the stored file bytes.',
     pattern: '^[A-Fa-f0-9]{64}$',
     patternMessage: 'Must be exactly 64 hexadecimal characters.',
   },
@@ -439,7 +439,7 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     expertOnly: true,
     placeholder: 'd8e8fca2dc0f896fd7cb4cb0031ba249',
     helperText:
-      'The MD5 checksum of this file. SHA-256 is preferred, but MD5 is supported for legacy compatibility. Experts can adjust it during review.',
+      'The MD5 checksum of this file. SHA-256 is preferred, but MD5 is supported for legacy compatibility.',
     pattern: '^[A-Fa-f0-9]{32}$',
     patternMessage: 'Must be exactly 32 hexadecimal characters.',
   },
@@ -452,7 +452,7 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     expertOnly: true,
     placeholder: '25585843 B',
     helperText:
-      'The stored file size in bytes (e.g. "25585843 B"). Experts can adjust it during review if storage metadata needs correction.',
+      'The stored file size in bytes (e.g. "25585843 B"). For uploaded datasets, this is generated from storage metadata.',
   },
   {
     id: 'distribution.containedIn',
@@ -476,7 +476,7 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     expertOnly: true,
     placeholder: 'image-files',
     helperText:
-      'Stable JSON-LD identifier for this file collection. Generated from the upload structure when possible; experts can adjust it during review.',
+      'Stable JSON-LD identifier for this file collection. For uploaded datasets, this is generated from the upload structure.',
   },
   {
     id: 'fileSet.name',
