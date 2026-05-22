@@ -5,7 +5,6 @@ import { mockDatasetService, resetDatasetServiceMocks } from './mocks/datasetSer
 import { PropsWithChildren } from 'react';
 
 // Prevents HTML dump on error message
-
 vi.setConfig({ testTimeout: 15000 });
 
 beforeEach(() => {

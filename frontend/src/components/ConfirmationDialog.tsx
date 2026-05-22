@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 
 type ConfirmationTone = 'default' | 'destructive';
 
-interface ConfirmationDialogProps {
+export interface ConfirmationDialogProps {
   open: boolean;
   title: string;
   description: string;
@@ -96,7 +96,7 @@ export function ConfirmationDialog({
             disabled={isConfirming}
             onClick={onConfirm}
           >
-            {isConfirming ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {isConfirming ? <Loader2 role="status" className="h-4 w-4 animate-spin" /> : null}
             {confirmLabel}
           </Button>
         </div>
