@@ -23,6 +23,7 @@ reference only and should be treated as legacy from the frontend point of view.
   - [POST /auth/token](#legacy--backend-only-post-authtoken)
   - [POST /auth/refresh](#post-authrefresh)
 - [Protect Routes](#protect-routes)
+- [Manual QA](#manual-qa)
 
 This document describes the current backend authentication endpoints and the
 new registration flow.
@@ -229,8 +230,9 @@ contract:
 - frontend origin: `http://localhost:5173`
 - backend API origin: `http://localhost:8000` with frontend requests pointed at
   `http://localhost:8000/api`
-- `VITE_API_BASE_URL` stores the backend origin with the `/api` (for example
-  `http://localhost:8000/api`). The frontend uses the full api url to make requests so there is no need ot include the `/api` in the forntend requests.
+- `VITE_API_BASE_URL` stores the full backend API URL (for example
+  `http://localhost:8000/api`). The frontend uses this full API URL for
+  requests, so individual frontend request paths should not include `/api`.
 - refresh and logout requests must be sent with credentials enabled
 - backend CORS must allow the exact frontend origin and `allow_credentials=true`
 - refresh cookie must be scoped server-side to the refresh path and kept
@@ -240,10 +242,30 @@ contract:
 
 Frontend env vars:
 
-- `VITE_API_BASE_URL` backend origin, default `http://localhost:8000`
+- `VITE_API_BASE_URL` full backend API URL, default `http://localhost:8000/api`
 - `VITE_GITHUB_CLIENT_ID`
 - `VITE_GITHUB_OAUTH_SCOPE` default `user:email`
 - `VITE_GITHUB_REDIRECT_URI` default `http://localhost:5173/login/callback`
+
+## Manual QA
+
+Use this checklist when verifying the local GitHub-only auth flow without real
+GitHub OAuth credentials:
+
+1. Start the dev stack with `AUTH_DEV_MODE_APPROVE_ALL_LOGINS=true` and
+   `VITE_API_BASE_URL=http://localhost:8000/api`.
+2. Open `http://localhost:5173/login` and click `Continue with GitHub`.
+3. Confirm the browser reaches the authenticated app state, normally
+   `/datasets`, and that the current user profile is visible in the header.
+4. In browser devtools, confirm auth requests use `/api/auth/...` paths and do
+   not produce `/api/api/...` requests.
+5. Reload a protected page such as `/account` and confirm the refresh-cookie
+   session rehydrates without sending the user back to the login page.
+6. Open a fresh private window and visit `/account`; confirm the app redirects
+   to `/login?notice=sign-in-required`.
+7. Sign in again, click `Logout`, and confirm the app returns to `/login`.
+8. Visit `/account` again after logout and confirm the protected-route redirect
+   is restored.
 
 ---
 

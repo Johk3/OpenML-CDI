@@ -33,15 +33,14 @@ def test_dev_compose_has_self_contained_backend_and_frontend_env():
     assert "set -e" in compose
     assert "alembic upgrade head" in compose
     assert "GITHUB_REDIRECT=http://localhost:5173/login/callback" in compose
-    assert "VITE_API_BASE_URL=http://localhost:8000" in compose
+    assert "VITE_API_BASE_URL=http://localhost:8000/api" in compose
     assert "VITE_API_URL=" not in compose
 
 
-def test_frontend_env_example_uses_api_origin_not_api_path():
+def test_frontend_env_example_uses_full_api_base_path():
     env_example = _read("frontend/.env.example")
 
-    assert "VITE_API_BASE_URL=http://localhost:8000" in env_example
-    assert "VITE_API_BASE_URL=http://localhost:8000/api" not in env_example
+    assert "VITE_API_BASE_URL=http://localhost:8000/api" in env_example
 
 
 def test_backend_black_config_uses_standard_pyproject_filename():
