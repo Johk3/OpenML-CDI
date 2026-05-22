@@ -858,7 +858,17 @@ def test_non_expert_cannot_approve_dataset(client, db_test_session):
     assert db_test_session.get(Dataset, dataset_id).status == Statuses.PENDING_REVIEW
 
 
-def test_expert_can_approve_review_ready_dataset(client, db_test_session):
+def test_expert_can_approve_review_ready_dataset(client, db_test_session, monkeypatch):
+    closed_issues = []
+
+    def fake_close_issue_for_dataset(**kwargs):
+        closed_issues.append(kwargs)
+
+    monkeypatch.setattr(
+        "app.routers.dataset.close_issue_for_dataset",
+        fake_close_issue_for_dataset,
+    )
+
     owner_id = uuid.uuid4()
     expert_id = uuid.uuid4()
     dataset_id = uuid.uuid4()
@@ -879,6 +889,7 @@ def test_expert_can_approve_review_ready_dataset(client, db_test_session):
             id=dataset_id,
             title="Review dataset",
             owner_id=owner_id,
+            issue_url="https://github.com/openml/openmlupload-test/issues/42",
             dataset_metadata={
                 "filenames": ["clean.csv"],
                 "objects": [
@@ -904,6 +915,9 @@ def test_expert_can_approve_review_ready_dataset(client, db_test_session):
     assert response.status_code == 200
     db_test_session.expire_all()
     assert db_test_session.get(Dataset, dataset_id).status == Statuses.APPROVED
+    assert len(closed_issues) == 1
+    assert closed_issues[0]["dataset_id"] == dataset_id
+    assert closed_issues[0]["issue_url"].endswith("/issues/42")
 
 
 def test_expert_can_mark_reviewed_dataset_as_processing_error(client, db_test_session):

@@ -61,6 +61,7 @@ from app.services.github_issues import (
     create_issue_for_dataset,
     get_issue_with_comments,
     create_comment_for_dataset,
+    close_issue_for_dataset,
 )
 from app.services.dataset_lifecycle import (
     DatasetLifecycleError,
@@ -1597,10 +1598,18 @@ to **{status.value.replace("_", " ").title()}**
 by expert {current_user.username}!""".replace("\n", " "),
         settings=settings.github_issues,
     )
+    next_status = requested_lifecycle_state(status)
+    if next_status == Statuses.APPROVED and dataset.issue_url:
+        background_tasks.add_task(
+            close_issue_for_dataset,
+            dataset_id=dataset_id,
+            issue_url=dataset.issue_url,
+            settings=settings.github_issues,
+        )
     dataset_crud.update_dataset_status(
         db=db,
         dataset_id=dataset_id,
-        status=requested_lifecycle_state(status),
+        status=next_status,
     )
     return {"status_code": 200, "message": "Dataset status updated successfully"}
 

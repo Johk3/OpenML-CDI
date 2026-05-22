@@ -98,7 +98,10 @@ export function resetDatasetServiceMocks() {
       },
     });
   });
-  mockDatasetService.deleteDataset.mockReset().mockResolvedValue(undefined);
+  mockDatasetService.deleteDataset.mockReset().mockResolvedValue({
+    status_code: 200,
+    message: 'Dataset deleted successfully',
+  });
   mockDatasetService.updateMetadata.mockReset().mockResolvedValue(undefined);
   mockDatasetService.updateStatus.mockReset().mockResolvedValue(undefined);
   mockDatasetService.downloadDataset.mockReset().mockResolvedValue({

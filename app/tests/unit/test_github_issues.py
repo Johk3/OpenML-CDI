@@ -11,6 +11,8 @@ from app.services.github_issues import (
     GitHubAPIError,
     _build_issue_body,
     _parse_owner_repo_number,
+    close_issue,
+    close_issue_for_dataset,
     create_issue,
     get_issue_with_comments,
     create_issue_for_dataset,
@@ -569,6 +571,55 @@ class TestUpdateIssue:
                 {},
                 "http://localhost:8000",
             )
+
+
+class TestCloseIssue:
+    @patch("app.services.github_issues._get_github_client")
+    def test_success(self, mock_get_client, settings):
+        mock_gh = MagicMock()
+        mock_repo = MagicMock()
+        mock_issue = MagicMock()
+
+        mock_repo.get_issue.return_value = mock_issue
+        mock_gh.get_repo.return_value = mock_repo
+        mock_get_client.return_value = mock_gh
+
+        close_issue(
+            settings,
+            "https://github.com/openml/openmlupload-test/issues/42",
+        )
+
+        mock_repo.get_issue.assert_called_once_with(42)
+        mock_issue.edit.assert_called_once_with(state="closed")
+
+    def test_invalid_url_raises(self, settings):
+        with pytest.raises(GitHubAPIError, match="Invalid GitHub issue URL format"):
+            close_issue(settings, "not-a-url")
+
+
+class TestCloseIssueForDataset:
+    @patch("app.services.github_issues.close_issue")
+    def test_calls_close_issue(self, mock_close, settings):
+        close_issue_for_dataset(
+            dataset_id="ds-1",
+            issue_url="https://github.com/openml/openmlupload-test/issues/42",
+            settings=settings,
+        )
+
+        mock_close.assert_called_once_with(
+            settings=settings,
+            issue_url="https://github.com/openml/openmlupload-test/issues/42",
+        )
+
+    def test_skips_when_no_credentials(self, empty_settings):
+        with patch("app.services.github_issues.close_issue") as mock_close:
+            close_issue_for_dataset(
+                dataset_id="ds-1",
+                issue_url="https://github.com/openml/openmlupload-test/issues/42",
+                settings=empty_settings,
+            )
+
+            mock_close.assert_not_called()
 
 
 class TestUpdateIssueForDataset:

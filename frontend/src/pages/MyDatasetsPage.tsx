@@ -27,6 +27,7 @@ import { useUserContext } from '@/hooks/useUserContext';
 import { DatasetService } from '@/services/datasetService';
 import { BackendDataset } from '@/types/dataset';
 import { canReopenRejectedDataset, hasReviewReadyFiles } from '@/lib/datasetReadiness';
+import { hasPendingDeletionRequest, requiresExpertDeletionApproval } from '@/lib/datasetDeletion';
 
 function toFrontendDataset(b: BackendDataset): Dataset {
   const metadata = b.dataset_metadata || {};
@@ -280,6 +281,7 @@ export const MyDatasetsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [datasetPendingDelete, setDatasetPendingDelete] = useState<Dataset | null>(null);
+  const [deleteNotice, setDeleteNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusUpdateError, setStatusUpdateError] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
@@ -349,7 +351,15 @@ export const MyDatasetsPage: React.FC = () => {
     navigate('/metadata', { state: { datasetId: datasetId } });
   };
 
+  const isExpert = user.role === 'expert';
+
   const handleDelete = (dataset: Dataset) => {
+    setDeleteNotice(null);
+    setDatasetPendingDelete(dataset);
+  };
+
+  const handleExpertConfirmDeletion = (dataset: Dataset) => {
+    setDeleteNotice(null);
     setDatasetPendingDelete(dataset);
   };
 
@@ -357,15 +367,67 @@ export const MyDatasetsPage: React.FC = () => {
     if (!datasetPendingDelete) return;
 
     const id = datasetPendingDelete.id;
+    const pendingDeletion = hasPendingDeletionRequest(datasetPendingDelete.rawMetadata);
+    const expertConfirming =
+      isExpert && (pendingDeletion || requiresExpertDeletionApproval(datasetPendingDelete.status));
     setDatasetPendingDelete(null);
     setDeleting(id);
+    setDeleteNotice(null);
     DatasetService.deleteDataset(id)
-      .then(() => setDatasets((cur) => cur.filter((ds) => ds.id !== id)))
+      .then(async (result) => {
+        if (result.status_code === 202) {
+          const updated = await DatasetService.getDataset(id);
+          setDatasets((current) =>
+            current.map((dataset) =>
+              dataset.id === id ? toFrontendDataset(updated as BackendDataset) : dataset,
+            ),
+          );
+          setDeleteNotice(
+            'Deletion request submitted. An expert must approve before this dataset is removed.',
+          );
+          return;
+        }
+
+        setDatasets((current) => current.filter((dataset) => dataset.id !== id));
+        if (expertConfirming) {
+          setDeleteNotice('Dataset deleted permanently.');
+        }
+      })
       .catch(() => setError('Failed to delete dataset.'))
       .finally(() => setDeleting(null));
   };
 
-  const isExpert = user.role === 'expert';
+  const getDeleteDialogDescription = (dataset: Dataset): string => {
+    if (isExpert && hasPendingDeletionRequest(dataset.rawMetadata)) {
+      return `Permanently delete "${dataset.title}"? This removes the dataset record and stored files.`;
+    }
+
+    if (hasPendingDeletionRequest(dataset.rawMetadata)) {
+      return `Deletion for "${dataset.title}" is already waiting for expert approval.`;
+    }
+
+    if (requiresExpertDeletionApproval(dataset.status)) {
+      if (isExpert) {
+        return `Permanently delete "${dataset.title}"? This removes the dataset record and stored files.`;
+      }
+      return `Request deletion of "${dataset.title}"? An expert must approve before it is removed from the database.`;
+    }
+
+    return `Delete "${dataset.title}"? This cannot be undone.`;
+  };
+
+  const getDeleteDialogConfirmLabel = (dataset: Dataset): string => {
+    if (isExpert && hasPendingDeletionRequest(dataset.rawMetadata)) {
+      return 'Confirm deletion';
+    }
+
+    if (requiresExpertDeletionApproval(dataset.status)) {
+      return isExpert ? 'Delete dataset' : 'Request deletion';
+    }
+
+    return 'Delete dataset';
+  };
+
   const handleDownload = async (dataset: Dataset) => {
     if (downloadingDatasetId) return;
 
@@ -449,6 +511,13 @@ export const MyDatasetsPage: React.FC = () => {
           </div>
         )}
 
+        {deleteNotice && !loading && !error && (
+          <div className="mb-4 flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-foreground">
+            <CheckCircle2 size={15} />
+            <span>{deleteNotice}</span>
+          </div>
+        )}
+
         {loading ? (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="datasets-empty">
             <Loader2 size={32} className="animate-spin mb-4 text-primary" />
@@ -482,6 +551,7 @@ export const MyDatasetsPage: React.FC = () => {
               const expertStatusOptions = getExpertStatusOptions(dataset);
               const expertStatusLabel = getExpertStatusLabel(expertStatusValue);
               const statusCanChange = canChangeExpertStatus(dataset);
+              const deletionPending = hasPendingDeletionRequest(dataset.rawMetadata);
 
               return (
                 <div key={dataset.id} className="h-full">
@@ -501,6 +571,23 @@ export const MyDatasetsPage: React.FC = () => {
                               <Loader2 size={12} className="animate-spin mr-2" />
                               Deleting...
                             </Button>
+                          ) : deletionPending ? (
+                            isExpert ? (
+                              <Button
+                                variant="destructive"
+                                size="xs"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  handleExpertConfirmDeletion(dataset);
+                                }}
+                              >
+                                <Trash2 size={12} /> Confirm deletion
+                              </Button>
+                            ) : (
+                              <Button variant="outline" size="xs" disabled>
+                                <Clock size={12} /> Deletion pending
+                              </Button>
+                            )
                           ) : (
                             <Button
                               variant="outline"
@@ -610,10 +697,14 @@ export const MyDatasetsPage: React.FC = () => {
           title="Delete dataset"
           description={
             datasetPendingDelete
-              ? `Delete "${datasetPendingDelete.title}"? This cannot be undone.`
+              ? getDeleteDialogDescription(datasetPendingDelete)
               : 'Delete this dataset? This cannot be undone.'
           }
-          confirmLabel="Delete dataset"
+          confirmLabel={
+            datasetPendingDelete
+              ? getDeleteDialogConfirmLabel(datasetPendingDelete)
+              : 'Delete dataset'
+          }
           tone="destructive"
           onCancel={() => setDatasetPendingDelete(null)}
           onConfirm={confirmDeleteDataset}

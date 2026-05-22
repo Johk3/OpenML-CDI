@@ -4,6 +4,7 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { renderWithRouter } from '../utils';
 import { MyDatasetsPage } from '@/pages/MyDatasetsPage';
 import { mockDatasetService } from '../mocks/datasetService';
+import { makeBackendDataset, makeUser } from '../mocks/builders';
 import type { BackendDataset } from '@/types/dataset';
 
 describe('MyDatasetsPage', () => {
@@ -131,6 +132,93 @@ describe('MyDatasetsPage', () => {
     expect(
       screen.queryByRole('heading', { level: 3, name: /sample dataset/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it('requests expert approval when deleting an approved dataset', async () => {
+    const user = userEvent.setup();
+    mockDatasetService.listDatasets.mockResolvedValueOnce([
+      makeBackendDataset({
+        id: 'approved-dataset',
+        title: 'Approved Dataset',
+        status: 'approved',
+      }),
+    ]);
+    mockDatasetService.deleteDataset.mockResolvedValueOnce({
+      status_code: 202,
+      message: 'Dataset deletion requires expert approval',
+    });
+    mockDatasetService.getDataset.mockResolvedValueOnce(
+      makeBackendDataset({
+        id: 'approved-dataset',
+        title: 'Approved Dataset',
+        status: 'approved',
+        dataset_metadata: {
+          description: 'Approved dataset',
+          deletion_request: {
+            status: 'pending_expert_approval',
+            reason: 'dataset_owner_requested',
+          },
+        },
+      }),
+    );
+
+    renderWithRouter(<MyDatasetsPage />, {
+      userContext: {
+        user: makeUser(),
+      },
+    });
+
+    expect(
+      await screen.findByRole('heading', { level: 3, name: /approved dataset/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^delete$/i }));
+    const dialog = screen.getByRole('dialog', { name: /delete dataset/i });
+    expect(within(dialog).getByText(/expert must approve/i)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: /request deletion/i }));
+
+    await waitFor(() => {
+      expect(mockDatasetService.deleteDataset).toHaveBeenCalledWith('approved-dataset');
+    });
+    expect(await screen.findByText(/deletion request submitted/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /deletion pending/i })).toBeDisabled();
+  });
+
+  it('lets experts confirm a pending deletion request', async () => {
+    const user = userEvent.setup();
+    mockDatasetService.listDatasets.mockResolvedValueOnce([
+      makeBackendDataset({
+        id: 'approved-dataset',
+        title: 'Approved Dataset',
+        status: 'approved',
+        dataset_metadata: {
+          description: 'Approved dataset',
+          deletion_request: {
+            status: 'pending_expert_approval',
+            reason: 'dataset_owner_requested',
+          },
+        },
+      }),
+    ]);
+
+    renderWithRouter(<MyDatasetsPage />, {
+      userContext: {
+        user: makeUser({ role: 'expert' }),
+      },
+    });
+
+    expect(
+      await screen.findByRole('heading', { level: 3, name: /approved dataset/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /confirm deletion/i }));
+    const dialog = screen.getByRole('dialog', { name: /delete dataset/i });
+    await user.click(within(dialog).getByRole('button', { name: /confirm deletion/i }));
+
+    await waitFor(() => {
+      expect(mockDatasetService.deleteDataset).toHaveBeenCalledWith('approved-dataset');
+    });
+    expect(await screen.findByText(/dataset deleted permanently/i)).toBeInTheDocument();
   });
 
   it('should render expert user view with additional controls', async () => {

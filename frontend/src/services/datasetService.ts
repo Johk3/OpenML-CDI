@@ -275,6 +275,11 @@ const sessionToUploadContract = (session: ChunkedUploadSession): DatasetUploadCo
   upload_mode: 'multipart',
 });
 
+export interface DeleteDatasetResult {
+  status_code: number;
+  message: string;
+}
+
 export const DatasetService = {
   /** Register a new dataset record and get a pre siigned PUT URL. */
   requestUploadUrl: (payload: UploadUrlPayload) =>
@@ -751,7 +756,7 @@ export const DatasetService = {
   /** Delete a dataset. */
   deleteDataset: (datasetId: string) =>
     apiClient
-      .post(`/datasets/delete`, null, { params: { dataset_id: datasetId } })
+      .post<DeleteDatasetResult>(`/datasets/delete`, null, { params: { dataset_id: datasetId } })
       .then((res) => res.data),
 
   /** List datasets for the current user (AND all datasets for experts). */

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { CroissantFieldInput } from '@/components/CroissantFieldInput';
@@ -102,6 +102,58 @@ describe('CroissantFieldInput component', () => {
     );
 
     expect(screen.getByLabelText(/creator\(s\)/i)).not.toHaveAttribute('placeholder');
+  });
+
+  it('keeps spaces in multi-text values while typing and trims them on blur', async () => {
+    const field: CroissantFieldDef = {
+      id: 'creator',
+      label: 'Creator(s)',
+      section: 'dataset',
+      inputType: 'multi-text',
+      required: true,
+      helperText: 'People or organizations that created the dataset.',
+      pattern: '^([^.,]+)(,\\s*[^.,]+)*$',
+      patternMessage:
+        'Must be a comma-separated list of names without special characters like periods.',
+    };
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+
+    render(<CroissantFieldInput field={field} value={[]} onChange={onChange} />);
+
+    const input = screen.getByLabelText(/creator\(s\)/i);
+    await user.type(input, 'Jane ');
+
+    expect(onChange).toHaveBeenLastCalledWith(['Jane ']);
+    expect(input).toHaveValue('Jane ');
+
+    await user.type(input, 'Doe');
+
+    expect(onChange).toHaveBeenLastCalledWith(['Jane Doe']);
+    expect(input).toHaveValue('Jane Doe');
+
+    await user.tab();
+
+    expect(onChange).toHaveBeenLastCalledWith(['Jane Doe']);
+  });
+
+  it('parses comma-separated multi-text values on change', () => {
+    const field: CroissantFieldDef = {
+      id: 'test-multi',
+      label: 'Tags',
+      section: 'dataset',
+      inputType: 'multi-text',
+      required: false,
+      helperText: '',
+      isJson: false,
+    };
+    const onChange = vi.fn();
+    render(<CroissantFieldInput field={field} value={[]} onChange={onChange} />);
+
+    const input = screen.getByLabelText('Tags');
+    fireEvent.change(input, { target: { value: 'apple, banana, cherry' } });
+
+    expect(onChange).toHaveBeenCalledWith(['apple', 'banana', 'cherry']);
   });
 
   it('toggles helper text visibility', async () => {

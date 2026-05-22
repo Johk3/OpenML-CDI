@@ -179,10 +179,10 @@ describe('UploadPage', () => {
       ).toBeInTheDocument();
       expect(screen.getByText(/incomplete metadata may delay expert review/i)).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /complete metadata/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /finish later/i })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /finish later/i })).not.toBeInTheDocument();
     });
 
-    it('routes the success actions to metadata completion or My Datasets', async () => {
+    it('routes the success action to metadata completion', async () => {
       fireEvent.click(screen.getByText(/Upload Dataset/i));
 
       await waitFor(() => {
@@ -194,8 +194,16 @@ describe('UploadPage', () => {
       expect(mockNavigate).toHaveBeenCalledWith('/metadata', {
         state: { datasetId: 'test-dataset-id' },
       });
+    });
 
-      fireEvent.click(screen.getByRole('button', { name: /finish later/i }));
+    it('still links to My Datasets from the success notice', async () => {
+      fireEvent.click(screen.getByText(/Upload Dataset/i));
+
+      await waitFor(() => {
+        expect(screen.getByText('Upload Complete!')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: /my datasets/i }));
 
       expect(mockNavigate).toHaveBeenCalledWith('/datasets');
     });

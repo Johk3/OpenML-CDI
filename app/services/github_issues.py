@@ -589,6 +589,60 @@ def create_comment_for_dataset(
         )
 
 
+def close_issue(
+    settings: GitHubIssuesSettings,
+    issue_url: str,
+) -> None:
+    """Close an existing GitHub issue."""
+    parsed = _parse_owner_repo_number(issue_url)
+    if not parsed:
+        raise GitHubAPIError("Invalid GitHub issue URL format")
+
+    owner, repo_name, number = parsed
+
+    try:
+        gh = _get_github_client(settings)
+        repo = gh.get_repo(f"{owner}/{repo_name}")
+        issue = repo.get_issue(number)
+        issue.edit(state="closed")
+    except GithubException as e:
+        error = _github_api_error_from_exception(e)
+        raise GitHubAPIError(
+            f"GitHub API error closing issue: {_github_exception_message(e)}",
+            error.status_code,
+            reason=error.reason,
+            retryable=error.retryable,
+            user_message=error.user_message,
+        )
+
+
+def close_issue_for_dataset(
+    *,
+    dataset_id: Any,
+    issue_url: str,
+    settings: GitHubIssuesSettings,
+) -> None:
+    """Background task: close the linked GitHub review issue."""
+    if not issue_url:
+        return
+
+    if not settings.app_id or not settings.install_id or not settings.private_key:
+        logger.info(
+            "GitHub issue close skipped, GitHub App credentials not fully configured"
+        )
+        return
+
+    try:
+        close_issue(settings=settings, issue_url=issue_url)
+        logger.info("GitHub issue closed for dataset %s", dataset_id)
+    except GitHubAPIError:
+        logger.exception("Failed to close GitHub issue for dataset %s", dataset_id)
+    except Exception:
+        logger.exception(
+            "Network error closing GitHub issue for dataset %s", dataset_id
+        )
+
+
 def _retry_delay_seconds(attempt: int) -> float:
     return GITHUB_ISSUE_RETRY_BASE_SECONDS * (2 ** (attempt - 1))
 

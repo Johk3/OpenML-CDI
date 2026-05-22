@@ -1032,9 +1032,6 @@ export const UploadPage: React.FC = () => {
                     </div>
 
                     <div className="flex gap-3 mt-6">
-                      <Button variant="outline" onClick={() => navigate('/datasets')}>
-                        Finish Later
-                      </Button>
                       <Button onClick={() => navigate('/metadata', { state: { datasetId } })}>
                         Complete Metadata <ArrowRight size={16} />
                       </Button>

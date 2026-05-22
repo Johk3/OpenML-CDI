@@ -13,6 +13,36 @@ import type { FieldValue } from '../utils/serializeCroissant';
 
 const CUSTOM_OPTION_VALUE = '__custom__';
 
+function formatMultiTextDraft(value: FieldValue): string {
+  return Array.isArray(value) ? value.join(', ') : String(value ?? '');
+}
+
+function parseMultiTextValue(text: string): string[] {
+  return text
+    .split(',')
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
+function parseMultiTextDraft(text: string): string[] {
+  if (text.length === 0) {
+    return [];
+  }
+
+  const segments = text.split(',');
+  const completed = segments
+    .slice(0, -1)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  const active = (segments[segments.length - 1] ?? '').replace(/^\s+/, '');
+
+  if (active.length === 0) {
+    return completed;
+  }
+
+  return [...completed, active];
+}
+
 function getOptionValue(option: FieldOption): string {
   return typeof option === 'string' ? option : option.value;
 }
@@ -43,6 +73,16 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
   const [showHelper, setShowHelper] = useState(false);
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [isCustomOptionSelected, setIsCustomOptionSelected] = useState(false);
+  const [multiTextDraft, setMultiTextDraft] = useState(() => formatMultiTextDraft(value));
+  const [multiTextCustomDraft, setMultiTextCustomDraft] = useState<string | null>(null);
+  const serializedMultiTextValue = formatMultiTextDraft(value);
+  const [trackedMultiTextValue, setTrackedMultiTextValue] = useState(serializedMultiTextValue);
+
+  if (serializedMultiTextValue !== trackedMultiTextValue) {
+    setTrackedMultiTextValue(serializedMultiTextValue);
+    setMultiTextDraft(serializedMultiTextValue);
+    setMultiTextCustomDraft(null);
+  }
 
   // Return null if conditional logic dictates hiding
   if (field.id === 'field.arrayShape' && itemData && !itemData['field.isArray']) {
@@ -244,12 +284,24 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
           const optionValues = field.options.map(getOptionValue);
           const arrValue: string[] = Array.isArray(value)
             ? value
-            : value
-              ? String(value)
-                  .split(',')
-                  .map((s) => s.trim())
-                  .filter(Boolean)
-              : [];
+            : parseMultiTextValue(String(value ?? ''));
+          const customValues = arrValue.filter((entry) => !optionValues.includes(entry));
+          const customDraft = multiTextCustomDraft ?? customValues.join(', ');
+
+          const commitCustomDraft = (draft: string) => {
+            const customVals = parseMultiTextValue(draft);
+            const selectedOptions = arrValue.filter((entry) => optionValues.includes(entry));
+            onChange([...selectedOptions, ...customVals]);
+            setMultiTextCustomDraft(null);
+          };
+
+          const updateCustomDraft = (draft: string) => {
+            setMultiTextCustomDraft(draft);
+            const customVals = parseMultiTextDraft(draft);
+            const selectedOptions = arrValue.filter((entry) => optionValues.includes(entry));
+            onChange([...selectedOptions, ...customVals]);
+          };
+
           return (
             <div className="space-y-3 p-1">
               <div className="flex flex-wrap gap-2">
@@ -277,16 +329,10 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
                 })}
               </div>
               <Input
-                value={arrValue.filter((v) => !optionValues.includes(v)).join(', ')}
+                value={customDraft}
                 disabled={isDisabled}
-                onChange={(e) => {
-                  const customVals = e.target.value
-                    .split(',')
-                    .map((s) => s.trim())
-                    .filter(Boolean);
-                  const selectedOptions = arrValue.filter((v) => optionValues.includes(v));
-                  onChange([...selectedOptions, ...customVals]);
-                }}
+                onChange={(e) => updateCustomDraft(e.target.value)}
+                onBlur={(e) => commitCustomDraft(e.target.value)}
               />
             </div>
           );
@@ -299,15 +345,16 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
             disabled={isDisabled}
             pattern={field.pattern}
             title={field.patternMessage}
-            value={Array.isArray(value) ? value.join(', ') : String(value ?? '')}
+            value={multiTextDraft}
             onChange={(e) => {
-              const val = e.target.value;
-              onChange(
-                val
-                  .split(',')
-                  .map((s) => s.trim())
-                  .filter(Boolean),
-              );
+              const draft = e.target.value;
+              setMultiTextDraft(draft);
+              onChange(parseMultiTextDraft(draft));
+            }}
+            onBlur={(e) => {
+              const parsed = parseMultiTextValue(e.target.value);
+              onChange(parsed);
+              setMultiTextDraft(parsed.join(', '));
             }}
           />
         );
