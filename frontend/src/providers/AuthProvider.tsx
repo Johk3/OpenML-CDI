@@ -1,6 +1,6 @@
-import { publicClient } from '@/lib/apiClient';
+import { apiClient, publicClient } from '@/lib/apiClient';
 import { tokenManager } from '@/lib/tokenManager';
-import React, { ReactNode, useCallback, useEffect, useState } from 'react';
+import React, { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TokenResponse } from '@/types/auth';
 import { useQueryClient } from '@tanstack/react-query';
@@ -71,17 +71,22 @@ function getGitHubLoginErrorMessage(error: unknown): string {
 }
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(
-    () => !tokenManager.isTokenExpired(),
-  );
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const hasRefreshed = useRef(false);
 
-  const logout = useCallback(() => {
-    tokenManager.clearToken();
-    setIsAuthenticated(false);
-    queryClient.removeQueries({ queryKey: meQueryKey });
-    navigate('/login');
+  const logout = useCallback(async () => {
+    try {
+      await apiClient.post('/auth/refresh/logout');
+    } catch {
+      console.error('Request to logout failed. Continuing with local logout...');
+    } finally {
+      tokenManager.clearToken();
+      setIsAuthenticated(false);
+      queryClient.removeQueries({ queryKey: meQueryKey });
+      navigate('/login');
+    }
   }, [navigate, queryClient]);
 
   const login = useCallback(
@@ -110,6 +115,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     },
     [login],
   );
+
+  useEffect(() => {
+    if (hasRefreshed.current) return;
+    hasRefreshed.current = true;
+
+    async function attemptSilentRefresh() {
+      try {
+        const { data } = await publicClient.post<TokenResponse>(
+          '/auth/refresh',
+          {},
+          { withCredentials: true },
+        );
+        login(data.access_token);
+      } catch {
+        // No valid refresh token — stay logged out, do nothing
+      }
+    }
+
+    attemptSilentRefresh();
+  }, [login]);
 
   useEffect(() => {
     tokenManager.registerUnauthenticatedHandler(logout);

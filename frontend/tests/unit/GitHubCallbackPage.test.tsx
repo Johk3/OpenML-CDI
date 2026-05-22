@@ -2,6 +2,8 @@ import { waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GitHubCallbackPage } from '@/pages/GitHubCallbackPage';
 import { mockNavigate, renderWithRouter } from '../utils';
+import { useAuth } from '@/hooks/useAuth';
+import { AuthContextValue } from '@/contexts/AuthContext';
 
 describe('GitHubCallbackPage', () => {
   beforeEach(() => {
@@ -15,7 +17,8 @@ describe('GitHubCallbackPage', () => {
         new Error(
           'This GitHub account uses an email address that is already connected to another OpenML account.',
         ),
-      );
+      ) as (code: string, state: string) => Promise<void>;
+    vi.mocked(useAuth).mockReturnValue({ loginWithGithub } as AuthContextValue);
 
     renderWithRouter(<GitHubCallbackPage />, {
       initialRoute: '/login/callback?code=github-code&state=oauth-state',
@@ -33,7 +36,11 @@ describe('GitHubCallbackPage', () => {
   it('sanitizes raw GitHub callback errors before routing back to login', async () => {
     const loginWithGithub = vi
       .fn()
-      .mockRejectedValue(new Error('Provider stack trace: secret-token'));
+      .mockRejectedValue(new Error('Provider stack trace: secret-token')) as (
+      code: string,
+      state: string,
+    ) => Promise<void>;
+    vi.mocked(useAuth).mockReturnValue({ loginWithGithub } as AuthContextValue);
 
     renderWithRouter(<GitHubCallbackPage />, {
       initialRoute: '/login/callback?code=github-code&state=oauth-state',

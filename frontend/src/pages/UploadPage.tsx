@@ -222,7 +222,8 @@ export const UploadPage: React.FC = () => {
 
   React.useEffect(() => {
     if (uploadState !== 'finalizing') {
-      setFinalizationStepIndex(0);
+      const reset = () => setFinalizationStepIndex(0);
+      reset();
       return;
     }
 
@@ -244,12 +245,15 @@ export const UploadPage: React.FC = () => {
   React.useEffect(() => {
     if (!user) return;
 
-    setFormData((current) => ({
-      ...current,
-      firstName: current.firstName.trim() ? current.firstName : user.first_name.trim(),
-      lastName: current.lastName.trim() ? current.lastName : user.last_name.trim(),
-      email: current.email.trim() ? current.email : user.email.trim(),
-    }));
+    //TODO: Refactor to tanstack query
+    const fillFormData = () =>
+      setFormData((current) => ({
+        ...current,
+        firstName: current.firstName.trim() ? current.firstName : user.first_name.trim(),
+        lastName: current.lastName.trim() ? current.lastName : user.last_name.trim(),
+        email: current.email.trim() ? current.email : user.email.trim(),
+      }));
+    fillFormData();
   }, [user]);
 
   const selectedPaths = selectedFiles.map(getUploadPath);

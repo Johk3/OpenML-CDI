@@ -4,6 +4,8 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithRouter } from '../utils';
+import { useAuth } from '@/hooks/useAuth';
+import { AuthContextValue } from '@/contexts/AuthContext';
 
 vi.mock('@/services/userService', () => ({
   UserService: {
@@ -66,7 +68,9 @@ describe('AccountPage', () => {
 
   it('deletes account and logs out when the in-app confirmation is accepted', async () => {
     const user = userEvent.setup();
-    const logout = vi.fn();
+    const logout = vi.fn() as () => void;
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(useAuth).mockReturnValue({ logout } as AuthContextValue);
 
     renderWithRouter(<AccountPage />, {
       authContext: { logout },

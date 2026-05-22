@@ -2,7 +2,7 @@ import { TokenResponse } from '@/types/auth';
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { tokenManager } from './tokenManager';
 
-const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '') + '/api';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 
 export const apiClient = axios.create({
   baseURL: BASE_URL,
@@ -25,7 +25,7 @@ async function callRefreshEndpoint(): Promise<string> {
 // Interceptor for checking access_token validity
 apiClient.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
-    if (config.url?.includes('/auth/refresh')) return config;
+    if (config.url?.endsWith('/auth/refresh')) return config;
 
     try {
       const token = await tokenManager.ensureFreshToken(callRefreshEndpoint);
@@ -49,7 +49,7 @@ apiClient.interceptors.response.use(
     if (
       error.response?.status === 401 &&
       !originalConfig._retried &&
-      !originalConfig.url?.includes('/auth/refresh')
+      !originalConfig.url?.endsWith('/auth/refresh')
     ) {
       originalConfig._retried = true;
 

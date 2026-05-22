@@ -289,18 +289,23 @@ export const MyDatasetsPage: React.FC = () => {
   useEffect(() => {
     // Wait until the user context has finished resolving
     if (userLoading) return;
-    if (!user) {
-      setLoading(false);
-      return;
+
+    // TODO: Refactor data fetching to Tanstack query
+    async function fetchDatasets() {
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      setError(null);
+      setStatusUpdateError(null);
+      setDownloadError(null);
+      DatasetService.listDatasets()
+        .then((backendDatasets) => setDatasets(backendDatasets.map(toFrontendDataset)))
+        .catch(() => setError('Failed to load datasets. Please try again later.'))
+        .finally(() => setLoading(false));
     }
-    setLoading(true);
-    setError(null);
-    setStatusUpdateError(null);
-    setDownloadError(null);
-    DatasetService.listDatasets()
-      .then((backendDatasets) => setDatasets(backendDatasets.map(toFrontendDataset)))
-      .catch(() => setError('Failed to load datasets. Please try again later.'))
-      .finally(() => setLoading(false));
+    void fetchDatasets();
   }, [user, userLoading]);
 
   if (!user) {

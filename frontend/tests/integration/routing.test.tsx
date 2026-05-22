@@ -7,6 +7,8 @@ import { mockDatasetService } from '../mocks/datasetService';
 import { navigationMocks } from '../mocks/navigation';
 import { routes } from '../../src/routes';
 import { mockNavigate, navigateTo } from '../utils';
+import { useAuth } from '@/hooks/useAuth';
+import { AuthContextValue } from '@/contexts/AuthContext';
 
 vi.mock('@/services/userService', () => ({
   UserService: {
@@ -95,7 +97,8 @@ describe('Router', () => {
     { path: '/account', heading: /manage your account/i },
     { path: '/metadata', heading: /dataset metadata/i },
   ])('renders authenticated protected route $path', async ({ path, heading }) => {
-    authenticateAs();
+    vi.mocked(useAuth).mockReturnValue({ isAuthenticated: true } as AuthContextValue);
+    authenticateAs({ ...authenticatedUser, role: 'user' });
 
     navigateTo(path);
 

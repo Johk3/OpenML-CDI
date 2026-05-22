@@ -83,7 +83,7 @@ const GitHubLoginButton: React.FC = () => (
         border: 'none',
       }}
     >
-      <a href={`${API_BASE_URL}/api/auth/github/login`}>
+      <a href={`${API_BASE_URL}/auth/github/login`}>
         <Github size={20} />
         Continue with GitHub
       </a>

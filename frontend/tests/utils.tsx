@@ -13,12 +13,33 @@ type RouteState = Record<string, unknown>;
 const initialEntryFor = (path: string, state?: RouteState) =>
   state ? { pathname: path, state } : path;
 
-export const navigateTo = (path: string, state?: RouteState) => {
+export const navigateTo = async (path: string, state?: RouteState) => {
   const router = createMemoryRouter(routes, {
     initialEntries: [initialEntryFor(path, state)],
   });
 
   return render(<RouterProvider router={router} />);
+};
+
+export const navigateWithUserContextTo = async (
+  path: string,
+  state?: RouteState,
+  userContext?: Partial<UserContextValue>,
+) => {
+  const router = createMemoryRouter(routes, {
+    initialEntries: [initialEntryFor(path, state)],
+  });
+
+  return render(
+    <UserContext.Provider
+      value={{
+        ...makeUserContext({ user: makeUser() }),
+        ...userContext,
+      }}
+    >
+      <RouterProvider router={router} />
+    </UserContext.Provider>,
+  );
 };
 
 export function createTestQueryClient() {
@@ -27,6 +48,7 @@ export function createTestQueryClient() {
       queries: {
         retry: false, // Don't retry on failure in tests
         gcTime: Infinity, // Keep cache alive for the test
+        staleTime: Infinity,
       },
     },
   });

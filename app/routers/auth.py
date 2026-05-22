@@ -126,18 +126,18 @@ def _set_refresh_cookie(
         value=refresh_token,
         httponly=True,
         secure=secure,
-        samesite="strict",
-        path="/auth/refresh",
+        samesite="lax",
+        path="/api/auth/refresh",
     )
 
 
 def _delete_refresh_cookie(response: Response, *, secure: bool) -> None:
     response.delete_cookie(
         key="refresh_token",
-        path="/auth/refresh",
+        path="/api/auth/refresh",
         httponly=True,
         secure=secure,
-        samesite="strict",
+        samesite="lax",
     )
 
 

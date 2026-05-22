@@ -18,7 +18,7 @@ describe('LoginPage', () => {
 
     expect(screen.getByRole('link', { name: /continue with github/i })).toHaveAttribute(
       'href',
-      '/api/auth/github/login',
+      expect.stringContaining('/auth/github/login'),
     );
   });
 

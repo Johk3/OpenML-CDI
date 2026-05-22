@@ -2,12 +2,9 @@ import '@testing-library/jest-dom/vitest';
 import { beforeEach, vi } from 'vitest';
 import { mockNavigate, navigationMocks } from './mocks/navigation';
 import { mockDatasetService, resetDatasetServiceMocks } from './mocks/datasetService';
-import { configure } from '@testing-library/react';
+import { PropsWithChildren } from 'react';
 
 // Prevents HTML dump on error message
-configure({
-  getElementError: (message) => new Error(message ?? undefined),
-});
 
 vi.setConfig({ testTimeout: 15000 });
 
@@ -81,23 +78,20 @@ vi.mock('motion/react', async () => {
 vi.mock('@/contexts/AuthContext', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('@/contexts/AuthContext');
 
-  type ReactMod = {
-    createElement: (...args: unknown[]) => unknown;
-    Fragment: unknown;
-    default?: { createElement: (...args: unknown[]) => unknown; Fragment: unknown };
-  };
-  const ReactModule = (await import('react')) as unknown as ReactMod;
-  const createElement = ReactModule.createElement || ReactModule.default?.createElement;
-  const Fragment = ReactModule.Fragment || ReactModule.default?.Fragment;
-
   return {
     ...actual,
-    useAuth: (await import('vitest')).vi.fn().mockReturnValue({
-      user: { id: 'test-user', name: 'Test User', role: 'user' },
-      login: (await import('vitest')).vi.fn(),
-      logout: (await import('vitest')).vi.fn(),
+    AuthProvider: ({ children }: { children: PropsWithChildren }) => children,
+  };
+});
+
+vi.mock('@/hooks/useAuth', async () => {
+  return {
+    useAuth: vi.fn().mockReturnValue({
+      isAuthenticated: false,
+      loginWithGithub: vi.fn().mockResolvedValue(''),
+      login: vi.fn(),
+      logout: vi.fn(),
     }),
-    AuthProvider: ({ children }: { children: unknown }) => createElement(Fragment, null, children),
   };
 });
 

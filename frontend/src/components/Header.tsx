@@ -31,7 +31,7 @@ export const Header: React.FC = () => {
   const handleAuthAction = async (e: React.MouseEvent) => {
     e.preventDefault();
     if (user) {
-      await logout();
+      logout();
       navigate('/login');
     } else {
       navigate('/login');

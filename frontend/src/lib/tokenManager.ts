@@ -6,6 +6,7 @@ class TokenManager {
   private accessToken: string | null = null;
   private refreshPromise: Promise<string> | null = null;
   private onUnauthenticated: (() => void) | null = null;
+  private initialized: boolean = false;
 
   private constructor() {}
 
@@ -14,6 +15,14 @@ class TokenManager {
       TokenManager.instance = new TokenManager();
     }
     return TokenManager.instance;
+  }
+
+  isInitialized(): boolean {
+    return this.initialized;
+  }
+
+  markInitialized(): void {
+    this.initialized = true;
   }
 
   registerUnauthenticatedHandler(fn: () => void) {
