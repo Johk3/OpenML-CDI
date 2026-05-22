@@ -6,8 +6,8 @@ on:
   workflow_call:
 
 jobs:
-  test-frontend:
-    uses: ./.github/workflows/frontend-test.yaml
+  tests:
+    uses: ./.github/workflows/tests.yaml
 
   s3-local-storage-check:
     runs-on: ubuntu-latest
