@@ -7,6 +7,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
 import { AuthContext } from '../contexts/AuthContext';
 import { meQueryKey } from '@/hooks/useUser';
+import { consumePostAuthRedirectPath } from '@/lib/postAuthRedirect';
 import {
   AUTH_ERROR_MESSAGES,
   GITHUB_PROFILE_CONFLICT_MESSAGES,
@@ -72,9 +73,19 @@ function getGitHubLoginErrorMessage(error: unknown): string {
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isInitializing, setIsInitializing] = useState<boolean>(true);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const hasRefreshed = useRef(false);
+
+  const establishSession = useCallback(
+    (token: string) => {
+      tokenManager.setToken(token);
+      setIsAuthenticated(true);
+      void queryClient.invalidateQueries({ queryKey: meQueryKey });
+    },
+    [queryClient],
+  );
 
   const logout = useCallback(async () => {
     try {
@@ -91,12 +102,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const login = useCallback(
     (token: string) => {
-      tokenManager.setToken(token);
-      setIsAuthenticated(true);
-      void queryClient.invalidateQueries({ queryKey: meQueryKey });
-      navigate('/datasets', { replace: true });
+      establishSession(token);
+      navigate(consumePostAuthRedirectPath(), { replace: true });
     },
-    [navigate, queryClient],
+    [establishSession, navigate],
   );
 
   const loginWithGithub = useCallback(
@@ -127,21 +136,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           {},
           { withCredentials: true },
         );
-        login(data.access_token);
+        establishSession(data.access_token);
       } catch {
         // No valid refresh token — stay logged out, do nothing
+      } finally {
+        setIsInitializing(false);
       }
     }
 
-    attemptSilentRefresh();
-  }, [login]);
+    void attemptSilentRefresh();
+  }, [establishSession]);
 
   useEffect(() => {
     tokenManager.registerUnauthenticatedHandler(logout);
   }, [logout]);
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, login, loginWithGithub, logout }}>
+    <AuthContext.Provider
+      value={{ isAuthenticated, isInitializing, login, loginWithGithub, logout }}
+    >
       {children}
     </AuthContext.Provider>
   );

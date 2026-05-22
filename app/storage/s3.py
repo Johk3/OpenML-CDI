@@ -127,6 +127,7 @@ class S3StorageBackend(StorageBackend):
         storage_key: str,
         content_type: str | None = None,
         expires_seconds: int = 3600,
+        request: object | None = None,
     ) -> str:
         key = self._validate_storage_key(storage_key)
         params = {"Bucket": self.bucket, "Key": key}

@@ -4,6 +4,7 @@ import { mockNavigate, navigateTo } from '../utils';
 import { mockDatasetService } from '../mocks/datasetService';
 import type { BackendDataset } from '@/types/dataset';
 import { useUserContext } from '@/hooks/useUserContext';
+import { useAuth } from '@/hooks/useAuth';
 
 vi.mock('@/hooks/useUserContext', () => ({
   useUserContext: vi.fn(() => ({
@@ -100,11 +101,32 @@ describe('DatasetDetailPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setUserRole('expert');
+    vi.mocked(useAuth).mockReturnValue({
+      isAuthenticated: true,
+      isInitializing: false,
+      login: vi.fn(),
+      loginWithGithub: vi.fn(),
+      logout: vi.fn(),
+    });
   });
 
   it('should render the loading state first', async () => {
     navigateTo('/datasets/ds-1');
     expect(screen.getByText(/loading dataset details.../i)).toBeInTheDocument();
+  });
+
+  it('should render a profile error when the user profile fails to load', () => {
+    mockUseUserContext.mockReturnValue({
+      user: null,
+      isLoading: false,
+      isError: true,
+    });
+
+    navigateTo('/datasets/ds-1');
+
+    expect(screen.getByText(/unable to load your profile/i)).toBeInTheDocument();
+    expect(screen.getByText(/refresh the page or sign in again/i)).toBeInTheDocument();
+    expect(screen.queryByText(/authentication required/i)).not.toBeInTheDocument();
   });
 
   it('should render the dataset metadata section', async () => {
@@ -526,30 +548,28 @@ describe('DatasetDetailPage', () => {
     expect(await screen.findByText(/the dataset is published and available/i)).toBeInTheDocument();
   });
 
-  it('uses lifecycle GitHub state copy without exposing raw provider errors', async () => {
+  it('does not render a duplicate lifecycle GitHub integration panel', async () => {
     mockDatasetService.getDataset.mockResolvedValueOnce(
-      datasetWithLifecycle('integration_failed', {
-        lifecycle: lifecycle('integration_failed', {
+      datasetWithLifecycle('pending_review', {
+        lifecycle: lifecycle('pending_review', {
           github: {
-            state: 'failed',
-            issue_url: '',
-            error_reason: 'permission_error',
-            message:
-              'GitHub discussion could not be created. Please ask an expert to check the GitHub integration settings.',
+            state: 'linked',
+            issue_url: 'https://github.com/openml/openmlupload-test/issues/1',
+            error_reason: null,
+            message: 'GitHub discussion linked.',
             retryable: false,
             attempts: 1,
           },
-          download: { available: false },
         }),
       }),
     );
 
-    navigateTo('/datasets/ds-integration-failed');
+    navigateTo('/datasets/ds-pending-review');
 
-    expect(
-      await screen.findByText(/please ask an expert to check the github integration settings/i),
-    ).toBeInTheDocument();
-    expect(screen.queryByText(/permission_error/i)).not.toBeInTheDocument();
+    expect(await screen.findByText(/github discussion/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^github integration$/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/github integration linked/i)).not.toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: /view on github/i })).toHaveLength(1);
   });
 
   it('should render error state for not found dataset', async () => {

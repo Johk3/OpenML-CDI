@@ -275,7 +275,7 @@ const canChangeExpertStatus = (dataset: Dataset): boolean =>
 
 export const MyDatasetsPage: React.FC = () => {
   const navigate = useNavigate();
-  const { user, isLoading: userLoading } = useUserContext();
+  const { user, isLoading: userLoading, isError: userError } = useUserContext();
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -308,7 +308,23 @@ export const MyDatasetsPage: React.FC = () => {
     void fetchDatasets();
   }, [user, userLoading]);
 
-  if (!user) {
+  if (userLoading) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: 'easeOut' }}
+        className="datasets-page"
+      >
+        <div className="container flex min-h-[50vh] flex-col items-center justify-center">
+          <Loader2 className="mb-4 h-10 w-10 animate-spin text-primary" />
+          <p className="text-muted-foreground">Loading your datasets...</p>
+        </div>
+      </motion.div>
+    );
+  }
+
+  if (userError || !user) {
     return (
       <motion.div
         initial={{ opacity: 0, y: 15 }}
@@ -319,8 +335,10 @@ export const MyDatasetsPage: React.FC = () => {
         <div className="container">
           <div className="datasets-empty">
             <AlertCircle size={48} className="mb-4 text-primary" />
-            <h2 className="heading-2">Authentication Required</h2>
-            <p className="subheading text-center">Please login to view datasets.</p>
+            <h2 className="heading-2">Unable to load your profile</h2>
+            <p className="subheading text-center">
+              Refresh the page or sign in again to view datasets.
+            </p>
           </div>
         </div>
       </motion.div>

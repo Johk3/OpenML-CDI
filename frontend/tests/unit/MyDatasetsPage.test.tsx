@@ -11,15 +11,29 @@ describe('MyDatasetsPage', () => {
     vi.clearAllMocks();
   });
 
-  it('should render authentication required message when user is not logged in', () => {
+  it('should render loading state when the user profile is not yet available', () => {
     renderWithRouter(<MyDatasetsPage />, {
       userContext: {
         user: null,
+        isLoading: true,
       },
     });
 
-    expect(screen.getByText(/authentication required/i)).toBeInTheDocument();
-    expect(screen.getByText(/please login to view datasets/i)).toBeInTheDocument();
+    expect(screen.getByText(/loading your datasets.../i)).toBeInTheDocument();
+  });
+
+  it('should render a profile error when the user profile fails to load', () => {
+    renderWithRouter(<MyDatasetsPage />, {
+      userContext: {
+        user: null,
+        isLoading: false,
+        isError: true,
+      },
+    });
+
+    expect(screen.getByText(/unable to load your profile/i)).toBeInTheDocument();
+    expect(screen.getByText(/refresh the page or sign in again/i)).toBeInTheDocument();
+    expect(screen.queryByText(/authentication required/i)).not.toBeInTheDocument();
   });
 
   it('should render standard user view when logged in as a regular user', async () => {

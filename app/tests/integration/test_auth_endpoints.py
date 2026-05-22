@@ -65,7 +65,7 @@ def test_dev_mode_login_creates_user_and_sets_refresh_cookie(
     assert response.json()["token_type"] == "bearer"
     assert response.cookies.get("refresh_token")
     assert "HttpOnly" in response.headers["set-cookie"]
-    assert "Path=/auth/refresh" in response.headers["set-cookie"]
+    assert "Path=/api/auth/refresh" in response.headers["set-cookie"]
 
     stored_user = (
         db_test_session.query(models.User)

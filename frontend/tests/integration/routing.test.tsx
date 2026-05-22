@@ -8,7 +8,6 @@ import { navigationMocks } from '../mocks/navigation';
 import { routes } from '../../src/routes';
 import { mockNavigate, navigateTo } from '../utils';
 import { useAuth } from '@/hooks/useAuth';
-import { AuthContextValue } from '@/contexts/AuthContext';
 
 vi.mock('@/services/userService', () => ({
   UserService: {
@@ -58,6 +57,27 @@ const authenticateAs = (user: User = authenticatedUser) => {
   vi.mocked(UserService.getMe).mockResolvedValue(user);
 };
 
+const mockAuthenticatedSession = (user: User = authenticatedUser) => {
+  vi.mocked(useAuth).mockReturnValue({
+    isAuthenticated: true,
+    isInitializing: false,
+    login: vi.fn(),
+    loginWithGithub: vi.fn(),
+    logout: vi.fn(),
+  });
+  authenticateAs(user);
+};
+
+const mockUnauthenticatedSession = () => {
+  vi.mocked(useAuth).mockReturnValue({
+    isAuthenticated: false,
+    isInitializing: false,
+    loginWithGithub: vi.fn().mockResolvedValue(''),
+    login: vi.fn(),
+    logout: vi.fn(),
+  });
+};
+
 describe('Router', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -65,6 +85,7 @@ describe('Router', () => {
     mockNavigate.mockClear();
     navigationMocks.useActualNavigate = false;
     mockDatasetService.listDatasets.mockResolvedValue([]);
+    mockUnauthenticatedSession();
   });
 
   it('defines the expected frontend route table', () => {
@@ -75,15 +96,13 @@ describe('Router', () => {
     { path: '/', heading: /share your dataset/i },
     { path: '/about', heading: /about openml cdi/i },
     { path: '/login', heading: /welcome to openml cdi/i },
-    { path: '/datasets', heading: /authentication required/i },
-    { path: '/datasets/example-dataset', heading: /authentication required/i },
   ])('renders the expected page for $path', ({ path, heading }) => {
     navigateTo(path);
 
     expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument();
   });
 
-  it.each(['/account', '/metadata', '/expert-queue'])(
+  it.each(['/account', '/metadata', '/expert-queue', '/datasets', '/datasets/example-dataset'])(
     'redirects unauthenticated visitors from %s to login',
     (path) => {
       navigateTo(path);
@@ -97,8 +116,7 @@ describe('Router', () => {
     { path: '/account', heading: /manage your account/i },
     { path: '/metadata', heading: /dataset metadata/i },
   ])('renders authenticated protected route $path', async ({ path, heading }) => {
-    vi.mocked(useAuth).mockReturnValue({ isAuthenticated: true } as AuthContextValue);
-    authenticateAs({ ...authenticatedUser, role: 'user' });
+    mockAuthenticatedSession({ ...authenticatedUser, role: 'user' });
 
     navigateTo(path);
 
@@ -106,7 +124,7 @@ describe('Router', () => {
   });
 
   it('renders authenticated expert queue route for expert users', async () => {
-    authenticateAs({ ...authenticatedUser, role: 'expert' });
+    mockAuthenticatedSession({ ...authenticatedUser, role: 'expert' });
 
     navigateTo('/expert-queue');
 

@@ -14,6 +14,17 @@ All route definitions are centralized in `src/routes/index.tsx`. The application
 
 Our router is initialized using `createBrowserRouter` to enable APIs and history state management, allowing deep links and consistent 404 pages.
 
+### Authentication and route protection
+
+Routes fall into two intentional groups:
+
+| Route group       | Paths                                                                  | Protection                                                                                                 |
+| ----------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Public entry      | `/`, `/login`, `/login/callback`, `/about`                             | No `ProtectedRoute`. Upload redirects to login when an unauthenticated user selects files.                 |
+| Authenticated app | `/datasets`, `/datasets/:id`, `/account`, `/metadata`, `/expert-queue` | Wrapped in `ProtectedRoute`, which waits for the initial refresh-cookie check before redirecting to login. |
+
+Use `ProtectedRoute` for any new page that requires a signed-in session. Keep marketing or callback pages public and gate specific actions inside the page when a softer entry flow is needed.
+
 ### Example Route Structure
 
 ```tsx

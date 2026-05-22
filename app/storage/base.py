@@ -27,6 +27,7 @@ class StorageBackend(ABC):
         storage_key: str,
         content_type: str | None = None,
         expires_seconds: int = 3600,
+        request: Any | None = None,
     ) -> str:
         """Create a short-lived direct upload URL."""
         raise NotImplementedError(

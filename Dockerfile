@@ -17,21 +17,11 @@ COPY frontend/package.json frontend/pnpm-lock.yaml* frontend/pnpm-workspace.yaml
 
 # Automatically detect package manager and install deps
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    if [ -f pnpm-lock.yaml ]; then \
-      pnpm fetch --frozen-lockfile && \
-      pnpm install --frozen-lockfile --offline; \
-    elif [ -f package-lock.json ]; then \
-      npm ci --include=dev; \
-    else \
-      echo "No lockfile found. Supported: pnpm-lock.yaml or package-lock.json" && exit 1; \
-    fi
+  pnpm fetch --frozen-lockfile && \
+  pnpm install --frozen-lockfile --offline;
 
 COPY frontend/ ./
-RUN if [ -f pnpm-lock.yaml ]; then \
-      pnpm run build; \
-    elif [ -f package-lock.json ]; then \
-      npm run build; \
-    fi
+RUN pnpm run build;
 
 
 # ─────────────────────────────────────────────
@@ -65,8 +55,8 @@ COPY --from=frontend-builder /app/frontend/dist ./app/static
 
 # Non-root user for security
 RUN mkdir -p /data && \
-    adduser --disabled-password --gecos "" appuser && \
-    chown -R appuser:appuser /data
+  adduser --disabled-password --gecos "" appuser && \
+  chown -R appuser:appuser /data
 USER appuser
 
 EXPOSE 8000

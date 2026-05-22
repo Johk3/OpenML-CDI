@@ -1,17 +1,22 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Github, LogIn } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { BASE_URL } from '@/lib/apiClient';
 import { getAuthNoticeMessage, sanitizeAuthErrorMessage } from '../lib/authMessages';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
+import { storePostAuthRedirectFromState } from '@/lib/postAuthRedirect';
 
 export const LoginPage: React.FC = () => {
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const error = sanitizeAuthErrorMessage(searchParams.get('error'));
   const notice = getAuthNoticeMessage(searchParams.get('notice'));
+
+  useEffect(() => {
+    storePostAuthRedirectFromState(location.state);
+  }, [location.state]);
 
   return (
     <motion.div
@@ -83,7 +88,7 @@ const GitHubLoginButton: React.FC = () => (
         border: 'none',
       }}
     >
-      <a href={`${API_BASE_URL}/auth/github/login`}>
+      <a href={`${BASE_URL}/auth/github/login`}>
         <Github size={20} />
         Continue with GitHub
       </a>

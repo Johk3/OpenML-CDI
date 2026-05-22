@@ -39,6 +39,7 @@ const renderAuthenticatedUserProvider = (queryClient: QueryClient) => {
       <AuthContext.Provider
         value={{
           isAuthenticated: true,
+          isInitializing: false,
           login: vi.fn(),
           loginWithGithub: vi.fn(),
           logout: vi.fn(),

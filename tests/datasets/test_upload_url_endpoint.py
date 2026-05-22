@@ -42,12 +42,14 @@ class _FakeS3Storage:
         storage_key: str,
         content_type: str | None = None,
         expires_seconds: int = 3600,
+        request=None,
     ) -> str:
         self.upload_url_calls.append(
             {
                 "storage_key": storage_key,
                 "content_type": content_type,
                 "expires_seconds": expires_seconds,
+                "request": request,
             }
         )
         return f"https://s3.example/{storage_key}?signature=abc"

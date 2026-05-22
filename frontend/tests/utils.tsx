@@ -56,6 +56,7 @@ export function createTestQueryClient() {
 
 const defaultAuthContext = (): AuthContextValue => ({
   isAuthenticated: true,
+  isInitializing: false,
   login: vi.fn(),
   loginWithGithub: vi.fn(),
   logout: vi.fn(),

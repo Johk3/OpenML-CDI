@@ -10,6 +10,24 @@ describe('GitHubCallbackPage', () => {
     mockNavigate.mockClear();
   });
 
+  it('passes the GitHub callback code and state to auth on success', async () => {
+    const loginWithGithub = vi.fn().mockResolvedValue(undefined) as (
+      code: string,
+      state: string,
+    ) => Promise<void>;
+    vi.mocked(useAuth).mockReturnValue({ loginWithGithub } as AuthContextValue);
+
+    renderWithRouter(<GitHubCallbackPage />, {
+      initialRoute: '/login/callback?code=github-code&state=oauth-state',
+      authContext: { loginWithGithub },
+    });
+
+    await waitFor(() => {
+      expect(loginWithGithub).toHaveBeenCalledWith('github-code', 'oauth-state');
+    });
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
   it('routes back to login with a known user-facing GitHub callback error', async () => {
     const loginWithGithub = vi
       .fn()

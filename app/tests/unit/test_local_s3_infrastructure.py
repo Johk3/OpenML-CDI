@@ -44,6 +44,14 @@ def test_frontend_env_example_uses_api_origin_not_api_path():
     assert "VITE_API_BASE_URL=http://localhost:8000/api" not in env_example
 
 
+def test_backend_black_config_uses_standard_pyproject_filename():
+    pyproject = ROOT / "app/pyproject.toml"
+
+    assert pyproject.is_file()
+    assert not (ROOT / "app/pytproject.toml").exists()
+    assert "target-version = ['py312']" in pyproject.read_text()
+
+
 def test_frontend_dev_dockerfile_installs_pnpm_without_corepack():
     dockerfile = _read("frontend/Dockerfile.dev")
 

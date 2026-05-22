@@ -38,11 +38,19 @@ export const routes: RouteObject[] = [
 
       {
         path: 'datasets',
-        element: <MyDatasetsPage />,
+        element: (
+          <ProtectedRoute>
+            <MyDatasetsPage />
+          </ProtectedRoute>
+        ),
       },
       {
         path: 'datasets/:id',
-        element: <DatasetDetailPage />,
+        element: (
+          <ProtectedRoute>
+            <DatasetDetailPage />
+          </ProtectedRoute>
+        ),
       },
       {
         path: 'expert-queue',

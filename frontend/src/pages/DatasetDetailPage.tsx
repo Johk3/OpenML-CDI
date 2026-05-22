@@ -161,19 +161,6 @@ const getLifecycleStateCopy = (state?: string) =>
         tone: 'default' as const,
       };
 
-const getGitHubLifecycleCopy = (github?: DatasetLifecycleSummary['github']) => {
-  if (!github) return 'GitHub integration status is not available.';
-  if (github.state === 'linked') return 'GitHub integration linked.';
-  if (github.state === 'pending') return 'GitHub integration creation is pending.';
-  if (github.state === 'failed') {
-    return 'GitHub integration could not be created. Please ask an expert to check the GitHub integration settings.';
-  }
-  if (github.state === 'not_ready') {
-    return 'GitHub integration will be created after upload review is ready.';
-  }
-  return github.message || 'GitHub integration status is unknown.';
-};
-
 const getReviewLifecycleCopy = (
   lifecycle: DatasetLifecycleSummary | undefined,
   isExpert: boolean,
@@ -403,7 +390,7 @@ const timeAgo = (iso: string) => {
 export const DatasetDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user } = useUserContext();
+  const { user, isLoading: userLoading, isError: userError } = useUserContext();
 
   const [dataset, setDataset] = useState<DatasetWithUploadPackage | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -572,14 +559,24 @@ export const DatasetDetailPage: React.FC = () => {
     }
   };
 
-  if (!user) {
+  if (userLoading) {
+    return (
+      <div className="min-h-[50vh] flex flex-col items-center justify-center">
+        <Loader2 className="w-10 h-10 animate-spin text-primary mb-4" />
+        <p className="text-muted-foreground animate-pulse">Loading dataset details...</p>
+      </div>
+    );
+  }
+
+  if (userError || !user) {
     return (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="container py-12">
         <div className="flex flex-col items-center justify-center p-12 bg-card border rounded-2xl shadow-sm">
           <AlertCircle size={48} className="mb-4 text-primary" />
-          <h2 className="text-2xl font-bold mb-2">Authentication Required</h2>
-          <p className="text-muted-foreground mb-6">Please login to view dataset details.</p>
-          <Button onClick={() => navigate('/login')}>Go to Login</Button>
+          <h2 className="text-2xl font-bold mb-2">Unable to load your profile</h2>
+          <p className="text-muted-foreground mb-6">
+            Refresh the page or sign in again to view dataset details.
+          </p>
         </div>
       </motion.div>
     );
@@ -1043,21 +1040,6 @@ export const DatasetDetailPage: React.FC = () => {
                       (canDownloadDataset ? 'Available' : 'Unavailable')}
                   </p>
                 </div>
-              </div>
-
-              <div className="rounded-lg border bg-muted/10 p-3 space-y-1">
-                <p className="font-semibold">GitHub integration</p>
-                <p className="text-muted-foreground">{getGitHubLifecycleCopy(lifecycle?.github)}</p>
-                {lifecycle?.github.issue_url ? (
-                  <a
-                    href={lifecycle.github.issue_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                  >
-                    View on GitHub <ExternalLink size={10} />
-                  </a>
-                ) : null}
               </div>
 
               <div className="rounded-lg border bg-muted/10 p-3 space-y-2">

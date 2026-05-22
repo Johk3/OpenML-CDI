@@ -146,6 +146,7 @@ def test_create_upload_url_presigns_put_with_content_type_and_expiry():
         "quarantine/batch/data.csv",
         content_type="text/csv",
         expires_seconds=120,
+        request=object(),
     )
 
     assert url == "https://signed.example/put_object"

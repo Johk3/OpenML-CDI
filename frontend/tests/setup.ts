@@ -88,6 +88,7 @@ vi.mock('@/hooks/useAuth', async () => {
   return {
     useAuth: vi.fn().mockReturnValue({
       isAuthenticated: false,
+      isInitializing: false,
       loginWithGithub: vi.fn().mockResolvedValue(''),
       login: vi.fn(),
       logout: vi.fn(),

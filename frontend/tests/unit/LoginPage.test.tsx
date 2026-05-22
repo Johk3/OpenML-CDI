@@ -3,6 +3,10 @@ import { LoginPage } from '@/pages/LoginPage';
 import { renderWithRouter } from '../utils';
 
 describe('LoginPage', () => {
+  beforeEach(() => {
+    window.sessionStorage.clear();
+  });
+
   it('renders the GitHub-only login screen', () => {
     renderWithRouter(<LoginPage />);
 
@@ -13,13 +17,34 @@ describe('LoginPage', () => {
     expect(screen.getByRole('link', { name: /continue with github/i })).toBeInTheDocument();
   });
 
-  it('uses a same-origin GitHub login URL when no API base URL is configured', () => {
-    renderWithRouter(<LoginPage />);
+  it('stores the protected route for GitHub callback redirect', () => {
+    renderWithRouter(<LoginPage />, {
+      initialRoute: '/login?notice=sign-in-required',
+      routeState: {
+        from: {
+          pathname: '/metadata',
+          search: '?datasetId=abc',
+          hash: '#review',
+        },
+      },
+    });
 
-    expect(screen.getByRole('link', { name: /continue with github/i })).toHaveAttribute(
-      'href',
-      expect.stringContaining('/auth/github/login'),
+    expect(window.sessionStorage.getItem('openml.postAuthRedirectPath')).toBe(
+      '/metadata?datasetId=abc#review',
     );
+  });
+
+  it('does not store unsafe GitHub callback redirect paths', () => {
+    renderWithRouter(<LoginPage />, {
+      initialRoute: '/login?notice=sign-in-required',
+      routeState: {
+        from: {
+          pathname: '//evil.example/phishing',
+        },
+      },
+    });
+
+    expect(window.sessionStorage.getItem('openml.postAuthRedirectPath')).toBeNull();
   });
 
   it('shows the authentication error from the error query parameter', () => {
