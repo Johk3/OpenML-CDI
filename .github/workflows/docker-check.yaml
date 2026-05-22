@@ -58,7 +58,7 @@ jobs:
 
   build-check:
     needs:
-      - test-frontend
+      - tests
       - s3-local-storage-check
     runs-on: ubuntu-latest
     steps:
