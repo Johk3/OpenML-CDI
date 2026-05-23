@@ -8,7 +8,8 @@
 - [Suggested Naming Conventions](#suggested-naming-conventions)
 - [Running Tests](#running-tests)
 - [Recommended Working Model](#recommended-working-model)
-- [Example Future Structure](#example-future-structure)
+- [Current Auth Test Coverage](#current-auth-test-coverage)
+- [Example Current Structure](#example-current-structure)
 
 ## Important links
 
@@ -213,29 +214,48 @@ A practical way to maintain this project is:
 
 ---
 
-## Example Future Structure
+## Current Auth Test Coverage
+
+Auth-related frontend tests are intentionally split by behavior:
+
+- `tests/unit/LoginPage.test.tsx`: GitHub-only login screen, redirect storage,
+  sanitized errors, sign-in notices, and absence of email/password fields.
+- `tests/unit/GitHubCallbackPage.test.tsx`: callback success and failure
+  routing.
+- `tests/unit/AuthProvider.test.tsx`: refresh-cookie session rehydration,
+  GitHub callback exchange, logout, and current-user query invalidation.
+- `tests/unit/ProtectedRoute.test.tsx`: authenticated profile loading and
+  profile-error states.
+- `tests/unit/UserProvider.test.tsx`: `/auth/me` profile refetching after auth.
+- `tests/unit/userService.test.ts`: `/auth/me` service request contract.
+- `tests/integration/routing.test.tsx`: public routes, protected-route
+  redirects, authenticated routes, and callback visits with missing OAuth
+  parameters.
+
+Do not add tests for frontend email/password login, manual registration, or
+password update flows as current product behavior. Those flows are no longer
+part of the GitHub-only frontend auth surface.
+
+## Example Current Structure
 
 ```text
 tests/
 ├── integration/
-│   ├── pages/
-│   │   ├── about-page.test.tsx
-│   │   └── login-page.test.tsx
-│   ├── routes/
-│   │   └── routing.test.tsx
-│   └── upload-flow.test.tsx
+│   └── routing.test.tsx
 ├── main.test.ts
 ├── setup.ts
 ├── unit/
+│   ├── AuthProvider.test.tsx
+│   ├── GitHubCallbackPage.test.tsx
+│   ├── LoginPage.test.tsx
+│   ├── ProtectedRoute.test.tsx
+│   ├── UserProvider.test.tsx
 │   ├── components/
 │   │   ├── button.test.tsx
 │   │   ├── footer.test.tsx
 │   │   ├── header.test.tsx
 │   │   └── input.test.tsx
-│   ├── context/
-│   │   └── use-auth.test.ts
-│   └── utils/
-│       └── auth-helpers.test.ts
+│   └── userService.test.ts
 └── utils.tsx
 ```
 

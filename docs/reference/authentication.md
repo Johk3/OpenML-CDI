@@ -1,7 +1,7 @@
 # Authentication guide
 
-This document describes the backend authentication endpoints and the frontend
-auth contract currently expected by the Vite client.
+This document describes the current GitHub-only frontend auth contract and the
+retained backend auth/session endpoints used by the Vite client.
 
 ## Frontend status
 
@@ -9,131 +9,61 @@ The current frontend is GitHub-only for sign-in.
 
 - users do not create accounts manually in the frontend
 - users do not sign in with email/password in the frontend
-- frontend sign-in happens through GitHub OAuth, then the frontend exchanges the
-  GitHub `code` with the backend for an app access token plus an `HttpOnly`
+- frontend sign-in starts at GitHub OAuth and completes by exchanging the
+  GitHub `code` and `state` with the backend
+- the backend returns a short-lived app access token and sets an `HttpOnly`
   refresh cookie
+- the frontend stores only the access token in memory and never reads, writes,
+  or logs the refresh token
 
-The email/password and registration endpoints below are kept for backend
-reference only and should be treated as legacy from the frontend point of view.
+Legacy email/password registration and password-login routes are not part of
+the current product flow. The current route table does not expose
+`/api/auth/register`, `/api/auth/token`, or `/api/user/update_password`; backend
+tests assert those legacy routes return `404` or `405`. Backend helpers may
+still create or link local user records during GitHub callback handling.
 
-## Table of Contents
+Related implementation issues: [#84](https://github.com/ludev-nl/2026-40-OpenML_Uploading_Interface/issues/84)
+and [#85](https://github.com/ludev-nl/2026-40-OpenML_Uploading_Interface/issues/85).
+Those issues cover the OAuth/session implementation. Issue #208 is limited to
+the remaining documentation and test audit.
 
-- [Endpoints](#endpoints)
-  - [POST /auth/register](#legacy--backend-only-post-authregister)
-  - [POST /auth/token](#legacy--backend-only-post-authtoken)
-  - [POST /auth/refresh](#post-authrefresh)
-- [Protect Routes](#protect-routes)
-- [Manual QA](#manual-qa)
+## Endpoint summary
 
-This document describes the current backend authentication endpoints and the
-new registration flow.
+The public API paths include `/api`. Frontend request paths omit `/api` because
+`VITE_API_BASE_URL` already includes the full backend API URL, for example
+`http://localhost:8000/api`.
+
+| Capability          | Public API path                 | Frontend request path   |
+| ------------------- | ------------------------------- | ----------------------- |
+| Start GitHub OAuth  | `GET /api/auth/github/login`    | `/auth/github/login`    |
+| Complete callback   | `GET /api/auth/github/callback` | `/auth/github/callback` |
+| Refresh session     | `POST /api/auth/refresh`        | `/auth/refresh`         |
+| Logout              | `POST /api/auth/refresh/logout` | `/auth/refresh/logout`  |
+| Current user        | `GET /api/auth/me`              | `/auth/me`              |
+| List token families | `GET /api/auth/get_sessions`    | `/auth/get_sessions`    |
+| Revoke sessions     | `POST /api/auth/revoke`         | `/auth/revoke`          |
 
 ## Endpoints
 
-### Legacy / backend-only: `POST /auth/register`
-
-Create a new account and trigger a verification email.
-
-Request body:
-
-```json
-{
-  "email": "new.user@example.com",
-  "username": "new_user",
-  "password": "StrongPass!234",
-  "first_name": "New",
-  "last_name": "User"
-}
-```
-
-Success response (`201 Created`):
-
-```json
-{
-  "id": "uuid",
-  "email": "new.user@example.com",
-  "username": "new_user",
-  "first_name": "New",
-  "last_name": "User",
-  "role": "uploader",
-  "created_at": "2026-03-03T12:34:56Z"
-}
-```
-
-Validation response (`400 Bad Request`):
-
-```json
-{
-  "error": {
-    "code": "validation_error",
-    "message": "Invalid request body",
-    "fields": {
-      "email": ["value is not a valid email address"],
-      "password": ["Must contain at least one uppercase letter"]
-    }
-  }
-}
-```
-
-Duplicate response (`409 Conflict`):
-
-```json
-{
-  "error": {
-    "code": "registration_conflict",
-    "message": "Unable to create account with provided credentials"
-  }
-}
-```
-
-Verification email failure (`503 Service Unavailable`):
-
-```json
-{
-  "error": {
-    "code": "verification_delivery_failed",
-    "message": "Unable to create account at this time"
-  }
-}
-```
-
-Validation rules:
-
-- `email` is required, trimmed, lowercased, and must be valid
-- `username` is required, trimmed, lowercased, 3-32 characters, and may only
-  contain lowercase letters, digits, `.`, `_`, and `-`
-- `first_name` and `last_name` are required, trimmed, and cannot be blank
-- `password` is required, 12-128 characters, and must contain lowercase,
-  uppercase, digit, and special characters
-
-### Legacy / backend-only: `POST /auth/token`
-
-Authenticate with the legacy form-based flow.
-
-Form fields:
-
-- `username`: email or username
-- `password`: plain-text password
-
-Success response:
-
-```json
-{
-  "access_token": "jwt",
-  "token_type": "bearer",
-  "refresh_token": "jwt"
-}
-```
-
-### `POST /auth/refresh`
-
-Exchange a refresh token for a new access token and rotated refresh token.
-
-### `GET /api/auth/github/login`
+### `GET /auth/github/login`
 
 Starts the GitHub OAuth flow and redirects the browser to GitHub.
 
-### `GET /api/auth/github/callback?code=...&state=...`
+When `AUTH_DEV_MODE_APPROVE_ALL_LOGINS=true`, the backend uses the local
+development auth bypass instead of contacting GitHub. The bypass redirects to
+the configured frontend callback URL with a generated `code` and `state`, then
+uses these optional environment values to create or update the local user:
+
+- `AUTH_DEV_LOGIN_EMAIL`
+- `AUTH_DEV_LOGIN_USERNAME`
+- `AUTH_DEV_LOGIN_FIRST_NAME`
+- `AUTH_DEV_LOGIN_LAST_NAME`
+
+This mode is only for local smoke tests without real GitHub OAuth credentials.
+It still exercises the backend callback, local user creation/linking, access
+token issuing, and refresh cookie creation.
+
+### `GET /auth/github/callback?code=...&state=...`
 
 Completes GitHub OAuth and returns app tokens.
 
@@ -146,21 +76,24 @@ Success response:
 }
 ```
 
+The backend also sets a refresh token in an `HttpOnly` cookie scoped to the
+refresh path.
+
 GitHub profile sync behavior:
 
 - backend uses `users.github_id` as the stable account identity for GitHub users
 - on callback, backend resolves users in this order:
   1. existing user with matching `github_id`
-  2. legacy user with matching email (then backfills `github_id`)
-  3. create new local user
+  2. legacy user with matching email, then backfills `github_id`
+  3. create a new local user
 - on every successful callback, backend syncs the local profile from GitHub:
   - `email` from the verified primary GitHub email
   - `username` from GitHub `login`
   - `first_name` and `last_name` from GitHub `name`
-- role assignment is based on collaborator permission in
-  `koevoet1221/openmlupload-testing`; any collaborator role maps to `expert`,
-  and non-collaborators map to `user`
-- GitHub App installation credentials should be configured for this permission
+- role assignment is based on collaborator permission in the configured GitHub
+  repository; any collaborator role maps to `expert`, and non-collaborators map
+  to `user`
+- GitHub App installation credentials should be configured for the permission
   check so normal user login only needs profile, email, and organization scopes
 - this prevents duplicate local users when GitHub profile fields change
 
@@ -176,32 +109,70 @@ Conflict response (`409 Conflict`):
 }
 ```
 
-`field` is deterministic and indicates which unique identity could not be synced
-(`email`, `username`, `github_id`, or `profile` fallback).
+`field` is deterministic and indicates which unique identity could not be synced:
+`email`, `username`, `github_id`, or `profile` fallback.
 
-Behavior assumptions used by the frontend:
+### `POST /auth/refresh`
 
-- frontend redirects users to GitHub directly using the configured OAuth client
-  id and callback URI
-- GitHub redirects back to
-  `http://localhost:5173/login/callback?code=...&state=...`
-- frontend sends that callback `code` and `state` to
-  `GET /api/auth/github/callback?code=...&state=...`
-- backend responds with the access token in the JSON body and sets the refresh
-  token in an `HttpOnly` cookie
-- frontend stores only the access token in memory and never reads, writes, or
-  logs the refresh token
+Exchanges the `HttpOnly` refresh cookie for a new access token and a rotated
+refresh cookie.
+
+Success response:
+
+```json
+{
+  "access_token": "jwt",
+  "token_type": "bearer"
+}
+```
+
+Missing, malformed, expired, reused, or otherwise invalid refresh tokens return
+`401 Unauthorized`.
+
+### `POST /auth/refresh/logout`
+
+Logs out the current session by revoking the current refresh-token family and
+clearing the refresh cookie.
+
+The frontend calls this endpoint before clearing local auth state. If the
+network request fails, the frontend still clears its in-memory access token,
+removes cached current-user data, and navigates back to `/login`.
 
 ### `GET /api/auth/me`
 
-Return the currently authenticated user for frontend hydration after login.
+Returns the currently authenticated user for frontend hydration after login or
+session rehydration. The frontend expects this route to return the same shape as
+`User` in the backend schema.
 
-The frontend expects this route to return the same user shape as `User` in the
-backend schema.
+### Retained session-management endpoints
 
-## Protect Routes
+The backend also retains authenticated session-family management endpoints:
 
-To protect a route you must simply put current user in the function parameters, it will fail if tried to access without being logged in.
+- `GET /api/auth/get_sessions`
+- `POST /api/auth/revoke`
+
+These endpoints require a valid access token and operate only on token families
+owned by the current user.
+
+## Frontend session rehydration
+
+The frontend session model is:
+
+1. GitHub callback returns an access token and sets the refresh cookie.
+2. `AuthProvider` stores the access token in memory and invalidates
+   `/auth/me` profile data.
+3. `UserProvider` fetches `GET /api/auth/me` after the user is authenticated.
+4. On page reload, `AuthProvider` calls `POST /auth/refresh` with credentials.
+5. `ProtectedRoute` waits while the refresh-cookie check is initializing.
+6. If refresh succeeds, protected pages render after `/auth/me` loads.
+7. If refresh fails, protected pages redirect to
+   `/login?notice=sign-in-required`.
+8. Logout calls `POST /auth/refresh/logout`, clears local state, clears cached
+   current-user data, and redirects to `/login`.
+
+## Protect routes
+
+Backend routes are protected by requiring the current active user dependency:
 
 ```py
 current_user: Annotated[User, Depends(get_current_active_user)]
@@ -215,12 +186,12 @@ def delete_user(
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Session = Depends(get_db),
 ):
-    """
-    Delete a user.
-    """
     user_crud.del_user(db, current_user.id)
     return {"status_code": 200, "message": "User deleted"}
 ```
+
+Frontend routes that require a signed-in session should be wrapped in
+`ProtectedRoute`.
 
 ## Frontend environment and CORS assumptions
 
@@ -249,6 +220,17 @@ Frontend env vars:
 - `VITE_GITHUB_CLIENT_ID`
 - `VITE_GITHUB_OAUTH_SCOPE` default `user:email`
 - `VITE_GITHUB_REDIRECT_URI` default `http://localhost:5173/login/callback`
+
+Backend env vars for auth:
+
+- `GITHUB_CLIENT_ID`
+- `GITHUB_SECRET`
+- `GITHUB_REDIRECT`
+- `GITHUB_OAUTH_SCOPES` default `read:user,user:email,read:org`
+- `AUTH_DEV_MODE_APPROVE_ALL_LOGINS` for local smoke tests only
+- `AUTH_DEV_LOGIN_EMAIL`, `AUTH_DEV_LOGIN_USERNAME`,
+  `AUTH_DEV_LOGIN_FIRST_NAME`, and `AUTH_DEV_LOGIN_LAST_NAME` for local smoke
+  test identity overrides
 
 ## Manual QA
 

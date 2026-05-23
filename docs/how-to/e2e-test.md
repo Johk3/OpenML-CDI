@@ -22,7 +22,9 @@ An E2E test validates the system exactly as a real user or external client would
 ✅ In scope (common examples)
 
 - A browser automation test clicking through a checkout flow.
-- A script hitting public API endpoints to create an account, verify an email, and log in.
+- A browser automation test that signs in through GitHub OAuth, or through the
+  documented local development auth bypass when real GitHub credentials are not
+  available.
 - Workflows that span multiple decoupled services (e.g., frontend + backend + worker queue).
 
 ❌ Not E2E tests
@@ -41,7 +43,8 @@ E2E tests are slow, expensive to run, and prone to flakiness. **You should have 
 
 Instead of trying to test every feature, focus only on **critical user journeys**.
 
-- **Do** test the "Happy Path" of your most important features (e.g., User can sign up, User can pay).
+- **Do** test the "Happy Path" of your most important features (e.g., user can
+  sign in with GitHub and upload a dataset).
 - **Don't** use E2E tests to verify every validation error message or edge case (push those down to unit or integration tests).
 
 ---
@@ -75,23 +78,23 @@ A flaky E2E test (one that randomly passes or fails without code changes) will d
 ## 🧪 Minimal example outline (pseudocode)
 
 ```text
-Test: User can successfully purchase an item
+Test: User can sign in and upload a dataset
 
 Arrange:
-  - (API) Create a new user with a unique ID
-  - (API) Seed the database with a test product
-  - (UI) Programmatically log the user in to bypass the login screen
+  - Start the stack with AUTH_DEV_MODE_APPROVE_ALL_LOGINS=true, or configure real
+    GitHub OAuth credentials for the environment
+  - Seed any dataset prerequisites through backend APIs
 
 Act:
-  - (UI) Navigate to the product page
-  - (UI) Click [data-testid="add-to-cart"]
-  - (UI) Navigate to checkout
-  - (UI) Enter dummy payment details and click [data-testid="pay-button"]
+  - (UI) Navigate to /login
+  - (UI) Click Continue with GitHub
+  - (UI) Wait for the authenticated app route
+  - (UI) Upload a small valid dataset
 
 Assert:
-  - (UI) Wait for the success page to load
-  - (UI) Assert the order confirmation message is visible
-  - (API) Query the database to ensure the order status is "paid"
+  - (UI) Assert the signed-in user profile is visible
+  - (UI) Assert the uploaded dataset appears in the authenticated app state
+  - (API) Query the database to ensure the dataset belongs to the signed-in user
 ```
 
 ---

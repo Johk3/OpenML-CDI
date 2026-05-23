@@ -62,7 +62,7 @@ Technical specifications and API details.
 
 | Document                                                               | Description                                                                                         |
 | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| [Authentication](reference/authentication.md)                          | Auth endpoints (`/auth/register`, `/auth/token`, `/auth/refresh`), route protection, env vars       |
+| [Authentication](reference/authentication.md)                          | GitHub OAuth, refresh/logout, `/api/auth/me`, route protection, and retained backend auth endpoints |
 | [User Endpoint Contract](reference/user-endpoints.md)                  | `/api/user` request parameters, response shapes, authentication, and authorization rules            |
 | [Docker Build & Publish](reference/docker-build.md)                    | GHCR image publishing, tagging scheme, local build, troubleshooting                                 |
 | [S3 Storage Architecture and Local Setup](reference/s3-storage.md)     | S3-compatible storage architecture, env vars, MinIO setup, CORS, lifecycle cleanup, and permissions |
