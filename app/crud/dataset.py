@@ -48,6 +48,47 @@ def dataset_checksums_from_metadata(metadata: dict | None) -> tuple[str, ...]:
     return _normalized_dataset_checksums(checksums)
 
 
+def _metadata_references_storage_key(metadata: dict | None, storage_key: str) -> bool:
+    if not isinstance(metadata, dict):
+        return False
+
+    if metadata.get("storage_key") == storage_key:
+        return True
+
+    storage_keys = metadata.get("storage_keys")
+    if isinstance(storage_keys, list) and storage_key in storage_keys:
+        return True
+
+    objects = metadata.get("objects")
+    if isinstance(objects, list):
+        for obj in objects:
+            if not isinstance(obj, dict):
+                continue
+            if (
+                obj.get("object_key") == storage_key
+                or obj.get("quarantine_key") == storage_key
+            ):
+                return True
+
+    return False
+
+
+def get_dataset_for_storage_key(
+    db: Session, storage_key: str
+) -> schemas.Dataset | None:
+    normalized_storage_key = storage_key.strip()
+    if not normalized_storage_key:
+        return None
+
+    rows = db.query(models.Dataset).all()
+    for row in rows:
+        if _metadata_references_storage_key(
+            row.dataset_metadata, normalized_storage_key
+        ):
+            return schemas.Dataset.model_validate(row)
+    return None
+
+
 def get_dataset(db: Session, dataset_id: uuid.UUID) -> schemas.Dataset | None:
     db_dataset = (
         db.query(models.Dataset).filter(models.Dataset.id == dataset_id).first()

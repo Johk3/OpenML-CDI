@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -254,6 +255,67 @@ def test_upload_url_creates_pending_dataset_and_returns_presigned_url(
         )
         assert dataset.owner_id == uploader_id
         assert dataset.status == Statuses.PENDING_UPLOAD
+
+
+def test_local_direct_upload_allows_dataset_owner(
+    client: TestClient, db_session_factory
+):
+    uploader_id = uuid.uuid4()
+    access_token = _create_access_token_for_user(db_session_factory, uploader_id)
+
+    upload_response = client.post(
+        "/api/datasets/upload-url",
+        json={
+            "name": "Owner upload dataset",
+            "filenames": ["owner.csv"],
+        },
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert upload_response.status_code == 201
+    storage_key = upload_response.json()["upload_contracts"][0]["object_key"]
+
+    response = client.put(
+        f"/api/datasets/upload/{storage_key}",
+        content=b"feature,target\n1,0\n",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 200
+    storage = cast(Any, client.app).state.storage
+    assert storage.read_bytes(storage_key) == b"feature,target\n1,0\n"
+
+
+def test_local_direct_upload_rejects_non_owner(client: TestClient, db_session_factory):
+    owner_id = uuid.uuid4()
+    owner_token = _create_access_token_for_user(db_session_factory, owner_id)
+    other_id = uuid.uuid4()
+    other_token = _create_access_token_for_user(
+        db_session_factory,
+        other_id,
+        email="direct-other@example.com",
+        username="direct-other",
+    )
+
+    upload_response = client.post(
+        "/api/datasets/upload-url",
+        json={
+            "name": "Private upload dataset",
+            "filenames": ["private.csv"],
+        },
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    assert upload_response.status_code == 201
+    storage_key = upload_response.json()["upload_contracts"][0]["object_key"]
+
+    response = client.put(
+        f"/api/datasets/upload/{storage_key}",
+        content=b"feature,target\n1,0\n",
+        headers={"Authorization": f"Bearer {other_token}"},
+    )
+
+    assert response.status_code == 403
+    storage = cast(Any, client.app).state.storage
+    assert storage.object_exists(storage_key) is False
 
 
 def test_upload_url_rejects_duplicate_dataset_name_for_same_owner(

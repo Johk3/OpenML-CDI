@@ -334,8 +334,12 @@ async def upload_file(
     storage_key: str,
     request: Request,
     current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Session = Depends(get_db),
 ):
     """Receive file bytes and write to the configured storage backend."""
+    dataset = dataset_crud.get_dataset_for_storage_key(db=db, storage_key=storage_key)
+    expert_or_owner(current_user, dataset)
+
     data = await request.body()
     request.app.state.storage.write_bytes(storage_key, data)
     return {"message": "Upload successful", "storage_key": storage_key}
