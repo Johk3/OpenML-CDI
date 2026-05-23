@@ -1,4 +1,27 @@
-# Contributing
+# OpenML Upload
+
+<p align="center">
+  <img src=".github/openmlcdi_logo.png" alt="OpenML Upload Logo" width="500" />
+</p>
+
+[![CI](https://github.com/ludev-nl/2026-40-OpenML_Uploading_Interface/actions/workflows/docker-publish.yaml/badge.svg?branch=main)](https://github.com/ludev-nl/2026-40-OpenML_Uploading_Interface/actions/workflows/docker-publish.yaml)
+[![Frontend tests](https://github.com/ludev-nl/2026-40-OpenML_Uploading_Interface/actions/workflows/frontend-test.yaml/badge.svg?branch=main)](https://github.com/ludev-nl/2026-40-OpenML_Uploading_Interface/actions/workflows/frontend-test.yaml)
+
+A web application for uploading and managing OpenML datasets, backed by FastAPI, PostgreSQL, ClamAV, Caddy, and S3-compatible object storage.
+
+***
+
+## Table of Contents
+
+- [Contributing](#contributing)
+- [Docker](#docker)
+- [Storage Setup](#storage-setup)
+- [Run Tests and Automation](#run-tests-and-automation)
+- [Credits](#credits-and-third-party-libraries)
+
+***
+
+## Contributing
 
 Please follow the projects guidelines on contributing.
 For more information, see [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -126,6 +149,6 @@ Lefthook runs the same formatting, linting, secret-scanning, and test checks tha
 
 For the full step-by-step setup guide, see [docs/how-to/CI-pipeline.md](docs/how-to/CI-pipeline.md).
 
-## Credits / Third-party libraries
+## Credits and Third-party libraries
 
 This project builds oSn a number of open-source libraries and tools across the backend, frontend, and tooling. See [docs/references/credits.md](docs/references/credits.md) for the full list with descriptions and links.
