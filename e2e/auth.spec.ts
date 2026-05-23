@@ -1,12 +1,10 @@
-import { expect, Page, test } from "@playwright/test";
-
-async function signInWithDevGitHub(page: Page) {
-  await page.goto("/login");
-  await page.getByRole("link", { name: /continue with github/i }).click();
-  await expect(page.getByRole("heading", { name: "My Datasets" })).toBeVisible({
-    timeout: 30_000,
-  });
-}
+import { expect, test } from "@playwright/test";
+import { test as authenticatedTest } from "./fixtures/auth.fixture";
+import {
+  expectDatasetsDashboard,
+  expectDevAccountLink,
+  signInWithDevGitHub,
+} from "./utils/actions";
 
 test.describe("GitHub auth E2E", () => {
   test("redirects protected routes to login when unauthenticated", async ({
@@ -34,9 +32,7 @@ test.describe("GitHub auth E2E", () => {
 
     await signInWithDevGitHub(page);
 
-    await expect(
-      page.getByRole("link", { name: /account for dev user/i }),
-    ).toBeVisible();
+    await expectDevAccountLink(page);
     expect(
       authRequests.some((url) => url.includes("/api/auth/github/login")),
     ).toBe(true);
@@ -46,28 +42,45 @@ test.describe("GitHub auth E2E", () => {
     expect(authRequests.some((url) => url.includes("/api/api/"))).toBe(false);
   });
 
-  test("rehydrates a refresh-cookie session and logs out safely", async ({
-    page,
-  }) => {
-    await signInWithDevGitHub(page);
+  authenticatedTest(
+    "opens the datasets dashboard from an authenticated session",
+    async ({ authenticatedPage }) => {
+      await authenticatedPage.goto("/datasets");
 
-    await page.goto("/account");
-    await expect(
-      page.getByRole("heading", { name: /manage your account/i }),
-    ).toBeVisible();
+      await expectDatasetsDashboard(authenticatedPage);
+      await expectDevAccountLink(authenticatedPage);
+    },
+  );
 
-    await page.reload();
-    await expect(
-      page.getByRole("heading", { name: /manage your account/i }),
-    ).toBeVisible();
+  authenticatedTest(
+    "rehydrates a refresh-cookie session and logs out safely",
+    async ({ authenticatedPage }) => {
+      await authenticatedPage.goto("/account");
+      await expect(
+        authenticatedPage.getByRole("heading", {
+          name: /manage your account/i,
+        }),
+      ).toBeVisible();
 
-    await page.getByRole("button", { name: /logout/i }).click();
-    await expect(
-      page.getByRole("heading", { name: /welcome to openml cdi/i }),
-    ).toBeVisible();
-    await expect(page).toHaveURL(/\/login$/);
+      await authenticatedPage.reload();
+      await expect(
+        authenticatedPage.getByRole("heading", {
+          name: /manage your account/i,
+        }),
+      ).toBeVisible();
 
-    await page.goto("/account");
-    await expect(page.getByText("Please sign in to continue.")).toBeVisible();
-  });
+      await authenticatedPage.getByRole("button", { name: /logout/i }).click();
+      await expect(
+        authenticatedPage.getByRole("heading", {
+          name: /welcome to openml cdi/i,
+        }),
+      ).toBeVisible();
+      await expect(authenticatedPage).toHaveURL(/\/login$/);
+
+      await authenticatedPage.goto("/account");
+      await expect(
+        authenticatedPage.getByText("Please sign in to continue."),
+      ).toBeVisible();
+    },
+  );
 });

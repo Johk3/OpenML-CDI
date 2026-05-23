@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const isCI = Boolean(process.env.CI || process.env.ci);
+
 /**
  * read environment variables from file.
  * https://github.com/motdotla/dotenv
@@ -22,11 +24,11 @@ export default defineConfig({
   /* run tests in files in parallel */
   fullyParallel: true,
   /* fail the build on ci if you accidentally left test.only in the source code. */
-  forbidOnly: !!process.env.ci,
+  forbidOnly: isCI,
   /* retry on ci only */
-  retries: process.env.ci ? 2 : 0,
-  /* opt out of parallel tests on ci. */
-  workers: process.env.ci ? 1 : undefined,
+  retries: isCI ? 2 : 0,
+  /* The local GitHub dev bypass uses one deterministic user account. */
+  workers: 1,
   /* reporter to use. see https://playwright.dev/docs/test-reporters */
   reporter: [["html"], ["junit", { outputFile: "artifacts/junit.xml" }]],
   /* shared settings for all the projects below. see https://playwright.dev/docs/api/class-testoptions. */

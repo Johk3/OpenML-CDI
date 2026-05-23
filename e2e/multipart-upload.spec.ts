@@ -1,13 +1,16 @@
-import { expect, Page, test } from "@playwright/test";
-import fs from "fs/promises";
-import path from "path";
+import { Page } from "@playwright/test";
+import { expect, test } from "./fixtures/auth.fixture";
+import {
+  cleanupDataset,
+  openUploadPage,
+  submitDatasetUpload,
+  writeUploadFixture,
+} from "./utils/actions";
 
-const API_BASE_URL = `${process.env.E2E_API_BASE_URL ?? "http://localhost:8000"}/api`;
-const AUTH_STATE_PATH = path.resolve(__dirname, ".auth/state.json");
 const MULTIPART_SESSION_PREFIX = "openml-multipart-upload-session";
 const LARGE_UPLOAD_SIZE = 40 * 1024 * 1024;
 const RECOVERY_UPLOAD_SIZE = 17 * 1024 * 1024;
-const FIXED_MTIME = new Date("2026-01-01T00:00:00.000Z");
+const RUN_MULTIPART_E2E = process.env.E2E_ENABLE_MULTIPART_UPLOADS === "true";
 const multipartPartUrlMatcher = (url: URL) =>
   url.searchParams.has("partNumber") && url.searchParams.has("uploadId");
 
@@ -32,59 +35,6 @@ type MultipartRouteState = {
   releaseHeldRequests: () => void;
   waitForPartAttempt: (partNumber: number, attempt?: number) => Promise<void>;
 };
-
-async function authToken() {
-  const raw = await fs.readFile(AUTH_STATE_PATH, "utf8");
-  return JSON.parse(raw).token as string;
-}
-
-async function writeUploadFixture(filePath: string, size: number) {
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, Buffer.alloc(size, "a"));
-  await fs.utimes(filePath, FIXED_MTIME, FIXED_MTIME);
-}
-
-async function login(page: Page) {
-  await page.goto("/login");
-  await page.getByRole("link", { name: /continue with github/i }).click();
-  await expect(page.getByRole("heading", { name: "My Datasets" })).toBeVisible({
-    timeout: 30_000,
-  });
-  await page.getByRole("link", { name: "Upload" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Share Your Dataset" }),
-  ).toBeVisible();
-}
-
-async function selectFixtureAndSubmit(
-  page: Page,
-  filePath: string,
-  datasetName: string,
-) {
-  await page.locator("#file-input").setInputFiles(filePath);
-  await expect(page.getByText("Almost there!")).toBeVisible();
-
-  await page.getByLabel(/dataset name/i).fill(datasetName);
-  await page.getByLabel(/description/i).fill(`E2E coverage for ${datasetName}`);
-  await page.getByLabel(/first name/i).fill("E2E");
-  await page.getByLabel(/last name/i).fill("Multipart");
-  await page.getByLabel(/email address/i).fill(`${datasetName}@example.test`);
-  await page.getByRole("button", { name: /upload dataset/i }).click();
-}
-
-async function deleteDataset(datasetId: string | null) {
-  if (!datasetId) return;
-
-  const token = await authToken();
-  try {
-    await fetch(`${API_BASE_URL}/datasets/delete?dataset_id=${datasetId}`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-  } catch {
-    // Cleanup should not mask the original E2E failure.
-  }
-}
 
 function watchUploadProgress(page: Page) {
   return page.evaluate(() => {
@@ -130,6 +80,7 @@ function watchUploadProgress(page: Page) {
     };
 
     readProgress();
+    window.setInterval(readProgress, 50);
     const observer = new MutationObserver(readProgress);
     observer.observe(document.body, {
       childList: true,
@@ -299,37 +250,32 @@ function multipartSessionCount(page: Page) {
 
 test.describe("multipart upload E2E", () => {
   test.describe.configure({ mode: "serial", timeout: 120_000 });
+  test.skip(
+    !RUN_MULTIPART_E2E,
+    "Multipart E2E tests require S3-compatible storage; set E2E_ENABLE_MULTIPART_UPLOADS=true to run them.",
+  );
 
   test("shows monotonic progress, retries failed parts, and completes through local S3", async ({
-    page,
+    authenticatedPage: page,
   }, testInfo) => {
     const fixturePath = testInfo.outputPath("multipart-large.csv");
     const counters = collectApiCounters(page);
     const routeState = await routeMultipartUploads(page, {
       delayFirstAttemptsMs: 1200,
+      delayFailedAttemptsMs: 600,
       failAttemptsByPart: { 2: 1 },
     });
-    let datasetId: string | null = null;
-
-    page.on("response", async (response) => {
-      if (
-        response.request().method() !== "POST" ||
-        !response.url().endsWith("/api/datasets/upload-url")
-      ) {
-        return;
-      }
-      datasetId = ((await response.json()) as { id: string }).id;
-    });
+    let createdDatasetId: string | null = null;
 
     try {
-      await writeUploadFixture(fixturePath, LARGE_UPLOAD_SIZE);
-      await login(page);
+      await writeUploadFixture(fixturePath, { size: LARGE_UPLOAD_SIZE });
+      await openUploadPage(page);
       await watchUploadProgress(page);
-      await selectFixtureAndSubmit(
-        page,
-        fixturePath,
-        `multipart-e2e-${Date.now()}`,
-      );
+      createdDatasetId = await submitDatasetUpload(page, {
+        filePath: fixturePath,
+        datasetName: `multipart-e2e-${Date.now()}`,
+        contact: { lastName: "Multipart" },
+      });
 
       await expect(
         page.getByRole("heading", { name: "Upload Complete!" }),
@@ -347,39 +293,29 @@ test.describe("multipart upload E2E", () => {
       expect(routeState.attemptsByPart.get(2)).toBe(2);
       expect(await multipartSessionCount(page)).toBe(0);
     } finally {
-      await deleteDataset(datasetId);
+      await cleanupDataset(createdDatasetId, testInfo);
     }
   });
 
   test("pauses queued multipart parts and resumes them without restarting the upload", async ({
-    page,
+    authenticatedPage: page,
   }, testInfo) => {
     const fixturePath = testInfo.outputPath("multipart-pause-resume.csv");
     const counters = collectApiCounters(page);
     const routeState = await routeMultipartUploads(page, {
       holdUntilReleased: true,
     });
-    let datasetId: string | null = null;
-
-    page.on("response", async (response) => {
-      if (
-        response.request().method() !== "POST" ||
-        !response.url().endsWith("/api/datasets/upload-url")
-      ) {
-        return;
-      }
-      datasetId = ((await response.json()) as { id: string }).id;
-    });
+    let createdDatasetId: string | null = null;
 
     try {
-      await writeUploadFixture(fixturePath, LARGE_UPLOAD_SIZE);
-      await login(page);
+      await writeUploadFixture(fixturePath, { size: LARGE_UPLOAD_SIZE });
+      await openUploadPage(page);
       await watchUploadProgress(page);
-      await selectFixtureAndSubmit(
-        page,
-        fixturePath,
-        `multipart-pause-resume-${Date.now()}`,
-      );
+      createdDatasetId = await submitDatasetUpload(page, {
+        filePath: fixturePath,
+        datasetName: `multipart-pause-resume-${Date.now()}`,
+        contact: { lastName: "Multipart" },
+      });
 
       await routeState.waitForPartAttempt(4);
       await page.getByRole("button", { name: /pause upload/i }).click();
@@ -391,7 +327,9 @@ test.describe("multipart upload E2E", () => {
         routeState.attemptsByPart.keys(),
       ).sort();
       routeState.releaseHeldRequests();
-      await page.waitForTimeout(750);
+      await expect
+        .poll(() => Array.from(routeState.attemptsByPart.keys()).sort())
+        .toEqual(attemptsWhilePaused);
       expect(Array.from(routeState.attemptsByPart.keys()).sort()).toEqual(
         attemptsWhilePaused,
       );
@@ -413,12 +351,12 @@ test.describe("multipart upload E2E", () => {
       expect(await multipartSessionCount(page)).toBe(0);
     } finally {
       routeState.releaseHeldRequests();
-      await deleteDataset(datasetId);
+      await cleanupDataset(createdDatasetId, testInfo);
     }
   });
 
   test("recovers a failed multipart upload after reload without restarting completed parts", async ({
-    page,
+    authenticatedPage: page,
   }, testInfo) => {
     const fixturePath = testInfo.outputPath("multipart-recovery.csv");
     const counters = collectApiCounters(page);
@@ -426,26 +364,16 @@ test.describe("multipart upload E2E", () => {
       delayFailedAttemptsMs: 1000,
       failAttemptsByPart: { 2: 3 },
     });
-    let datasetId: string | null = null;
-
-    page.on("response", async (response) => {
-      if (
-        response.request().method() !== "POST" ||
-        !response.url().endsWith("/api/datasets/upload-url")
-      ) {
-        return;
-      }
-      datasetId = ((await response.json()) as { id: string }).id;
-    });
+    let createdDatasetId: string | null = null;
 
     try {
-      await writeUploadFixture(fixturePath, RECOVERY_UPLOAD_SIZE);
-      await login(page);
-      await selectFixtureAndSubmit(
-        page,
-        fixturePath,
-        `multipart-recovery-${Date.now()}`,
-      );
+      await writeUploadFixture(fixturePath, { size: RECOVERY_UPLOAD_SIZE });
+      await openUploadPage(page);
+      createdDatasetId = await submitDatasetUpload(page, {
+        filePath: fixturePath,
+        datasetName: `multipart-recovery-${Date.now()}`,
+        contact: { lastName: "Multipart" },
+      });
 
       await expect(
         page.getByRole("heading", { name: "Upload Failed" }),
@@ -460,12 +388,13 @@ test.describe("multipart upload E2E", () => {
       await page.unroute(multipartPartUrlMatcher);
       const secondRunRouteState = await routeMultipartUploads(page);
       await page.reload();
-      await login(page);
-      await selectFixtureAndSubmit(
-        page,
-        fixturePath,
-        `multipart-recovery-resumed-${Date.now()}`,
-      );
+      await openUploadPage(page);
+      await submitDatasetUpload(page, {
+        filePath: fixturePath,
+        datasetName: `multipart-recovery-resumed-${Date.now()}`,
+        contact: { lastName: "Multipart" },
+        waitForUploadUrl: false,
+      });
 
       await expect(
         page.getByRole("heading", { name: "Upload Complete!" }),
@@ -481,12 +410,12 @@ test.describe("multipart upload E2E", () => {
       expect(secondRunRouteState.attemptsByPart.has(3)).toBe(false);
       expect(await multipartSessionCount(page)).toBe(0);
     } finally {
-      await deleteDataset(datasetId);
+      await cleanupDataset(createdDatasetId, testInfo);
     }
   });
 
   test("cancels an active multipart upload and clears saved progress", async ({
-    page,
+    authenticatedPage: page,
   }, testInfo) => {
     const fixturePath = testInfo.outputPath("multipart-cancel.csv");
     const counters = collectApiCounters(page);
@@ -494,26 +423,16 @@ test.describe("multipart upload E2E", () => {
       abortHeldRequests: true,
       holdUntilReleased: true,
     });
-    let datasetId: string | null = null;
-
-    page.on("response", async (response) => {
-      if (
-        response.request().method() !== "POST" ||
-        !response.url().endsWith("/api/datasets/upload-url")
-      ) {
-        return;
-      }
-      datasetId = ((await response.json()) as { id: string }).id;
-    });
+    let createdDatasetId: string | null = null;
 
     try {
-      await writeUploadFixture(fixturePath, RECOVERY_UPLOAD_SIZE);
-      await login(page);
-      await selectFixtureAndSubmit(
-        page,
-        fixturePath,
-        `multipart-cancel-${Date.now()}`,
-      );
+      await writeUploadFixture(fixturePath, { size: RECOVERY_UPLOAD_SIZE });
+      await openUploadPage(page);
+      createdDatasetId = await submitDatasetUpload(page, {
+        filePath: fixturePath,
+        datasetName: `multipart-cancel-${Date.now()}`,
+        contact: { lastName: "Multipart" },
+      });
 
       await routeState.firstPartRequested;
       await page.getByRole("button", { name: /cancel upload/i }).click();
@@ -531,7 +450,7 @@ test.describe("multipart upload E2E", () => {
       expect(await multipartSessionCount(page)).toBe(0);
     } finally {
       routeState.releaseHeldRequests();
-      await deleteDataset(datasetId);
+      await cleanupDataset(createdDatasetId, testInfo);
     }
   });
 });

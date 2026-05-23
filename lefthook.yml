@@ -38,6 +38,19 @@ pre-commit:
       glob: "**/*.{js,jsx,ts,tsx}"
       run: pnpm exec vitest related --run {staged_files}
 
+    # End-to-end tests (Playwright at repository root)
+    e2e-eslint:
+      glob: "{e2e/**/*.ts,playwright.config.ts}"
+      run: ./frontend/node_modules/.bin/eslint --config frontend/eslint.config.js {staged_files}
+
+    e2e-prettier:
+      glob: "{e2e/**/*.ts,playwright.config.ts,package.json,package-lock.json,lefthook.yml,.github/workflows/pre-commit.yaml}"
+      run: ./frontend/node_modules/.bin/prettier --write {staged_files}
+
+    e2e-list:
+      glob: "{e2e/**/*.ts,playwright.config.ts,package.json,package-lock.json}"
+      run: npm run test:e2e -- --list
+
     # Documentation
     markdownlint:
       glob: "docs/**/*.md"

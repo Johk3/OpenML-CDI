@@ -40,6 +40,9 @@ jobs:
         working-directory: ./frontend
         run: pnpm install --frozen-lockfile
 
+      - name: Install E2E Dependencies
+        run: npm ci
+
       - name: Install Lefthook
         run: pnpm add -g @evilmartians/lefthook
 

@@ -1020,13 +1020,6 @@ export const UploadPage: React.FC = () => {
                         >
                           My Datasets
                         </button>
-                        , or view your{' '}
-                        <button
-                          onClick={() => navigate(`/datasets/${datasetId}`)}
-                          className="font-bold underline hover:text-primary transition-colors"
-                        >
-                          newly created dataset
-                        </button>
                         .
                       </span>
                     </div>
