@@ -80,7 +80,7 @@ docker build -t openml-upload .
 docker run -d -p 8000:8000 -v openml-data:/data openml-upload
 ```
 
-The app will be available at `http://localhost:8000`. A pre-built image is also published to `ghcr.io/ludev/openml-upload:latest` on every push to the default branch.
+The app will be available at `http://localhost:8000`. A pre-built image is also published to `ghcr.io/ludev-nl/2026-40-openml_uploading_interface:latest` on every push to the default branch.
 
 Dataset upload confirmation requires a reachable ClamAV `clamd` daemon. If `clamd` is unavailable, uploads are quarantined and not promoted for download. For local upload-flow development, use the Compose stack documented in [Local S3-Compatible Storage](docs/how-to/local-s3-storage.md).
 

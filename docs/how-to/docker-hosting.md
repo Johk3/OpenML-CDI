@@ -162,14 +162,14 @@ echo YOUR_GITHUB_PAT | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-s
 Once authenticated, pull and run the image:
 
 ```bash
-docker pull ghcr.io/ludev/openml-upload:latest
+docker pull ghcr.io/ludev-nl/2026-40-openml_uploading_interface:latest
 
 docker run -d \
   -p 8000:8000 \
   -v openml-data:/data \
   -e LOCAL_UPLOAD_DIR=/data/uploads \
   --name openml-upload \
-  ghcr.io/ludev/openml-upload:latest
+  ghcr.io/ludev-nl/2026-40-openml_uploading_interface:latest
 ```
 
 See [docker-build.md](../../docker-build.md) for details on the CI workflow and tagging scheme.

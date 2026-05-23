@@ -41,6 +41,7 @@ def test_frontend_env_example_uses_full_api_base_path():
     env_example = _read("frontend/.env.example")
 
     assert "VITE_API_BASE_URL=http://localhost:8000/api" in env_example
+    assert "VITE_API_BASE_URL=http://localhost:8000\n" not in env_example
 
 
 def test_backend_black_config_uses_standard_pyproject_filename():
