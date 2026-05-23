@@ -14,12 +14,12 @@ Welcome to the project documentation. Use this index to navigate all available g
 
 Background concepts and design decisions.
 
-| Document                                                             | Description                                                     |
-| -------------------------------------------------------------------- | --------------------------------------------------------------- |
-| [Code Review and Ownership Philosophy](explanation/review-policy.md) | Why we review code the way we do, and how ownership is assigned |
-| [Dataset Detail Page](explanation/dataset-detail-page.md)            | Overview of the dataset detail page feature                     |
-| [Upload Mechanism](explanation/upload-mechanism.md)                  | High-level upload, scan, and storage flow                       |
-| [GitHub Issue Integration](explanation/github-issue-integration.md)  | How GitHub issues are created and synced for dataset reviews    |
+| Document                                                                        | Description                                                               |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| [Code Review and Ownership Philosophy](explanation/review-policy.md)            | Why we review code the way we do, and how ownership is assigned           |
+| [Dataset Detail Page](explanation/dataset-detail-page.md)                       | Overview of the dataset detail page feature                               |
+| [Upload Mechanism](explanation/upload-mechanism.md)                             | High-level upload, scan, and storage flow                                 |
+| [GitHub Issue Integration](explanation/github-issue-integration.md)             | How GitHub issues are created and synced for dataset reviews              |
 | [Dropbox and S3 Storage Spike](explanation/storage-backend-dropbox-s3-spike.md) | Earlier provider comparison; superseded by the final S3 storage reference |
 
 ---
@@ -60,14 +60,15 @@ Step-by-step guides for common tasks.
 
 Technical specifications and API details.
 
-| Document                                                           | Description                                                                                         |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| [Authentication](reference/authentication.md)                      | Auth endpoints (`/auth/register`, `/auth/token`, `/auth/refresh`), route protection, env vars       |
-| [User Endpoint Contract](reference/user-endpoints.md)              | `/api/user` request parameters, response shapes, authentication, and authorization rules            |
-| [Docker Build & Publish](reference/docker-build.md)                | GHCR image publishing, tagging scheme, local build, troubleshooting                                 |
-| [S3 Storage Architecture and Local Setup](reference/s3-storage.md) | S3-compatible storage architecture, env vars, MinIO setup, CORS, lifecycle cleanup, and permissions |
-| [Frontend Routing](reference/routing.md)                           | React Router setup, adding routes, 404 handling                                                     |
-| [Frontend Testing Reference](reference/fontend-testing.md)         | Testing Library queries, test structure, Vitest commands                                            |
-| [Dataset Detail Page](reference/dataset-detail-page.md)            | Routes, data types, and test locations for the dataset detail page                                  |
+| Document                                                               | Description                                                                                         |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| [Authentication](reference/authentication.md)                          | Auth endpoints (`/auth/register`, `/auth/token`, `/auth/refresh`), route protection, env vars       |
+| [User Endpoint Contract](reference/user-endpoints.md)                  | `/api/user` request parameters, response shapes, authentication, and authorization rules            |
+| [Docker Build & Publish](reference/docker-build.md)                    | GHCR image publishing, tagging scheme, local build, troubleshooting                                 |
+| [S3 Storage Architecture and Local Setup](reference/s3-storage.md)     | S3-compatible storage architecture, env vars, MinIO setup, CORS, lifecycle cleanup, and permissions |
+| [Frontend Routing](reference/routing.md)                               | React Router setup, adding routes, 404 handling                                                     |
+| [Frontend Testing Reference](reference/fontend-testing.md)             | Testing Library queries, test structure, Vitest commands                                            |
+| [Dataset Detail Page](reference/dataset-detail-page.md)                | Routes, data types, and test locations for the dataset detail page                                  |
+| [Croissant Metadata Input Page](reference/croissant-metadata-input.md) | Field guidance, expected formats, scenarios, and troubleshooting for the metadata form              |
 
 > **Note:** `references/routing.md` contains a duplicate of `reference/routing.md`. See [references/routing.md](references/routing.md).
