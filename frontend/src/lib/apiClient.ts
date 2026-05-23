@@ -21,22 +21,26 @@ async function callRefreshEndpoint(): Promise<string> {
   );
   return response.data.access_token;
 }
-
 // Interceptor for checking access_token validity
-apiClient.interceptors.request.use(
-  async (config: InternalAxiosRequestConfig) => {
-    if (config.url?.endsWith('/auth/refresh')) return config;
+apiClient.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
+  if (config.url?.endsWith('/auth/refresh')) return config;
+  if (
+    (
+      config as InternalAxiosRequestConfig & {
+        _retried?: boolean;
+      }
+    )?._retried
+  )
+    return config; // if the 401 interceptor already attached.
 
-    try {
-      const token = await tokenManager.ensureFreshToken(callRefreshEndpoint);
-      config.headers.Authorization = `Bearer ${token}`;
-    } catch {
-      console.warn('Failed to refresh token before request');
-    }
-    return config;
-  },
-  (error) => Promise.reject(error),
-);
+  try {
+    const token = await tokenManager.ensureFreshToken(callRefreshEndpoint);
+    config.headers.Authorization = `Bearer ${token}`;
+  } catch {
+    console.warn('Failed to refresh token before request');
+  }
+  return config;
+});
 
 // Interceptor for 401 response
 apiClient.interceptors.response.use(
