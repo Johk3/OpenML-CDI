@@ -115,6 +115,27 @@ describe('CroissantMetadataPage', () => {
     expect(screen.getByRole('button', { name: /add distribution/i })).toBeInTheDocument();
   });
 
+  it('shows a visible backend error when existing dataset metadata cannot load', async () => {
+    mockDatasetService.getDataset.mockRejectedValueOnce({
+      response: {
+        data: {
+          error: {
+            message: 'Invalid request body',
+            fields: {
+              dataset_id: ['Input should be a valid UUID'],
+            },
+          },
+        },
+      },
+    });
+
+    renderPageWithDataset('not-a-uuid');
+
+    expect(
+      await screen.findByText('Invalid request body: dataset_id: Input should be a valid UUID'),
+    ).toBeInTheDocument();
+  });
+
   it('prefills generated file object and file set metadata from an uploaded dataset', async () => {
     mockDatasetService.getDataset.mockResolvedValueOnce({
       id: 'dataset-generated',

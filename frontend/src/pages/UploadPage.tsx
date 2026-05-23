@@ -22,6 +22,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useUserContext } from '@/hooks/useUserContext';
 import { DatasetService } from '@/services/datasetService';
 import { AxiosError } from 'axios';
+import { getApiErrorMessage } from '@/lib/apiErrors';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { compressFilesToZip } from '@/utils/compress';
@@ -94,9 +95,8 @@ const isUploadCanceledError = (error: unknown) => {
 };
 
 const getUploadErrorDetail = (error: unknown) => {
-  const axiosError = error as AxiosError<{ detail?: unknown }>;
-  const detail = axiosError.response?.data?.detail;
-  return typeof detail === 'string' ? detail : null;
+  const detail = getApiErrorMessage(error, '');
+  return detail || null;
 };
 
 const isDuplicateDatasetNameError = (error: unknown, detail: string | null) => {

@@ -19,7 +19,7 @@ import {
   mergeCroissantFormData,
 } from '../utils/croissantGeneratedMetadata';
 import { DatasetService } from '@/services/datasetService';
-import { AxiosError } from 'axios';
+import { getApiErrorMessage } from '@/lib/apiErrors';
 import type { CroissantFieldDef } from '@/types/croissant';
 import { useUserContext } from '@/hooks/useUserContext';
 
@@ -175,6 +175,9 @@ export const CroissantMetadataPage: React.FC = () => {
         }
       } catch (err) {
         console.error('Failed to fetch dataset:', err);
+        setSubmitError(
+          getApiErrorMessage(err, 'Failed to load dataset metadata. Please try again.'),
+        );
       } finally {
         setIsLoading(false);
       }
@@ -514,10 +517,7 @@ export const CroissantMetadataPage: React.FC = () => {
       // If no datasetId then just navigate away as the metadata already in memory
       navigate(returnPath);
     } catch (err) {
-      const axiosErr = err as AxiosError<{ detail?: string }>;
-      setSubmitError(
-        axiosErr.response?.data?.detail ?? 'Failed to save metadata. Please try again.',
-      );
+      setSubmitError(getApiErrorMessage(err, 'Failed to save metadata. Please try again.'));
     } finally {
       setIsSubmitting(false);
     }

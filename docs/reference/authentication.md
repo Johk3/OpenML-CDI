@@ -228,11 +228,13 @@ The current frontend token handling relies on the following browser/server
 contract:
 
 - frontend origin: `http://localhost:5173`
-- backend API origin: `http://localhost:8000` with frontend requests pointed at
-  `http://localhost:8000/api`
+- backend API origin: `http://localhost:8000` in local split frontend/backend
+  development, with frontend requests pointed at `http://localhost:8000/api`
 - `VITE_API_BASE_URL` stores the full backend API URL (for example
-  `http://localhost:8000/api`). The frontend uses this full API URL for
-  requests, so individual frontend request paths should not include `/api`.
+  `http://localhost:8000/api`) for local split frontend/backend development.
+  When it is unset, the frontend falls back to same-origin `/api`, which is the
+  Docker Compose production-style path behind Caddy. Individual frontend request
+  paths should not include `/api`.
 - refresh and logout requests must be sent with credentials enabled
 - backend CORS must allow the exact frontend origin and `allow_credentials=true`
 - refresh cookie must be scoped server-side to the refresh path and kept
@@ -242,7 +244,8 @@ contract:
 
 Frontend env vars:
 
-- `VITE_API_BASE_URL` full backend API URL, default `http://localhost:8000/api`
+- `VITE_API_BASE_URL` full backend API URL for local split frontend/backend
+  development; unset defaults to same-origin `/api`
 - `VITE_GITHUB_CLIENT_ID`
 - `VITE_GITHUB_OAUTH_SCOPE` default `user:email`
 - `VITE_GITHUB_REDIRECT_URI` default `http://localhost:5173/login/callback`

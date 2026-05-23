@@ -596,6 +596,55 @@ describe('DatasetService direct uploads', () => {
   });
 });
 
+describe('DatasetService dataset endpoint contracts', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    apiClientMock.get.mockReset();
+    apiClientMock.post.mockReset();
+  });
+
+  it('uses current backend endpoints for dataset API calls', async () => {
+    const DatasetService = await importDatasetService();
+    const dataset = { id: 'dataset-1', title: 'Dataset One' };
+    const datasets = [dataset];
+    const response = { status_code: 200, message: 'ok' };
+    const uploadPayload = {
+      name: 'Dataset One',
+      filenames: ['data.csv'],
+    };
+    const metadata = { name: 'Dataset One' };
+
+    apiClientMock.post.mockResolvedValue({ data: response });
+    apiClientMock.get.mockImplementation((url: string) =>
+      Promise.resolve({ data: url === '/datasets/list' ? datasets : dataset }),
+    );
+
+    await expect(DatasetService.requestUploadUrl(uploadPayload)).resolves.toBe(response);
+    await expect(DatasetService.confirmUpload('dataset-1')).resolves.toBe(response);
+    await expect(DatasetService.updateMetadata('dataset-1', metadata)).resolves.toBe(response);
+    await expect(DatasetService.deleteDataset('dataset-1')).resolves.toBe(response);
+    await expect(DatasetService.updateStatus('dataset-1', 'approved')).resolves.toBe(response);
+    await expect(DatasetService.getDataset('dataset-1')).resolves.toBe(dataset);
+    await expect(DatasetService.listDatasets({ scope: 'mine' })).resolves.toBe(datasets);
+
+    expect(apiClientMock.post).toHaveBeenCalledWith('/datasets/upload-url', uploadPayload);
+    expect(apiClientMock.post).toHaveBeenCalledWith('/datasets/dataset-1/confirm-upload');
+    expect(apiClientMock.post).toHaveBeenCalledWith('/datasets/metadata', metadata, {
+      params: { dataset_id: 'dataset-1' },
+    });
+    expect(apiClientMock.post).toHaveBeenCalledWith('/datasets/delete', null, {
+      params: { dataset_id: 'dataset-1' },
+    });
+    expect(apiClientMock.post).toHaveBeenCalledWith('/datasets/status', null, {
+      params: { dataset_id: 'dataset-1', status: 'approved' },
+    });
+    expect(apiClientMock.get).toHaveBeenCalledWith('/datasets/dataset-1');
+    expect(apiClientMock.get).toHaveBeenCalledWith('/datasets/list', {
+      params: { scope: 'mine' },
+    });
+  });
+});
+
 describe('DatasetService downloads', () => {
   beforeEach(() => {
     vi.resetModules();

@@ -417,6 +417,29 @@ describe('UploadPage', () => {
       expect(mockDatasetService.confirmUpload).not.toHaveBeenCalled();
     });
 
+    it('surfaces structured backend validation errors during upload', async () => {
+      mockDatasetService.requestUploadUrl.mockRejectedValueOnce({
+        response: {
+          data: {
+            error: {
+              message: 'Invalid request body',
+              fields: {
+                name: ['Field required'],
+              },
+            },
+          },
+        },
+      });
+
+      fireEvent.click(screen.getByText(/Upload Dataset/i));
+
+      await waitFor(() => {
+        expect(screen.getByText('Upload Failed')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText('Invalid request body: name: Field required')).toBeInTheDocument();
+    });
+
     it('checks existing user datasets before uploading a duplicate dataset name', async () => {
       mockDatasetService.listDatasets.mockResolvedValueOnce([
         {

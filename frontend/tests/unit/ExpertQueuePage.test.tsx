@@ -212,7 +212,13 @@ describe('ExpertQueuePage', () => {
         },
       } as unknown as BackendDataset,
     ]);
-    vi.mocked(DatasetService.updateStatus).mockRejectedValueOnce(new Error('not ready'));
+    vi.mocked(DatasetService.updateStatus).mockRejectedValueOnce({
+      response: {
+        data: {
+          detail: 'Invalid dataset lifecycle transition: rejected -> pending_review',
+        },
+      },
+    });
     renderWithRouter(<ExpertQueuePage />, { userContext: expertUserContext });
 
     await screen.findByText('Expert Review Queue');
@@ -221,7 +227,9 @@ describe('ExpertQueuePage', () => {
     fireEvent.click(await screen.findByRole('button', { name: /reopen review/i }));
 
     expect(await screen.findByText('Rejected Dataset')).toBeInTheDocument();
-    expect(screen.getByText('Failed to update dataset status.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Invalid dataset lifecycle transition: rejected -> pending_review'),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /reopen review/i })).toBeInTheDocument();
   });
 

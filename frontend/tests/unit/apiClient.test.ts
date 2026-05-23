@@ -1,6 +1,5 @@
-import { apiClient } from '@/lib/apiClient';
-import { tokenManager } from '@/lib/tokenManager';
 import MockAdapter from 'axios-mock-adapter';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/tokenManager', () => ({
   tokenManager: {
@@ -10,15 +9,49 @@ vi.mock('@/lib/tokenManager', () => ({
   },
 }));
 
-const mock = new MockAdapter(apiClient);
+async function importApiClient() {
+  vi.resetModules();
+  return await import('@/lib/apiClient');
+}
 
-beforeEach(() => {
-  mock.reset();
-  vi.clearAllMocks();
-});
+async function importTokenManager() {
+  return (await import('@/lib/tokenManager')).tokenManager;
+}
 
 describe('apiClient', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.clearAllMocks();
+  });
+
+  it('defaults to the same-origin API prefix when no base URL is configured', async () => {
+    vi.stubEnv('VITE_API_BASE_URL', undefined);
+
+    const { BASE_URL } = await importApiClient();
+
+    expect(BASE_URL).toBe('/api');
+  });
+
+  it('uses a configured full API base URL as-is', async () => {
+    vi.stubEnv('VITE_API_BASE_URL', 'http://localhost:8000/api');
+
+    const { BASE_URL } = await importApiClient();
+
+    expect(BASE_URL).toBe('http://localhost:8000/api');
+  });
+
+  it('does not infer the API prefix from a backend origin config', async () => {
+    vi.stubEnv('VITE_API_BASE_URL', 'http://localhost:8000');
+
+    const { BASE_URL } = await importApiClient();
+
+    expect(BASE_URL).toBe('http://localhost:8000');
+  });
+
   it('should not intercept requests for the /auth/refresh endpoint', async () => {
+    const { apiClient } = await importApiClient();
+    const tokenManager = await importTokenManager();
+    const mock = new MockAdapter(apiClient);
     mock.onPost('/auth/refresh').reply(200, { access_token: 'test-token' });
 
     const response = await apiClient.post('/auth/refresh');
@@ -28,6 +61,9 @@ describe('apiClient', () => {
   });
 
   it('should intercept and attach Bearer tokens to requests', async () => {
+    const { apiClient } = await importApiClient();
+    const tokenManager = await importTokenManager();
+    const mock = new MockAdapter(apiClient);
     vi.mocked(tokenManager.ensureFreshToken).mockResolvedValue('test-access-token');
     mock.onGet('/endpoint').reply(200, {});
 
@@ -37,6 +73,9 @@ describe('apiClient', () => {
   });
 
   it('should continue the request even if refresh fails', async () => {
+    const { apiClient } = await importApiClient();
+    const tokenManager = await importTokenManager();
+    const mock = new MockAdapter(apiClient);
     vi.mocked(tokenManager.ensureFreshToken).mockRejectedValue(new Error('test-error'));
     mock.onGet('/endpoint').reply(200, { test: 'test-data' });
 
@@ -46,6 +85,9 @@ describe('apiClient', () => {
   });
 
   it('retries the request once on 401 with a new token', async () => {
+    const { apiClient } = await importApiClient();
+    const tokenManager = await importTokenManager();
+    const mock = new MockAdapter(apiClient);
     vi.mocked(tokenManager.ensureFreshToken).mockResolvedValue('token');
     mock.onGet('/protected').replyOnce(401).onGet('/protected').reply(200, { data: 'ok' });
 
@@ -56,6 +98,9 @@ describe('apiClient', () => {
   });
 
   it('does not retry 401 on /auth/refresh (avoids infinite loop)', async () => {
+    const { apiClient } = await importApiClient();
+    const tokenManager = await importTokenManager();
+    const mock = new MockAdapter(apiClient);
     mock.onPost('/auth/refresh').reply(401);
 
     await expect(apiClient.post('/auth/refresh')).rejects.toMatchObject({
@@ -65,6 +110,9 @@ describe('apiClient', () => {
   });
 
   it('clears token and triggers unauthenticated if retry also fails', async () => {
+    const { apiClient } = await importApiClient();
+    const tokenManager = await importTokenManager();
+    const mock = new MockAdapter(apiClient);
     vi.mocked(tokenManager.ensureFreshToken)
       .mockResolvedValueOnce('old-token')
       .mockRejectedValueOnce(new Error('refresh failed'));

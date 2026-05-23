@@ -548,6 +548,26 @@ describe('DatasetDetailPage', () => {
     expect(await screen.findByText(/the dataset is published and available/i)).toBeInTheDocument();
   });
 
+  it('shows backend lifecycle errors when publishing fails', async () => {
+    mockDatasetService.getDataset.mockResolvedValueOnce(datasetWithLifecycle('approved'));
+    mockDatasetService.updateStatus.mockRejectedValueOnce({
+      response: {
+        data: {
+          detail: 'Invalid dataset lifecycle transition: approved -> published',
+        },
+      },
+    });
+
+    navigateTo('/datasets/ds-approved');
+
+    const publishButton = await screen.findByRole('button', { name: /publish dataset/i });
+    fireEvent.click(publishButton);
+
+    expect(
+      await screen.findByText('Invalid dataset lifecycle transition: approved -> published'),
+    ).toBeInTheDocument();
+  });
+
   it('does not render a duplicate lifecycle GitHub integration panel', async () => {
     mockDatasetService.getDataset.mockResolvedValueOnce(
       datasetWithLifecycle('pending_review', {

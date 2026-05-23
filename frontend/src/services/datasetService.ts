@@ -751,7 +751,7 @@ export const DatasetService = {
 
   /** Retrieve a single dataset by ID. */
   getDataset: (datasetId: string) =>
-    apiClient.get(`/datasets/get`, { params: { dataset_id: datasetId } }).then((res) => res.data),
+    apiClient.get(`/datasets/${datasetId}`).then((res) => res.data),
 
   /** Delete a dataset. */
   deleteDataset: (datasetId: string) =>
@@ -765,7 +765,9 @@ export const DatasetService = {
 
   /** Update dataset status (experts ONLY!!). */
   updateStatus: (datasetId: string, status: DatasetStatus) =>
-    apiClient.post('/datasets/status', null, { params: { dataset_id: datasetId, status } }),
+    apiClient
+      .post('/datasets/status', null, { params: { dataset_id: datasetId, status } })
+      .then((res) => res.data),
 
   /** Download dataset files through AUTHENTICATED! API. */
   downloadDataset: async (datasetId: string) => {

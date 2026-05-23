@@ -36,6 +36,7 @@ import { Button } from '../components/ui/button';
 import { useUserContext } from '@/hooks/useUserContext';
 import { DatasetService } from '@/services/datasetService';
 import { BackendDataset } from '@/types/dataset';
+import { getApiErrorMessage } from '@/lib/apiErrors';
 
 type UploadRepresentation = 'single_object' | 'multi_object' | 'zip';
 
@@ -530,8 +531,8 @@ export const DatasetDetailPage: React.FC = () => {
             : current.lifecycle,
         };
       });
-    } catch {
-      setActionError('Failed to publish dataset.');
+    } catch (error) {
+      setActionError(getApiErrorMessage(error, 'Failed to publish dataset.'));
     } finally {
       setPublishing(false);
     }

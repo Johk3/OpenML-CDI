@@ -33,6 +33,7 @@ import { useUserContext } from '@/hooks/useUserContext';
 import { DatasetService } from '@/services/datasetService';
 import { BackendDataset } from '@/types/dataset';
 import { canReopenRejectedDataset } from '@/lib/datasetReadiness';
+import { getApiErrorMessage } from '@/lib/apiErrors';
 
 type ReviewQueueDataset = Dataset & {
   issueUrl: string;
@@ -258,9 +259,9 @@ export const ExpertQueuePage: React.FC = () => {
     setDatasets((cur) => cur.map((ds) => (ds.id === id ? { ...ds, status: newStatus } : ds)));
     try {
       await DatasetService.updateStatus(id, newStatus);
-    } catch {
+    } catch (error) {
       setDatasets((cur) => cur.map((ds) => (ds.id === id ? { ...ds, status: previous } : ds)));
-      setActionError('Failed to update dataset status.');
+      setActionError(getApiErrorMessage(error, 'Failed to update dataset status.'));
     }
   };
 
