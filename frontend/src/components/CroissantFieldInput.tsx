@@ -59,6 +59,7 @@ interface CroissantFieldInputProps {
   crossReferenceOptions?: Record<string, string[]>;
   readOnly?: boolean;
   readOnlyReason?: string;
+  error?: string;
 }
 
 export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
@@ -69,14 +70,15 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
   crossReferenceOptions,
   readOnly = false,
   readOnlyReason = 'Experts can edit this system-generated value.',
+  error,
 }) => {
   const [showHelper, setShowHelper] = useState(false);
-  const [jsonError, setJsonError] = useState<string | null>(null);
   const [isCustomOptionSelected, setIsCustomOptionSelected] = useState(false);
   const [multiTextDraft, setMultiTextDraft] = useState(() => formatMultiTextDraft(value));
   const [multiTextCustomDraft, setMultiTextCustomDraft] = useState<string | null>(null);
   const serializedMultiTextValue = formatMultiTextDraft(value);
   const [trackedMultiTextValue, setTrackedMultiTextValue] = useState(serializedMultiTextValue);
+  const errorId = error ? `${field.id}-error` : undefined;
 
   if (serializedMultiTextValue !== trackedMultiTextValue) {
     setTrackedMultiTextValue(serializedMultiTextValue);
@@ -128,19 +130,6 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
     }
   }
 
-  const handleJsonBlur = (e: React.FocusEvent<HTMLTextAreaElement>) => {
-    if (!field.isJson || !e.target.value) {
-      setJsonError(null);
-      return;
-    }
-    try {
-      JSON.parse(e.target.value);
-      setJsonError(null);
-    } catch {
-      setJsonError('Invalid JSON format');
-    }
-  };
-
   const renderInput = () => {
     if (crossReferenceOptions && field.id in crossReferenceOptions) {
       const options = crossReferenceOptions[field.id] || [];
@@ -150,7 +139,12 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
           onValueChange={(val) => onChange(val)}
           disabled={isDisabled}
         >
-          <SelectTrigger id={field.id} className="w-full h-10">
+          <SelectTrigger
+            id={field.id}
+            className="w-full h-10"
+            aria-invalid={Boolean(error)}
+            aria-describedby={errorId}
+          >
             <SelectValue placeholder="Select a referenced item" />
           </SelectTrigger>
           <SelectContent>
@@ -194,7 +188,12 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
               onChange(val);
             }}
           >
-            <SelectTrigger id={field.id} className="w-full h-10">
+            <SelectTrigger
+              id={field.id}
+              className="w-full h-10"
+              aria-invalid={Boolean(error)}
+              aria-describedby={errorId}
+            >
               <SelectValue placeholder="Select an option" />
             </SelectTrigger>
             <SelectContent>
@@ -214,13 +213,13 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
             <Input
               id={`${field.id}-custom`}
               type={field.inputType === 'url' ? 'url' : 'text'}
-              required={field.required}
               disabled={isDisabled}
-              pattern={field.pattern}
               title={field.patternMessage}
               value={valueText}
               onChange={(e) => onChange(e.target.value)}
               aria-label={`${field.label} URL`}
+              aria-invalid={Boolean(error)}
+              aria-describedby={errorId}
             />
           )}
         </div>
@@ -233,17 +232,13 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
           <div className="space-y-2">
             <Textarea
               id={field.id}
-              required={field.required}
               disabled={isDisabled}
               value={String(value ?? '')}
-              onChange={(e) => {
-                onChange(e.target.value);
-                if (jsonError) setJsonError(null);
-              }}
-              onBlur={handleJsonBlur}
-              className={cn('min-h-[100px]', jsonError && 'border-destructive')}
+              onChange={(e) => onChange(e.target.value)}
+              className={cn('min-h-[100px]', error && 'border-destructive')}
+              aria-invalid={Boolean(error)}
+              aria-describedby={errorId}
             />
-            {jsonError && <p className="text-sm font-medium text-destructive">{jsonError}</p>}
           </div>
         );
       case 'boolean':
@@ -267,7 +262,12 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
             onValueChange={(val) => onChange(val)}
             disabled={isDisabled}
           >
-            <SelectTrigger id={field.id} className="w-full h-10">
+            <SelectTrigger
+              id={field.id}
+              className="w-full h-10"
+              aria-invalid={Boolean(error)}
+              aria-describedby={errorId}
+            >
               <SelectValue placeholder="Select an option" />
             </SelectTrigger>
             <SelectContent>
@@ -341,11 +341,11 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
           <Input
             id={field.id}
             type="text"
-            required={field.required}
             disabled={isDisabled}
-            pattern={field.pattern}
             title={field.patternMessage}
             value={multiTextDraft}
+            aria-invalid={Boolean(error)}
+            aria-describedby={errorId}
             onChange={(e) => {
               const draft = e.target.value;
               setMultiTextDraft(draft);
@@ -368,11 +368,11 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
             type={
               field.inputType === 'date' || field.inputType === 'url' ? field.inputType : 'text'
             }
-            required={field.required}
             disabled={isDisabled}
-            pattern={field.pattern}
             title={field.patternMessage}
             value={String(value ?? '')}
+            aria-invalid={Boolean(error)}
+            aria-describedby={errorId}
             onChange={(e) => onChange(e.target.value)}
           />
         );
@@ -422,6 +422,11 @@ export const CroissantFieldInput: React.FC<CroissantFieldInputProps> = ({
       </AnimatePresence>
 
       {renderInput()}
+      {error && (
+        <p id={errorId} className="text-sm font-medium text-destructive">
+          {error}
+        </p>
+      )}
     </div>
   );
 };

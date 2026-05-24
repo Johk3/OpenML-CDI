@@ -343,6 +343,24 @@ describe('CroissantMetadataPage', () => {
     expect(fileButton.querySelector('svg')).toBeInTheDocument();
   });
 
+  it('does not show a missing-hash selector icon for uploaders', async () => {
+    renderPage();
+    await fillRequiredDatasetFields();
+    await openTab(/distribution/i);
+
+    fireEvent.click(screen.getByRole('button', { name: /add distribution/i }));
+    expect(screen.getByRole('button', { name: /file 1/i })).toBeInTheDocument();
+    fillRequiredDistributionFields();
+    fireEvent.change(screen.getByLabelText(/file format/i), {
+      target: { value: 'not a mime type' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
+
+    const fileButton = screen.getByRole('button', { name: /test-air-on-test\.csv/i });
+    expect(fileButton.querySelector('svg')).not.toBeInTheDocument();
+  });
+
   it('does not show a hash error when the distribution has an md5 hash', async () => {
     vi.spyOn(window, 'alert').mockImplementation(() => {});
     renderPageAs('expert');
@@ -380,18 +398,15 @@ describe('CroissantMetadataPage', () => {
     });
 
     it('requires file name to be filled out', () => {
-      const input = screen.getByLabelText(/file name/i) as HTMLInputElement;
-      expect(input.validity.valueMissing).toBe(true);
+      expect(screen.getAllByText(/file name is required/i).length).toBeGreaterThan(0);
     });
 
     it('requires file url to be filled out', () => {
-      const input = screen.getByLabelText(/file url/i) as HTMLInputElement;
-      expect(input.validity.valueMissing).toBe(true);
+      expect(screen.getAllByText(/file url is required/i).length).toBeGreaterThan(0);
     });
 
     it('requires file format to be filled out', () => {
-      const input = screen.getByLabelText(/file format/i) as HTMLInputElement;
-      expect(input.validity.valueMissing).toBe(true);
+      expect(screen.getAllByText(/file format is required/i).length).toBeGreaterThan(0);
     });
   });
 
@@ -435,32 +450,34 @@ describe('CroissantMetadataPage', () => {
       }) as HTMLInputElement;
       fireEvent.change(licenseInput, { target: { value: 'not a url' } });
       fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
-      expect(licenseInput.validity.typeMismatch).toBe(true);
+      expect(screen.getAllByText(/license must be a valid url/i).length).toBeGreaterThan(0);
     });
 
     it('requires dataset url to be a url', () => {
-      const datasetUrlInput = screen.getByLabelText(/dataset url/i) as HTMLInputElement;
+      const datasetUrlInput = screen.getByLabelText(/dataset url/i);
       fireEvent.change(datasetUrlInput, { target: { value: 'not a url' } });
       fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
-      expect(datasetUrlInput.validity.typeMismatch).toBe(true);
+      expect(screen.getAllByText(/dataset url must be a valid url/i).length).toBeGreaterThan(0);
     });
 
-    it('requires creators to be comma separated', () => {
-      const creatorsInput = screen.getByLabelText(/creator\(s\)/i) as HTMLInputElement;
+    it('does not rely on native creator pattern validation', () => {
+      const creatorsInput = screen.getByLabelText(/creator\(s\)/i);
       fireEvent.change(creatorsInput, { target: { value: 'test.name' } });
       fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
-      expect(creatorsInput.validity.patternMismatch).toBe(true);
+      expect(creatorsInput).toHaveValue('test.name');
+      expect(creatorsInput).not.toHaveAttribute('pattern');
     });
 
     it('requires date published to be a valid date', () => {
-      const datePublishedInput = screen.getByLabelText(/date published/i) as HTMLInputElement;
+      const datePublishedInput = screen.getByLabelText(/date published/i);
       fireEvent.change(datePublishedInput, { target: { value: 'not a date' } });
       fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
-      expect(datePublishedInput.validity.valueMissing).toBe(true);
+      expect(screen.getAllByText(/date published is required/i).length).toBeGreaterThan(0);
     });
 
     describe('Distribution Formats', () => {
       beforeEach(async () => {
+        await fillRequiredDatasetFields();
         await openTab(/distribution/i);
         fireEvent.click(screen.getByRole('button', { name: /add distribution/i }));
         await waitFor(() =>
@@ -469,31 +486,64 @@ describe('CroissantMetadataPage', () => {
       });
 
       it('requires file url to be a url', () => {
-        const fileUrlInput = screen.getByLabelText(/file url/i) as HTMLInputElement;
+        const fileUrlInput = screen.getByLabelText(/file url/i);
         fireEvent.change(fileUrlInput, { target: { value: 'not a url' } });
         fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
-        expect(fileUrlInput.validity.typeMismatch).toBe(true);
+        expect(screen.getAllByText(/file url must be a valid url/i).length).toBeGreaterThan(0);
       });
 
       it('requires file format to be a valid mime type', () => {
-        const fileFormatInput = screen.getByLabelText(/file format/i) as HTMLInputElement;
+        const fileFormatInput = screen.getByLabelText(/file format/i);
         fireEvent.change(fileFormatInput, { target: { value: 'not a mime type' } });
         fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
-        expect(fileFormatInput.validity.patternMismatch).toBe(true);
+        expect(screen.getAllByText(/must be a valid mime type/i).length).toBeGreaterThan(0);
+      });
+
+      it('accepts MIME types with structured suffixes', async () => {
+        await fillDatasetFields();
+        fillActiveDistributionFields('valid.csv');
+        fireEvent.change(screen.getByLabelText(/file format/i), {
+          target: { value: 'application/ld+json' },
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
+
+        await waitFor(() => {
+          expect(mockNavigate).toHaveBeenCalledWith('/datasets');
+        });
+      });
+
+      it('shows visible validation guidance for an invalid file format', async () => {
+        await fillDatasetFields();
+        fillActiveDistributionFields('valid.csv');
+        fireEvent.change(screen.getByLabelText(/file format/i), {
+          target: { value: 'not a mime type' },
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
+
+        await waitFor(() => {
+          expect(screen.getAllByText(/must be a valid mime type/i).length).toBeGreaterThan(0);
+        });
+        expect(mockNavigate).not.toHaveBeenCalledWith('/datasets');
       });
 
       it('requires md5 hash to be a valid md5 hash', () => {
-        const md5Input = screen.getByLabelText(/md5 hash/i) as HTMLInputElement;
+        const md5Input = screen.getByLabelText(/md5 hash/i);
         fireEvent.change(md5Input, { target: { value: 'not a md5 hash' } });
         fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
-        expect(md5Input.validity.patternMismatch).toBe(true);
+        expect(
+          screen.getAllByText(/md5 hash: must be exactly 32 hexadecimal characters/i).length,
+        ).toBeGreaterThan(0);
       });
 
       it('requires sha256 hash to be a valid sha256 hash', () => {
-        const sha256Input = screen.getByLabelText(/sha-256 hash/i) as HTMLInputElement;
+        const sha256Input = screen.getByLabelText(/sha-256 hash/i);
         fireEvent.change(sha256Input, { target: { value: 'not a sha256 hash' } });
         fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
-        expect(sha256Input.validity.patternMismatch).toBe(true);
+        expect(
+          screen.getAllByText(/sha-256 hash: must be exactly 64 hexadecimal characters/i).length,
+        ).toBeGreaterThan(0);
       });
 
       it('switches to an inactive distribution item with an invalid file url', async () => {
@@ -512,9 +562,7 @@ describe('CroissantMetadataPage', () => {
         await waitFor(() => {
           expect((screen.getByLabelText(/file url/i) as HTMLInputElement).value).toBe('not a url');
         });
-        expect((screen.getByLabelText(/file url/i) as HTMLInputElement).validity.typeMismatch).toBe(
-          true,
-        );
+        expect(screen.getAllByText(/file url must be a valid url/i).length).toBeGreaterThan(0);
         expect(mockNavigate).not.toHaveBeenCalledWith('/datasets');
       }, 30000);
     });
@@ -538,10 +586,148 @@ describe('CroissantMetadataPage', () => {
       fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
 
       expect(
-        await screen.findByText(/annotation fields must contain valid json/i),
-      ).toBeInTheDocument();
+        (await screen.findAllByText(/annotation must contain valid json/i)).length,
+      ).toBeGreaterThan(0);
       expect(mockNavigate).not.toHaveBeenCalledWith('/datasets');
     }, 30000);
+
+    it('shows a visible validation message when dataset name contains spaces', async () => {
+      await fillDatasetFields();
+      fillActiveDistributionFields('valid.csv');
+
+      await openTab(/dataset/i);
+      fireEvent.change(screen.getByLabelText(/dataset name/i), {
+        target: { value: 'Bookok User' },
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
+
+      expect(
+        (
+          await screen.findAllByText(
+            /dataset name: must only contain letters, numbers, hyphens, and underscores/i,
+          )
+        ).length,
+      ).toBeGreaterThan(0);
+      expect(
+        (
+          await screen.findAllByText(
+            /must only contain letters, numbers, hyphens, and underscores/i,
+          )
+        ).length,
+      ).toBeGreaterThan(0);
+      expect(mockNavigate).not.toHaveBeenCalledWith('/datasets');
+    }, 30000);
+
+    it('shows visible validation guidance for invalid creators', async () => {
+      await fillDatasetFields();
+      fillActiveDistributionFields('valid.csv');
+
+      await openTab(/dataset/i);
+      fireEvent.change(screen.getByLabelText(/creator\(s\)/i), {
+        target: { value: 'test.name' },
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
+
+      expect(
+        (
+          await screen.findAllByText(
+            /creator\(s\): must be a comma-separated list of names without special characters like periods/i,
+          )
+        ).length,
+      ).toBeGreaterThan(0);
+      expect(
+        (
+          await screen.findAllByText(
+            /must be a comma-separated list of names without special characters like periods/i,
+          )
+        ).length,
+      ).toBeGreaterThan(0);
+      expect(mockNavigate).not.toHaveBeenCalledWith('/datasets');
+    }, 30000);
+
+    it('clears a stale validation banner after a field is corrected', async () => {
+      await fillDatasetFields();
+      fillActiveDistributionFields('valid.csv');
+
+      await openTab(/dataset/i);
+      const nameInput = screen.getByLabelText(/dataset name/i);
+      fireEvent.change(nameInput, { target: { value: 'Bookok User' } });
+      fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
+
+      expect(
+        (
+          await screen.findAllByText(
+            /dataset name: must only contain letters, numbers, hyphens, and underscores/i,
+          )
+        ).length,
+      ).toBeGreaterThan(0);
+
+      fireEvent.change(nameInput, { target: { value: 'Bookok_User' } });
+
+      await waitFor(() => {
+        expect(
+          screen.queryByText(
+            /dataset name: must only contain letters, numbers, hyphens, and underscores/i,
+          ),
+        ).not.toBeInTheDocument();
+      });
+    }, 30000);
+  });
+
+  describe('Save Flow Validation', () => {
+    it('does not invoke native requestSubmit when Croissant validation fails', async () => {
+      const requestSubmit = vi
+        .spyOn(HTMLFormElement.prototype, 'requestSubmit')
+        .mockImplementation(() => undefined);
+
+      try {
+        renderPage();
+        fireEvent.change(screen.getByLabelText(/dataset name/i), {
+          target: { value: 'Bookok User' },
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
+
+        expect(
+          (
+            await screen.findAllByText(
+              /dataset name: must only contain letters, numbers, hyphens, and underscores/i,
+            )
+          ).length,
+        ).toBeGreaterThan(0);
+        expect(requestSubmit).not.toHaveBeenCalled();
+      } finally {
+        requestSubmit.mockRestore();
+      }
+    });
+
+    it('saves valid metadata without native requestSubmit', async () => {
+      const requestSubmit = vi
+        .spyOn(HTMLFormElement.prototype, 'requestSubmit')
+        .mockImplementation(() => undefined);
+
+      try {
+        renderPage();
+        await fillRequiredDatasetFields();
+        await openTab(/distribution/i);
+        fireEvent.click(screen.getByRole('button', { name: /add distribution/i }));
+        await waitFor(() =>
+          expect(screen.getByRole('button', { name: /file 1/i })).toBeInTheDocument(),
+        );
+        fillRequiredDistributionFields();
+
+        fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
+
+        await waitFor(() => {
+          expect(mockNavigate).toHaveBeenCalledWith('/datasets');
+        });
+        expect(requestSubmit).not.toHaveBeenCalled();
+      } finally {
+        requestSubmit.mockRestore();
+      }
+    });
   });
 
   describe('Successful Form Submission', () => {
@@ -609,9 +795,29 @@ describe('CroissantMetadataPage', () => {
 
       fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
 
-      expect(await screen.findByText(/license is required/i)).toBeInTheDocument();
+      expect((await screen.findAllByText(/license is required/i)).length).toBeGreaterThan(0);
       expect(mockNavigate).not.toHaveBeenCalledWith('/datasets');
     });
+
+    it('saves when a multi-text field has a trailing comma draft', async () => {
+      await fillDatasetFields();
+      await openTab(/dataset/i);
+      fireEvent.change(screen.getByLabelText(/creator\(s\)/i), {
+        target: { value: 'Jane Doe,' },
+      });
+      await openTab(/distribution/i);
+      fireEvent.click(screen.getByRole('button', { name: /add distribution/i }));
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /file 1/i })).toBeInTheDocument(),
+      );
+      fillDistributionFields();
+
+      fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
+
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith('/datasets');
+      });
+    }, 30000);
 
     it('navigates to /datasets when both dataset and distribution fields are completely valid', async () => {
       await fillDatasetFields();

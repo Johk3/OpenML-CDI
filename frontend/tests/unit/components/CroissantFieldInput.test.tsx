@@ -22,7 +22,7 @@ describe('CroissantFieldInput component', () => {
     expect(screen.getByDisplayValue('Hello')).toBeInTheDocument();
   });
 
-  it('renders textarea and handles custom json error on blur', async () => {
+  it('does not own JSON validation on blur', async () => {
     const field: CroissantFieldDef = {
       id: 'test-json',
       label: 'JSON Data',
@@ -43,7 +43,36 @@ describe('CroissantFieldInput component', () => {
     await user.click(textarea);
     await user.click(document.body);
 
-    expect(screen.getByText('Invalid JSON format')).toBeInTheDocument();
+    expect(screen.queryByText('Invalid JSON format')).not.toBeInTheDocument();
+  });
+
+  it('shows the submit error instead of duplicate local json errors', async () => {
+    const field: CroissantFieldDef = {
+      id: 'test-json',
+      label: 'JSON Data',
+      section: 'dataset',
+      inputType: 'textarea',
+      required: false,
+      helperText: '',
+      isJson: true,
+    };
+    const user = userEvent.setup();
+
+    render(
+      <CroissantFieldInput
+        field={field}
+        value="{ invalid json"
+        onChange={vi.fn()}
+        error="JSON Data must contain valid JSON."
+      />,
+    );
+
+    const textarea = screen.getByLabelText('JSON Data');
+    await user.click(textarea);
+    await user.click(document.body);
+
+    expect(screen.getByText('JSON Data must contain valid JSON.')).toBeInTheDocument();
+    expect(screen.queryByText('Invalid JSON format')).not.toBeInTheDocument();
   });
 
   it('does not show example placeholders in writable fields', () => {
@@ -135,6 +164,26 @@ describe('CroissantFieldInput component', () => {
     await user.tab();
 
     expect(onChange).toHaveBeenLastCalledWith(['Jane Doe']);
+  });
+
+  it('does not attach native validation attributes to JS-validated text fields', () => {
+    const field: CroissantFieldDef = {
+      id: 'creator',
+      label: 'Creator(s)',
+      section: 'dataset',
+      inputType: 'text',
+      required: true,
+      helperText: 'People or organizations that created the dataset.',
+      pattern: '^([^.,]+)(,\\s*[^.,]+)*$',
+      patternMessage:
+        'Must be a comma-separated list of names without special characters like periods.',
+    };
+
+    render(<CroissantFieldInput field={field} value={[]} onChange={vi.fn()} />);
+
+    const input = screen.getByLabelText(/creator\(s\)/i);
+    expect(input).not.toHaveAttribute('pattern');
+    expect(input).not.toHaveAttribute('required');
   });
 
   it('parses comma-separated multi-text values on change', () => {

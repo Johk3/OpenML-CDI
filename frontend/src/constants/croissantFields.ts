@@ -405,7 +405,7 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     placeholder: 'text/csv',
     helperText:
       'The MIME type of this file (e.g. text/csv, application/parquet, image/jpeg). You can also use a URL for niche formats.',
-    pattern: '^([a-zA-Z0-9\\-.]+\\/[a-zA-Z0-9\\-.]+|https?:\\/\\/.*)$',
+    pattern: '^([a-zA-Z0-9+\\-.]+\\/[a-zA-Z0-9+\\-.]+|https?:\\/\\/.*)$',
     patternMessage: 'Must be a valid MIME type (e.g., text/csv) or a URL.',
   },
   {
@@ -515,7 +515,7 @@ export const CROISSANT_USER_FIELDS: CroissantFieldDef[] = [
     required: false,
     placeholder: 'image/jpeg',
     helperText: 'The MIME type shared by all files in this set.',
-    pattern: '^([a-zA-Z0-9\\-.]+\\/[a-zA-Z0-9\\-.]+|https?:\\/\\/.*)$',
+    pattern: '^([a-zA-Z0-9+\\-.]+\\/[a-zA-Z0-9+\\-.]+|https?:\\/\\/.*)$',
     patternMessage: 'Must be a valid MIME type (e.g., text/csv) or a URL.',
   },
   {

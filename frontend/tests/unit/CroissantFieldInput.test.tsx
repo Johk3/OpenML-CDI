@@ -78,7 +78,7 @@ describe('CroissantFieldInput', () => {
     expect(screen.getByText(/disabled due to conflicting choice/i)).toBeInTheDocument();
   });
 
-  it('validates bad JSON in textarea on blur', () => {
+  it('does not own JSON validation on blur', () => {
     const field: CroissantFieldDef = { ...baseField, inputType: 'textarea', isJson: true };
     const { rerender } = render(
       <CroissantFieldInput field={field} value="" onChange={mockOnChange} />,
@@ -90,13 +90,32 @@ describe('CroissantFieldInput', () => {
     rerender(<CroissantFieldInput field={field} value="invalid json {" onChange={mockOnChange} />);
     fireEvent.blur(textarea);
 
-    expect(screen.getByText('Invalid JSON format')).toBeInTheDocument();
+    expect(screen.queryByText('Invalid JSON format')).not.toBeInTheDocument();
 
     // Fix the json
     rerender(<CroissantFieldInput field={field} value='{"valid": true}' onChange={mockOnChange} />);
     fireEvent.blur(textarea);
 
     expect(screen.queryByText('Invalid JSON format')).not.toBeInTheDocument();
+  });
+
+  it('does not attach native validation attributes to JS-validated inputs', () => {
+    render(
+      <CroissantFieldInput
+        field={{
+          ...baseField,
+          required: true,
+          pattern: '^valid$',
+          patternMessage: 'Must be valid.',
+        }}
+        value=""
+        onChange={mockOnChange}
+      />,
+    );
+
+    const input = screen.getByLabelText(/test field/i);
+    expect(input).not.toHaveAttribute('required');
+    expect(input).not.toHaveAttribute('pattern');
   });
 
   it('renders a boolean input', () => {

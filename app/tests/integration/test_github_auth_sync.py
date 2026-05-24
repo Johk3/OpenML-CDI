@@ -1,8 +1,10 @@
 import uuid
 
+import pytest
 from requests import exceptions as requests_exceptions
 
 from app.database import models
+from app.services.github_issues import GitHubAPIError
 from app.services.github_sync import GitHubProfileSyncConflictError
 
 
@@ -22,12 +24,22 @@ def _mock_github_oauth(
     emails_payload: list[dict],
     user_status: int = 200,
     emails_status: int = 200,
+    permission_payload: dict | None = None,
+    permission_status: int = 404,
     token_error: Exception | None = None,
     user_error: Exception | None = None,
     emails_error: Exception | None = None,
 ):
     monkeypatch.setenv("AUTH_DEV_MODE_APPROVE_ALL_LOGINS", "false")
     monkeypatch.setenv("ENVIRONMENT", "production")
+
+    def raise_missing_app_token(_settings):
+        raise GitHubAPIError("GitHub App credentials are not fully configured")
+
+    monkeypatch.setattr(
+        "app.services.github_issues.get_installation_token",
+        raise_missing_app_token,
+    )
 
     class FakeOAuth2Session:
         def __init__(self, *_args, **_kwargs):
@@ -49,7 +61,8 @@ def _mock_github_oauth(
                 return _FakeGitHubResponse(emails_status, emails_payload)
             if "/repos/" in url and url.endswith("/permission"):
                 return _FakeGitHubResponse(
-                    404, {"permission": "none", "role_name": "none"}
+                    permission_status,
+                    permission_payload or {"permission": "none", "role_name": "none"},
                 )
             raise AssertionError(f"Unexpected GitHub URL: {url}")
 
@@ -115,6 +128,48 @@ def test_github_callback_syncs_existing_user_and_me_returns_latest_profile(
     assert me_response.json()["username"] == "new-login"
     assert me_response.json()["first_name"] == "New"
     assert me_response.json()["last_name"] == "Name"
+
+
+@pytest.mark.parametrize(
+    ("permission_payload", "expected_role"),
+    [
+        ({"permission": "read", "role_name": "read"}, models.Roles.USER),
+        ({"permission": "read", "role_name": "triage"}, models.Roles.USER),
+        ({"permission": "write", "role_name": "write"}, models.Roles.USER),
+        ({"permission": "write", "role_name": "maintain"}, models.Roles.EXPERT),
+        ({"permission": "admin", "role_name": "admin"}, models.Roles.EXPERT),
+    ],
+)
+def test_github_callback_assigns_role_from_repository_permission(
+    client, db_test_session, monkeypatch, permission_payload, expected_role
+):
+    _mock_github_oauth(
+        monkeypatch,
+        user_payload={
+            "id": 321321,
+            "login": f"{permission_payload['role_name']}-login",
+            "name": "Permission User",
+        },
+        emails_payload=[
+            {
+                "email": f"{permission_payload['role_name']}@example.com",
+                "primary": True,
+                "verified": True,
+            }
+        ],
+        permission_status=200,
+        permission_payload=permission_payload,
+    )
+
+    callback_response = client.get(
+        "/api/auth/github/callback?code=fake-code&state=fake-state",
+        cookies={"oauth_state": "fake-state"},
+    )
+
+    assert callback_response.status_code == 200
+    db_test_session.expire_all()
+    synced_user = db_test_session.query(models.User).one()
+    assert synced_user.role == expected_role
 
 
 def test_github_callback_keeps_last_name_empty_for_single_word_profile_name(

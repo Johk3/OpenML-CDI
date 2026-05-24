@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 GITHUB_API_VERSION = "2022-11-28"
 DEFAULT_GITHUB_PERMISSION_OWNER = "koevoet1221"
 DEFAULT_GITHUB_PERMISSION_REPO = "openmlupload-testing"
-# All collaborator roles now qualify for expert status
-MAINTAINER_ROLE_NAMES = {"read", "triage", "write", "maintain", "admin"}
+# GitHub exposes comparable access levels through both role_name and permission.
+EXPERT_GITHUB_ACCESS_LEVELS = {"maintain", "admin"}
 
 
 class GitHubPermissionLookupError(RuntimeError):
@@ -122,7 +122,10 @@ class GitHubRepositoryPermissionClient:
 def map_github_repository_role(permission_payload: dict[str, object]) -> Roles:
     role_name = str(permission_payload.get("role_name", "")).strip().lower()
     permission = str(permission_payload.get("permission", "")).strip().lower()
-    if role_name in MAINTAINER_ROLE_NAMES or permission == "admin":
+    if (
+        role_name in EXPERT_GITHUB_ACCESS_LEVELS
+        or permission in EXPERT_GITHUB_ACCESS_LEVELS
+    ):
         return Roles.EXPERT
     return Roles.USER
 

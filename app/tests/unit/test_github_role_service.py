@@ -1,5 +1,7 @@
 import logging
 
+import pytest
+
 from app.database.models import Roles
 from app.services.github_roles import (
     GitHubPermissionLookupError,
@@ -105,13 +107,39 @@ def test_repository_permission_client_wraps_http_errors_as_lookup_failures():
         raise AssertionError("Expected GitHubPermissionLookupError")
 
 
-def test_maps_all_collaborator_permissions_to_expert():
-    assert map_github_repository_role({"role_name": "read"}) == Roles.EXPERT
-    assert map_github_repository_role({"role_name": "triage"}) == Roles.EXPERT
-    assert map_github_repository_role({"role_name": "write"}) == Roles.EXPERT
-    assert map_github_repository_role({"role_name": "maintain"}) == Roles.EXPERT
-    assert map_github_repository_role({"role_name": "admin"}) == Roles.EXPERT
-    assert map_github_repository_role({"permission": "admin"}) == Roles.EXPERT
+@pytest.mark.parametrize(
+    "permission_payload",
+    [
+        {"permission": "read", "role_name": "read"},
+        {"permission": "read"},
+    ],
+)
+def test_maps_public_repository_read_permission_to_user(permission_payload):
+    assert map_github_repository_role(permission_payload) == Roles.USER
+
+
+@pytest.mark.parametrize("role_name", ["read", "triage", "write"])
+def test_maps_lower_collaborator_permissions_to_user(role_name):
+    assert map_github_repository_role({"role_name": role_name}) == Roles.USER
+
+
+def test_maps_normalized_lower_collaborator_permission_to_user():
+    assert map_github_repository_role({"role_name": " WRITE "}) == Roles.USER
+
+
+@pytest.mark.parametrize(
+    "permission_payload",
+    [
+        {"role_name": "maintain"},
+        {"role_name": "admin"},
+        {"permission": "admin"},
+        {"role_name": " Maintain "},
+        {"permission": " ADMIN "},
+        {"permission": "maintain"},
+    ],
+)
+def test_maps_elevated_collaborator_permissions_to_expert(permission_payload):
+    assert map_github_repository_role(permission_payload) == Roles.EXPERT
 
 
 def test_maps_no_permission_to_user():

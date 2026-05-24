@@ -91,8 +91,9 @@ GitHub profile sync behavior:
   - `username` from GitHub `login`
   - `first_name` and `last_name` from GitHub `name`
 - role assignment is based on collaborator permission in the configured GitHub
-  repository; any collaborator role maps to `expert`, and non-collaborators map
-  to `user`
+  repository; only elevated collaborator roles such as `maintain` or `admin`
+  map to `expert`, while public viewers and lower collaborator roles such as
+  `read`, `triage`, or `write` map to `user`
 - GitHub App installation credentials should be configured for the permission
   check so normal user login only needs profile, email, and organization scopes
 - this prevents duplicate local users when GitHub profile fields change

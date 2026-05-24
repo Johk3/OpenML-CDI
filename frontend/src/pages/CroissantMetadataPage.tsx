@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CROISSANT_USER_FIELDS } from '../constants/croissantFields';
 import { CroissantFieldInput } from '../components/CroissantFieldInput';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
@@ -22,6 +22,7 @@ import { DatasetService } from '@/services/datasetService';
 import { getApiErrorMessage } from '@/lib/apiErrors';
 import type { CroissantFieldDef } from '@/types/croissant';
 import { useUserContext } from '@/hooks/useUserContext';
+import { validateCroissantField } from '@/utils/croissantFieldValidation';
 
 const SECTIONS = [
   { id: 'dataset', label: 'Dataset', description: 'Core dataset metadata' },
@@ -54,7 +55,6 @@ type InvalidFormTarget = {
   section: string;
   itemIndex?: number;
   fieldIndex?: number;
-  message?: string;
 };
 
 type MetadataLocationState = {
@@ -68,57 +68,6 @@ function distHasHash(item: Record<string, unknown>): boolean {
     (item['distribution.md5'] as string | undefined)?.trim() ||
     (item['distribution.sha256'] as string | undefined)?.trim()
   );
-}
-
-function hasValue(value: FieldValue | undefined): boolean {
-  return !(
-    value === undefined ||
-    value === null ||
-    value === '' ||
-    (Array.isArray(value) && value.length === 0)
-  );
-}
-
-function fieldValueAsString(value: FieldValue | undefined): string {
-  return Array.isArray(value) ? value.join(', ') : String(value ?? '');
-}
-
-function isValidAbsoluteUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return Boolean(url.protocol && url.host);
-  } catch {
-    return false;
-  }
-}
-
-function isInvalidFieldValue(field: CroissantFieldDef, item: Record<string, unknown>): boolean {
-  const value = item[field.id] as FieldValue | undefined;
-  if (!hasValue(value)) return field.required;
-
-  const textValue = fieldValueAsString(value);
-  if (field.pattern && !new RegExp(field.pattern).test(textValue)) return true;
-  if (field.inputType === 'url' && !isValidAbsoluteUrl(textValue)) return true;
-  if (field.inputType === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(textValue)) return true;
-  if (field.isJson) {
-    try {
-      JSON.parse(textValue);
-    } catch {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function getInvalidFieldMessage(
-  field: CroissantFieldDef,
-  item: Record<string, unknown>,
-): string | undefined {
-  const value = item[field.id] as FieldValue | undefined;
-  if (!hasValue(value) && field.required) return `${field.label} is required.`;
-  if (field.isJson) return 'Annotation fields must contain valid JSON.';
-  return undefined;
 }
 
 function safeReturnPath(path: string | undefined): string {
@@ -150,7 +99,6 @@ export const CroissantMetadataPage: React.FC = () => {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const formRef = useRef<HTMLFormElement>(null);
 
   // Initialize form with existing dataset info if available
   useEffect(() => {
@@ -204,7 +152,23 @@ export const CroissantMetadataPage: React.FC = () => {
   const getFieldReadOnlyReason = (field: CroissantFieldDef): string | undefined =>
     isUploadedDatasetImmutableField(field) ? UPLOADED_DATASET_IMMUTABLE_REASON : undefined;
 
+  const getFieldError = (
+    field: CroissantFieldDef,
+    item: Record<string, unknown>,
+  ): string | undefined => {
+    if (!submitAttempted || !canEditField(field)) {
+      return undefined;
+    }
+    const validation = validateCroissantField(field, item);
+    return validation.ok ? undefined : validation.message;
+  };
+
+  const clearSubmitError = () => {
+    if (submitError) setSubmitError(null);
+  };
+
   const handleDatasetChange = (fieldId: string, value: FieldValue) => {
+    clearSubmitError();
     setFormData((prev) => ({
       ...prev,
       dataset: { ...prev.dataset, [fieldId]: value },
@@ -212,6 +176,7 @@ export const CroissantMetadataPage: React.FC = () => {
   };
 
   const handleDistributionChange = (idx: number, fieldId: string, value: FieldValue) => {
+    clearSubmitError();
     setFormData((prev) => {
       const newDist = [...prev.distribution];
       newDist[idx] = { ...newDist[idx], [fieldId]: value };
@@ -234,6 +199,7 @@ export const CroissantMetadataPage: React.FC = () => {
   };
 
   const handleFileSetChange = (idx: number, fieldId: string, value: FieldValue) => {
+    clearSubmitError();
     setFormData((prev) => {
       const newFileSets = [...prev.fileSet];
       newFileSets[idx] = { ...newFileSets[idx], [fieldId]: value };
@@ -258,6 +224,7 @@ export const CroissantMetadataPage: React.FC = () => {
   };
 
   const handleRecordSetChange = (idx: number, fieldId: string, value: FieldValue) => {
+    clearSubmitError();
     setFormData((prev) => {
       const newRecordSets = [...prev.recordSet];
       newRecordSets[idx] = { ...newRecordSets[idx], [fieldId]: value };
@@ -304,6 +271,7 @@ export const CroissantMetadataPage: React.FC = () => {
     fieldId: string,
     value: FieldValue,
   ) => {
+    clearSubmitError();
     setFormData((prev) => {
       const newRecordSets = [...prev.recordSet];
       const recordSet = { ...(newRecordSets[recordSetIdx] ?? {}) } as RecordSetData;
@@ -331,6 +299,7 @@ export const CroissantMetadataPage: React.FC = () => {
   };
 
   const handleRaiChange = (fieldId: string, value: FieldValue) => {
+    clearSubmitError();
     setFormData((prev) => ({
       ...prev,
       rai: { ...prev.rai, [fieldId]: value },
@@ -345,10 +314,10 @@ export const CroissantMetadataPage: React.FC = () => {
   const findFirstInvalidTarget = (): InvalidFormTarget | null => {
     for (const field of datasetFields) {
       if (!canEditField(field)) continue;
-      if (isInvalidFieldValue(field, formData.dataset)) {
+      const validation = validateCroissantField(field, formData.dataset);
+      if (!validation.ok) {
         return {
           section: 'dataset',
-          message: getInvalidFieldMessage(field, formData.dataset),
         };
       }
     }
@@ -356,7 +325,6 @@ export const CroissantMetadataPage: React.FC = () => {
     if (formData.distribution.length === 0 && formData.fileSet.length === 0) {
       return {
         section: 'distribution',
-        message: 'Add at least one FileObject or FileSet before saving Croissant metadata.',
       };
     }
 
@@ -364,8 +332,12 @@ export const CroissantMetadataPage: React.FC = () => {
       const item = formData.distribution[i];
       for (const field of distributionFields) {
         if (!canEditField(field)) continue;
-        if (isInvalidFieldValue(field, item)) {
-          return { section: 'distribution', itemIndex: i };
+        const validation = validateCroissantField(field, item);
+        if (!validation.ok) {
+          return {
+            section: 'distribution',
+            itemIndex: i,
+          };
         }
       }
     }
@@ -374,8 +346,12 @@ export const CroissantMetadataPage: React.FC = () => {
       const item = formData.fileSet[i];
       for (const field of fileSetFields) {
         if (!canEditField(field)) continue;
-        if (isInvalidFieldValue(field, item)) {
-          return { section: 'fileSet', itemIndex: i };
+        const validation = validateCroissantField(field, item);
+        if (!validation.ok) {
+          return {
+            section: 'fileSet',
+            itemIndex: i,
+          };
         }
       }
     }
@@ -384,11 +360,11 @@ export const CroissantMetadataPage: React.FC = () => {
       const item = formData.recordSet[i];
       for (const field of recordSetFields) {
         if (!canEditField(field)) continue;
-        if (isInvalidFieldValue(field, item)) {
+        const validation = validateCroissantField(field, item);
+        if (!validation.ok) {
           return {
             section: 'recordSet',
             itemIndex: i,
-            message: getInvalidFieldMessage(field, item),
           };
         }
       }
@@ -397,12 +373,12 @@ export const CroissantMetadataPage: React.FC = () => {
         const fieldItem = recordSetFieldsFor(item)[fieldIndex];
         for (const field of fieldFields) {
           if (!canEditField(field)) continue;
-          if (isInvalidFieldValue(field, fieldItem)) {
+          const validation = validateCroissantField(field, fieldItem);
+          if (!validation.ok) {
             return {
               section: 'recordSet',
               itemIndex: i,
               fieldIndex,
-              message: getInvalidFieldMessage(field, fieldItem),
             };
           }
         }
@@ -411,10 +387,10 @@ export const CroissantMetadataPage: React.FC = () => {
 
     for (const field of raiFields) {
       if (!canEditField(field)) continue;
-      if (isInvalidFieldValue(field, formData.rai)) {
+      const validation = validateCroissantField(field, formData.rai);
+      if (!validation.ok) {
         return {
           section: 'rai',
-          message: getInvalidFieldMessage(field, formData.rai),
         };
       }
     }
@@ -436,75 +412,7 @@ export const CroissantMetadataPage: React.FC = () => {
     }
   };
 
-  const isInvalidTargetVisible = (target: InvalidFormTarget) => {
-    if (target.section !== activeTab) return false;
-    if (target.section === 'distribution') {
-      return target.itemIndex === undefined || target.itemIndex === activeDistIdx;
-    }
-    if (target.section === 'fileSet') {
-      return target.itemIndex === undefined || target.itemIndex === activeFileSetIdx;
-    }
-    if (target.section === 'recordSet') {
-      return (
-        (target.itemIndex === undefined || target.itemIndex === activeRecordSetIdx) &&
-        (target.fieldIndex === undefined || target.fieldIndex === activeFieldIdx)
-      );
-    }
-    return true;
-  };
-
-  const handleSaveClick = () => {
-    setSubmitAttempted(true);
-
-    // First, check for cross-tab validation (fields on hidden tabs).
-    // Switch to the invalid tab so native validation can highlight the fields.
-    const invalidTarget = findFirstInvalidTarget();
-    if (invalidTarget) {
-      setSubmitError(invalidTarget.message ?? null);
-      applyInvalidTarget(invalidTarget);
-      // Defer requestSubmit so the tab switch renders the fields first
-      const submit = () => {
-        formRef.current?.requestSubmit();
-      };
-      if (isInvalidTargetVisible(invalidTarget)) {
-        submit();
-      } else {
-        setTimeout(submit, 0);
-      }
-      return;
-    }
-
-    // Trigger native form validation + submit on the current tab
-    formRef.current?.requestSubmit();
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitAttempted(true);
-
-    // Cross-tab validation: if the native validation passed for the current
-    // tab, also check other tabs for missing required fields
-    const invalidTarget = findFirstInvalidTarget();
-    if (invalidTarget) {
-      setSubmitError(invalidTarget.message ?? null);
-      applyInvalidTarget(invalidTarget);
-      return;
-    }
-
-    // Custom distribution hash validation
-    if (canEditExpertOnlyFields) {
-      const invalidDistIndices = formData.distribution
-        .map((item, idx) => (!distHasHash(item) ? idx : -1))
-        .filter((idx) => idx !== -1);
-
-      if (invalidDistIndices.length > 0) {
-        setSubmitError(null);
-        setActiveTab('distribution');
-        setActiveDistIdx(invalidDistIndices[0]);
-        return;
-      }
-    }
-
+  const submitMetadata = async () => {
     const croissantJson = serializeCroissant(formData);
 
     setIsSubmitting(true);
@@ -521,6 +429,43 @@ export const CroissantMetadataPage: React.FC = () => {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const validateAndSave = async () => {
+    if (isSubmitting) return;
+
+    setSubmitAttempted(true);
+
+    const invalidTarget = findFirstInvalidTarget();
+    if (invalidTarget) {
+      setSubmitError(null);
+      applyInvalidTarget(invalidTarget);
+      return;
+    }
+
+    if (canEditExpertOnlyFields) {
+      const invalidDistIndices = formData.distribution
+        .map((item, idx) => (!distHasHash(item) ? idx : -1))
+        .filter((idx) => idx !== -1);
+
+      if (invalidDistIndices.length > 0) {
+        setSubmitError(null);
+        setActiveTab('distribution');
+        setActiveDistIdx(invalidDistIndices[0]);
+        return;
+      }
+    }
+
+    await submitMetadata();
+  };
+
+  const handleSaveClick = () => {
+    void validateAndSave();
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    void validateAndSave();
   };
 
   const activeDistItem = formData.distribution[activeDistIdx] ?? {};
@@ -612,7 +557,7 @@ export const CroissantMetadataPage: React.FC = () => {
         </Card>
 
         <div className="flex-1 w-full min-w-0">
-          <form ref={formRef} onSubmit={handleSubmit}>
+          <form noValidate onSubmit={handleSubmit}>
             {/* Dataset tab */}
             <TabsContent value="dataset" className="mt-0 outline-none">
               <Card>
@@ -629,6 +574,7 @@ export const CroissantMetadataPage: React.FC = () => {
                         onChange={(val) => handleDatasetChange(field.id, val)}
                         readOnly={isFieldReadOnly(field)}
                         readOnlyReason={getFieldReadOnlyReason(field)}
+                        error={getFieldError(field, formData.dataset)}
                       />
                     </div>
                   ))}
@@ -660,7 +606,7 @@ export const CroissantMetadataPage: React.FC = () => {
                           type="button"
                         >
                           {item['distribution.name'] || `File ${idx + 1}`}
-                          {submitAttempted && !distHasHash(item) && (
+                          {canEditExpertOnlyFields && submitAttempted && !distHasHash(item) && (
                             <AlertCircle className="ml-2 h-3.5 w-3.5 text-destructive" />
                           )}
                         </Button>
@@ -750,6 +696,10 @@ export const CroissantMetadataPage: React.FC = () => {
                                 }
                                 readOnly={isFieldReadOnly(field)}
                                 readOnlyReason={getFieldReadOnlyReason(field)}
+                                error={getFieldError(
+                                  field,
+                                  formData.distribution[activeDistIdx] ?? {},
+                                )}
                               />
                             </div>
                           </React.Fragment>
@@ -833,6 +783,7 @@ export const CroissantMetadataPage: React.FC = () => {
                             onChange={(val) => handleFileSetChange(activeFileSetIdx, field.id, val)}
                             readOnly={isFieldReadOnly(field)}
                             readOnlyReason={getFieldReadOnlyReason(field)}
+                            error={getFieldError(field, activeFileSetItem)}
                           />
                         </div>
                       ))}
@@ -918,6 +869,7 @@ export const CroissantMetadataPage: React.FC = () => {
                               }
                               readOnly={isFieldReadOnly(field)}
                               readOnlyReason={getFieldReadOnlyReason(field)}
+                              error={getFieldError(field, activeRecordSetItem)}
                             />
                           </div>
                         ))}
@@ -997,6 +949,7 @@ export const CroissantMetadataPage: React.FC = () => {
                                   crossReferenceOptions={crossReferenceOptions}
                                   readOnly={isFieldReadOnly(field)}
                                   readOnlyReason={getFieldReadOnlyReason(field)}
+                                  error={getFieldError(field, activeFieldItem)}
                                 />
                               </div>
                             ))}
@@ -1027,6 +980,7 @@ export const CroissantMetadataPage: React.FC = () => {
                         onChange={(val) => handleRaiChange(field.id, val)}
                         readOnly={isFieldReadOnly(field)}
                         readOnlyReason={getFieldReadOnlyReason(field)}
+                        error={getFieldError(field, formData.rai)}
                       />
                     </div>
                   ))}
