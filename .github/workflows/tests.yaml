@@ -1,7 +1,9 @@
 name: Tests
 
 on:
-  workflow_call: 
+  workflow_call:
+  push:
+    branches: [main]
 
 jobs:
   lint-and-format:
@@ -44,6 +46,13 @@ jobs:
 
   test-backend:
     runs-on: ubuntu-latest
+    env:
+      JWT_SECRET: test-jwt-secret
+      COOKIE_SECURE: "false"
+      AUTH_DEV_MODE_APPROVE_ALL_LOGINS: "true"
+      GITHUB_CLIENT_ID: test-github-client-id
+      GITHUB_SECRET: test-github-secret
+      GITHUB_REDIRECT: http://localhost:5173/login/callback
 
     steps:
       - uses: actions/checkout@v4
@@ -61,3 +70,83 @@ jobs:
 
       - name: Run tests
         run: pytest
+
+      - name: Upload backend test report
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-report
+          path: test.xml
+          if-no-files-found: warn
+
+  test-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install E2E dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Configure E2E dev auth
+        run: |
+          cat > docker-compose.e2e.ci.yml <<'EOF'
+          services:
+            backend:
+              environment:
+                - AUTH_DEV_LOGIN_EMAIL=e2e.github.user@example.com
+                - AUTH_DEV_LOGIN_USERNAME=e2e-github-user
+                - AUTH_DEV_LOGIN_FIRST_NAME=E2E
+                - AUTH_DEV_LOGIN_LAST_NAME=GitHub
+          EOF
+
+      - name: Start E2E stack
+        run: |
+          docker compose -f docker-compose.dev.yml -f docker-compose.e2e.ci.yml up --build -d
+
+      - name: Wait for E2E services
+        run: |
+          timeout 180 bash -c 'until curl -fsS http://localhost:8000/docs >/dev/null; do sleep 5; done'
+          timeout 180 bash -c 'until curl -fsS http://localhost:5173 >/dev/null; do sleep 5; done'
+
+      - name: Run E2E tests
+        env:
+          CI: true
+          E2E_API_BASE_URL: http://localhost:8000
+          E2E_FRONTEND_BASE_URL: http://localhost:5173
+        run: npm run test:e2e
+
+      - name: Upload E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: |
+            artifacts/
+            playwright-report/
+          if-no-files-found: warn
+
+      - name: Show E2E stack logs
+        if: failure()
+        run: |
+          if [ -f docker-compose.e2e.ci.yml ]; then
+            docker compose -f docker-compose.dev.yml -f docker-compose.e2e.ci.yml logs --no-color
+          fi
+
+      - name: Stop E2E stack
+        if: always()
+        run: |
+          if [ -f docker-compose.e2e.ci.yml ]; then
+            docker compose -f docker-compose.dev.yml -f docker-compose.e2e.ci.yml down -v
+          fi
