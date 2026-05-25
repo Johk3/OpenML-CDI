@@ -22,6 +22,21 @@ describe('CroissantFieldInput component', () => {
     expect(screen.getByDisplayValue('Hello')).toBeInTheDocument();
   });
 
+  it('renders required asterisk when field is required', () => {
+    const field: CroissantFieldDef = {
+      id: 'required-field',
+      label: 'Required Field',
+      section: 'dataset',
+      inputType: 'text',
+      required: true,
+      helperText: '',
+    };
+
+    render(<CroissantFieldInput field={field} value="" onChange={vi.fn()} />);
+
+    expect(screen.getByText('*')).toBeInTheDocument();
+  });
+
   it('does not own JSON validation on blur', async () => {
     const field: CroissantFieldDef = {
       id: 'test-json',
@@ -133,6 +148,28 @@ describe('CroissantFieldInput component', () => {
     expect(screen.getByLabelText(/creator\(s\)/i)).not.toHaveAttribute('placeholder');
   });
 
+  it('returns null when array shape is hidden for scalar attributes', () => {
+    const field: CroissantFieldDef = {
+      id: 'field.arrayShape',
+      label: 'Array Shape',
+      section: 'field',
+      inputType: 'text',
+      required: false,
+      helperText: '',
+    };
+
+    const { container } = render(
+      <CroissantFieldInput
+        field={field}
+        value=""
+        onChange={vi.fn()}
+        itemData={{ 'field.isArray': false }}
+      />,
+    );
+
+    expect(container.firstChild).toBeNull();
+  });
+
   it('keeps spaces in multi-text values while typing and trims them on blur', async () => {
     const field: CroissantFieldDef = {
       id: 'creator',
@@ -205,6 +242,27 @@ describe('CroissantFieldInput component', () => {
     expect(onChange).toHaveBeenCalledWith(['apple', 'banana', 'cherry']);
   });
 
+  it('renders multi-text options as selectable badges', () => {
+    const field: CroissantFieldDef = {
+      id: 'test-multi',
+      label: 'Tags',
+      section: 'dataset',
+      inputType: 'multi-text',
+      required: false,
+      helperText: '',
+      options: ['Option A', 'Option B'],
+    };
+    const onChange = vi.fn();
+
+    render(<CroissantFieldInput field={field} value={['Option A']} onChange={onChange} />);
+
+    fireEvent.click(screen.getByText('Option B'));
+    expect(onChange).toHaveBeenCalledWith(['Option A', 'Option B']);
+
+    fireEvent.click(screen.getByText('Option A'));
+    expect(onChange).toHaveBeenCalledWith([]);
+  });
+
   it('toggles helper text visibility', async () => {
     const field: CroissantFieldDef = {
       id: 'test-help',
@@ -241,6 +299,79 @@ describe('CroissantFieldInput component', () => {
     render(<CroissantFieldInput field={field} value="" onChange={vi.fn()} itemData={itemData} />);
 
     expect(screen.getByText('Disabled due to conflicting choice')).toBeInTheDocument();
+  });
+
+  it('renders cross-reference fields as dropdowns', () => {
+    const field: CroissantFieldDef = {
+      id: 'field.source.fileObject',
+      label: 'Source: File Object',
+      section: 'field',
+      inputType: 'text',
+      required: false,
+      helperText: '',
+    };
+
+    render(
+      <CroissantFieldInput
+        field={field}
+        value=""
+        onChange={vi.fn()}
+        crossReferenceOptions={{ 'field.source.fileObject': ['data.csv'] }}
+      />,
+    );
+
+    expect(screen.getByRole('combobox')).toBeInTheDocument();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  });
+
+  it('renders boolean fields as switches', () => {
+    const field: CroissantFieldDef = {
+      id: 'isLiveDataset',
+      label: 'Is Live Dataset',
+      section: 'dataset',
+      inputType: 'boolean',
+      required: false,
+      helperText: '',
+    };
+    const onChange = vi.fn();
+
+    render(<CroissantFieldInput field={field} value={true} onChange={onChange} />);
+
+    const switchButton = screen.getByRole('switch');
+    expect(switchButton).toBeChecked();
+
+    fireEvent.click(switchButton);
+    expect(onChange).toHaveBeenCalledWith(false);
+  });
+
+  it('uses display labels for select options while submitting their stored values', async () => {
+    const field: CroissantFieldDef = {
+      id: 'license',
+      label: 'License',
+      section: 'dataset',
+      inputType: 'select',
+      required: true,
+      helperText: '',
+      options: [
+        {
+          label: 'CC BY 4.0',
+          value: 'https://creativecommons.org/licenses/by/4.0/',
+        },
+        {
+          label: 'CC0 1.0',
+          value: 'https://creativecommons.org/publicdomain/zero/1.0/',
+        },
+      ],
+    };
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+
+    render(<CroissantFieldInput field={field} value="" onChange={onChange} />);
+
+    await user.click(screen.getByRole('combobox'));
+    await user.click(await screen.findByText('CC BY 4.0'));
+
+    expect(onChange).toHaveBeenCalledWith('https://creativecommons.org/licenses/by/4.0/');
   });
 
   it('renders multi-text input', () => {

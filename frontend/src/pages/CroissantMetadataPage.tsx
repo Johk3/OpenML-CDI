@@ -22,15 +22,28 @@ import { DatasetService } from '@/services/datasetService';
 import { getApiErrorMessage } from '@/lib/apiErrors';
 import type { CroissantFieldDef } from '@/types/croissant';
 import { useUserContext } from '@/hooks/useUserContext';
-import { validateCroissantField } from '@/utils/croissantFieldValidation';
+import {
+  DISTRIBUTION_HASH_GUIDANCE,
+  getCroissantFieldError,
+  validateCroissantForm,
+  type CroissantFieldErrorLocation,
+  type CroissantFormSectionId,
+  type CroissantInvalidFormTarget,
+} from '@/utils/croissantFormValidation';
 
-const SECTIONS = [
+const SECTIONS: Array<{
+  id: CroissantFormSectionId;
+  label: string;
+  description: string;
+}> = [
   { id: 'dataset', label: 'Dataset', description: 'Core dataset metadata' },
   { id: 'distribution', label: 'Distribution', description: 'File objects and downloads' },
   { id: 'fileSet', label: 'File Sets', description: 'Folders and repeated file groups' },
   { id: 'recordSet', label: 'Attributes', description: 'Tables, columns, and OpenML hints' },
   { id: 'rai', label: 'Responsible AI', description: 'Use, limitations, and sensitive data' },
 ];
+
+const SECTION_IDS = new Set<CroissantFormSectionId>(SECTIONS.map((section) => section.id));
 
 const UPLOADED_DATASET_IMMUTABLE_FIELD_IDS = new Set([
   'url',
@@ -51,24 +64,10 @@ const UPLOADED_DATASET_IMMUTABLE_FIELD_IDS = new Set([
 
 const UPLOADED_DATASET_IMMUTABLE_REASON = 'Generated from the uploaded files and cannot be edited.';
 
-type InvalidFormTarget = {
-  section: string;
-  itemIndex?: number;
-  fieldIndex?: number;
-};
-
 type MetadataLocationState = {
   datasetId?: string;
   returnTo?: string;
 };
-
-function distHasHash(item: Record<string, unknown>): boolean {
-  if (item._generated) return true;
-  return !!(
-    (item['distribution.md5'] as string | undefined)?.trim() ||
-    (item['distribution.sha256'] as string | undefined)?.trim()
-  );
-}
 
 function safeReturnPath(path: string | undefined): string {
   return path && path.startsWith('/') && !path.startsWith('//') ? path : '/datasets';
@@ -94,7 +93,7 @@ export const CroissantMetadataPage: React.FC = () => {
   const [activeFileSetIdx, setActiveFileSetIdx] = useState(0);
   const [activeRecordSetIdx, setActiveRecordSetIdx] = useState(0);
   const [activeFieldIdx, setActiveFieldIdx] = useState(0);
-  const [activeTab, setActiveTab] = useState('dataset');
+  const [activeTab, setActiveTab] = useState<CroissantFormSectionId>('dataset');
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -147,6 +146,11 @@ export const CroissantMetadataPage: React.FC = () => {
   const canEditField = (field: CroissantFieldDef): boolean =>
     !isUploadedDatasetImmutableField(field) && (!field.expertOnly || canEditExpertOnlyFields);
 
+  const formValidation = validateCroissantForm(formData, {
+    canEditField,
+    validateDistributionHashes: canEditExpertOnlyFields,
+  });
+
   const isFieldReadOnly = (field: CroissantFieldDef): boolean => !canEditField(field);
 
   const getFieldReadOnlyReason = (field: CroissantFieldDef): string | undefined =>
@@ -154,13 +158,15 @@ export const CroissantMetadataPage: React.FC = () => {
 
   const getFieldError = (
     field: CroissantFieldDef,
-    item: Record<string, unknown>,
+    location: Omit<CroissantFieldErrorLocation, 'fieldId'>,
   ): string | undefined => {
     if (!submitAttempted || !canEditField(field)) {
       return undefined;
     }
-    const validation = validateCroissantField(field, item);
-    return validation.ok ? undefined : validation.message;
+    return getCroissantFieldError(formValidation.fieldErrors, {
+      ...location,
+      fieldId: field.id,
+    });
   };
 
   const clearSubmitError = () => {
@@ -306,99 +312,7 @@ export const CroissantMetadataPage: React.FC = () => {
     }));
   };
 
-  /**
-   * Validate fields across ALL tabs and item selectors using formData state.
-   * Returns the location of the first missing or invalid field,
-   * or null if everything is valid.
-   */
-  const findFirstInvalidTarget = (): InvalidFormTarget | null => {
-    for (const field of datasetFields) {
-      if (!canEditField(field)) continue;
-      const validation = validateCroissantField(field, formData.dataset);
-      if (!validation.ok) {
-        return {
-          section: 'dataset',
-        };
-      }
-    }
-
-    if (formData.distribution.length === 0 && formData.fileSet.length === 0) {
-      return {
-        section: 'distribution',
-      };
-    }
-
-    for (let i = 0; i < formData.distribution.length; i++) {
-      const item = formData.distribution[i];
-      for (const field of distributionFields) {
-        if (!canEditField(field)) continue;
-        const validation = validateCroissantField(field, item);
-        if (!validation.ok) {
-          return {
-            section: 'distribution',
-            itemIndex: i,
-          };
-        }
-      }
-    }
-
-    for (let i = 0; i < formData.fileSet.length; i++) {
-      const item = formData.fileSet[i];
-      for (const field of fileSetFields) {
-        if (!canEditField(field)) continue;
-        const validation = validateCroissantField(field, item);
-        if (!validation.ok) {
-          return {
-            section: 'fileSet',
-            itemIndex: i,
-          };
-        }
-      }
-    }
-
-    for (let i = 0; i < formData.recordSet.length; i++) {
-      const item = formData.recordSet[i];
-      for (const field of recordSetFields) {
-        if (!canEditField(field)) continue;
-        const validation = validateCroissantField(field, item);
-        if (!validation.ok) {
-          return {
-            section: 'recordSet',
-            itemIndex: i,
-          };
-        }
-      }
-
-      for (let fieldIndex = 0; fieldIndex < recordSetFieldsFor(item).length; fieldIndex++) {
-        const fieldItem = recordSetFieldsFor(item)[fieldIndex];
-        for (const field of fieldFields) {
-          if (!canEditField(field)) continue;
-          const validation = validateCroissantField(field, fieldItem);
-          if (!validation.ok) {
-            return {
-              section: 'recordSet',
-              itemIndex: i,
-              fieldIndex,
-            };
-          }
-        }
-      }
-    }
-
-    for (const field of raiFields) {
-      if (!canEditField(field)) continue;
-      const validation = validateCroissantField(field, formData.rai);
-      if (!validation.ok) {
-        return {
-          section: 'rai',
-        };
-      }
-    }
-
-    return null;
-  };
-
-  const applyInvalidTarget = (target: InvalidFormTarget) => {
+  const applyInvalidTarget = (target: CroissantInvalidFormTarget) => {
     setActiveTab(target.section);
     if (target.section === 'distribution' && target.itemIndex !== undefined) {
       setActiveDistIdx(target.itemIndex);
@@ -436,24 +350,11 @@ export const CroissantMetadataPage: React.FC = () => {
 
     setSubmitAttempted(true);
 
-    const invalidTarget = findFirstInvalidTarget();
+    const invalidTarget = formValidation.firstError;
     if (invalidTarget) {
-      setSubmitError(null);
+      setSubmitError(invalidTarget.message);
       applyInvalidTarget(invalidTarget);
       return;
-    }
-
-    if (canEditExpertOnlyFields) {
-      const invalidDistIndices = formData.distribution
-        .map((item, idx) => (!distHasHash(item) ? idx : -1))
-        .filter((idx) => idx !== -1);
-
-      if (invalidDistIndices.length > 0) {
-        setSubmitError(null);
-        setActiveTab('distribution');
-        setActiveDistIdx(invalidDistIndices[0]);
-        return;
-      }
     }
 
     await submitMetadata();
@@ -468,7 +369,12 @@ export const CroissantMetadataPage: React.FC = () => {
     void validateAndSave();
   };
 
-  const activeDistItem = formData.distribution[activeDistIdx] ?? {};
+  const handleTabChange = (value: string) => {
+    if (SECTION_IDS.has(value as CroissantFormSectionId)) {
+      setActiveTab(value as CroissantFormSectionId);
+    }
+  };
+
   const activeFileSetItem = formData.fileSet[activeFileSetIdx] ?? {};
   const activeRecordSetItem = formData.recordSet[activeRecordSetIdx] ?? {};
   const activeFields = recordSetFieldsFor(activeRecordSetItem);
@@ -484,13 +390,6 @@ export const CroissantMetadataPage: React.FC = () => {
       .map((item, idx) => String(item['recordSet.name'] || `Record Set ${idx + 1}`))
       .filter(Boolean),
   };
-  const showHashError =
-    canEditExpertOnlyFields &&
-    submitAttempted &&
-    formData.distribution.length > 0 &&
-    !distHasHash(activeDistItem);
-  const showMissingDistributionError =
-    submitAttempted && formData.distribution.length === 0 && formData.fileSet.length === 0;
 
   if (isLoading) {
     return (
@@ -525,7 +424,10 @@ export const CroissantMetadataPage: React.FC = () => {
       </div>
 
       {submitError && (
-        <div className="mb-6 flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        <div
+          role="alert"
+          className="mb-6 flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
           <AlertCircle className="h-4 w-4 shrink-0" />
           {submitError}
         </div>
@@ -533,7 +435,7 @@ export const CroissantMetadataPage: React.FC = () => {
 
       <Tabs
         value={activeTab}
-        onValueChange={setActiveTab}
+        onValueChange={handleTabChange}
         orientation="vertical"
         className="w-full flex flex-col md:flex-row gap-8"
       >
@@ -574,7 +476,7 @@ export const CroissantMetadataPage: React.FC = () => {
                         onChange={(val) => handleDatasetChange(field.id, val)}
                         readOnly={isFieldReadOnly(field)}
                         readOnlyReason={getFieldReadOnlyReason(field)}
-                        error={getFieldError(field, formData.dataset)}
+                        error={getFieldError(field, { section: 'dataset' })}
                       />
                     </div>
                   ))}
@@ -606,9 +508,6 @@ export const CroissantMetadataPage: React.FC = () => {
                           type="button"
                         >
                           {item['distribution.name'] || `File ${idx + 1}`}
-                          {canEditExpertOnlyFields && submitAttempted && !distHasHash(item) && (
-                            <AlertCircle className="ml-2 h-3.5 w-3.5 text-destructive" />
-                          )}
                         </Button>
                         <Button
                           variant={activeDistIdx === idx ? 'default' : 'outline'}
@@ -637,12 +536,6 @@ export const CroissantMetadataPage: React.FC = () => {
 
                   {formData.distribution.length === 0 ? (
                     <div className="text-center py-10 border border-dashed rounded-lg">
-                      {showMissingDistributionError && (
-                        <div className="mx-auto mb-4 flex max-w-xl items-center gap-2 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-left text-sm text-destructive">
-                          <AlertCircle className="h-4 w-4 shrink-0" />
-                          Add at least one FileObject or FileSet before saving Croissant metadata.
-                        </div>
-                      )}
                       <p className="text-muted-foreground mb-4">No distribution items added yet.</p>
                       <Button
                         onClick={(e) => {
@@ -656,38 +549,18 @@ export const CroissantMetadataPage: React.FC = () => {
                     </div>
                   ) : (
                     <div className="space-y-6">
-                      {showHashError && (
-                        <div className="flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                          <AlertCircle className="h-4 w-4 shrink-0" />
-                          At least one of MD5 Hash or SHA-256 Hash is required for each distribution
-                          item.
-                        </div>
-                      )}
                       {distributionFields.map((field) => {
-                        const isHashField =
-                          field.id === 'distribution.md5' || field.id === 'distribution.sha256';
                         return (
                           <React.Fragment key={field.id}>
                             {canEditExpertOnlyFields &&
                               !isFieldReadOnly(field) &&
                               field.id === 'distribution.sha256' && (
-                                <div
-                                  className={`flex items-start gap-2 rounded-md border px-4 py-3 text-sm ${showHashError ? 'border-destructive/50 bg-destructive/10 text-destructive' : 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-400'}`}
-                                >
+                                <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
                                   <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                                  <span>
-                                    Provide at least one checksum, either SHA-256 or MD5. SHA-256 is
-                                    preferred.
-                                  </span>
+                                  <span>{DISTRIBUTION_HASH_GUIDANCE}</span>
                                 </div>
                               )}
-                            <div
-                              className={
-                                isHashField && showHashError
-                                  ? 'p-1 rounded-md ring-1 ring-destructive/50'
-                                  : 'p-1'
-                              }
-                            >
+                            <div className="p-1">
                               <CroissantFieldInput
                                 field={field}
                                 value={formData.distribution[activeDistIdx]?.[field.id]}
@@ -696,10 +569,10 @@ export const CroissantMetadataPage: React.FC = () => {
                                 }
                                 readOnly={isFieldReadOnly(field)}
                                 readOnlyReason={getFieldReadOnlyReason(field)}
-                                error={getFieldError(
-                                  field,
-                                  formData.distribution[activeDistIdx] ?? {},
-                                )}
+                                error={getFieldError(field, {
+                                  section: 'distribution',
+                                  itemIndex: activeDistIdx,
+                                })}
                               />
                             </div>
                           </React.Fragment>
@@ -783,7 +656,10 @@ export const CroissantMetadataPage: React.FC = () => {
                             onChange={(val) => handleFileSetChange(activeFileSetIdx, field.id, val)}
                             readOnly={isFieldReadOnly(field)}
                             readOnlyReason={getFieldReadOnlyReason(field)}
-                            error={getFieldError(field, activeFileSetItem)}
+                            error={getFieldError(field, {
+                              section: 'fileSet',
+                              itemIndex: activeFileSetIdx,
+                            })}
                           />
                         </div>
                       ))}
@@ -869,7 +745,10 @@ export const CroissantMetadataPage: React.FC = () => {
                               }
                               readOnly={isFieldReadOnly(field)}
                               readOnlyReason={getFieldReadOnlyReason(field)}
-                              error={getFieldError(field, activeRecordSetItem)}
+                              error={getFieldError(field, {
+                                section: 'recordSet',
+                                itemIndex: activeRecordSetIdx,
+                              })}
                             />
                           </div>
                         ))}
@@ -949,7 +828,11 @@ export const CroissantMetadataPage: React.FC = () => {
                                   crossReferenceOptions={crossReferenceOptions}
                                   readOnly={isFieldReadOnly(field)}
                                   readOnlyReason={getFieldReadOnlyReason(field)}
-                                  error={getFieldError(field, activeFieldItem)}
+                                  error={getFieldError(field, {
+                                    section: 'recordSet',
+                                    itemIndex: activeRecordSetIdx,
+                                    fieldIndex: activeFieldIdx,
+                                  })}
                                 />
                               </div>
                             ))}
@@ -980,7 +863,7 @@ export const CroissantMetadataPage: React.FC = () => {
                         onChange={(val) => handleRaiChange(field.id, val)}
                         readOnly={isFieldReadOnly(field)}
                         readOnlyReason={getFieldReadOnlyReason(field)}
-                        error={getFieldError(field, formData.rai)}
+                        error={getFieldError(field, { section: 'rai' })}
                       />
                     </div>
                   ))}

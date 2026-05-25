@@ -12,6 +12,9 @@ def test_settings_defaults(monkeypatch):
     monkeypatch.delenv("CLAMD_HOST", raising=False)
     monkeypatch.delenv("CLAMD_PORT", raising=False)
     monkeypatch.delenv("CLAMD_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("UPLOAD_TARGET", raising=False)
+    monkeypatch.delenv("UPLOAD_LOCATION", raising=False)
+    monkeypatch.delenv("UPLOAD_URL_EXPIRES_SECONDS", raising=False)
     monkeypatch.delenv("COOKIE_SECURE", raising=False)
     monkeypatch.delenv("APP_BASE_URL", raising=False)
 
@@ -28,6 +31,9 @@ def test_settings_defaults(monkeypatch):
     assert settings.github_issues.owner == "koevoet1221"
     assert settings.github_issues.repo == "openmlupload-testing"
     assert settings.app_base_url == "http://localhost:8000"
+    assert settings.upload.target == "uploads"
+    assert settings.upload.location == "default"
+    assert settings.upload.expires_seconds == 3600
 
 
 def test_cookie_secure_can_be_disabled_for_local_http(monkeypatch):
@@ -44,6 +50,25 @@ def test_app_base_url_can_be_overridden(monkeypatch):
     settings = Settings.from_env()
 
     assert settings.app_base_url == "https://upload.example.com"
+
+
+def test_upload_settings_can_be_overridden(monkeypatch):
+    monkeypatch.setenv("UPLOAD_TARGET", "team-uploads")
+    monkeypatch.setenv("UPLOAD_LOCATION", "eu")
+    monkeypatch.setenv("UPLOAD_URL_EXPIRES_SECONDS", "7200")
+
+    settings = Settings.from_env()
+
+    assert settings.upload.target == "team-uploads"
+    assert settings.upload.location == "eu"
+    assert settings.upload.expires_seconds == 7200
+
+
+def test_invalid_presigned_url_expiry_raises(monkeypatch):
+    monkeypatch.setenv("UPLOAD_URL_EXPIRES_SECONDS", "0")
+
+    with pytest.raises(ValueError):
+        Settings.from_env()
 
 
 def test_invalid_backend_raises(monkeypatch):

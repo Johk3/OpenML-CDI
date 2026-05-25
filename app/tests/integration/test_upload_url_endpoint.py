@@ -107,6 +107,10 @@ def _clean_scan_result(file_name: str = "data.csv") -> dict:
     }
 
 
+def _app_state(client: TestClient) -> Any:
+    return cast(Any, client.app).state
+
+
 def _downloadable_dataset_object(
     *,
     object_key: str,
@@ -198,7 +202,7 @@ def test_upload_url_creates_pending_dataset_and_returns_presigned_url(
     expected_storage_key = f"datasets/fixed_{filename}"
 
     monkeypatch.setattr(
-        client.app.state.storage,
+        _app_state(client).storage,
         "create_upload_target",
         lambda _filename, **kwargs: UploadTarget(
             storage_key=expected_storage_key,
@@ -281,7 +285,7 @@ def test_local_direct_upload_allows_dataset_owner(
     )
 
     assert response.status_code == 200
-    storage = cast(Any, client.app).state.storage
+    storage = _app_state(client).storage
     assert storage.read_bytes(storage_key) == b"feature,target\n1,0\n"
 
 
@@ -314,7 +318,7 @@ def test_local_direct_upload_rejects_non_owner(client: TestClient, db_session_fa
     )
 
     assert response.status_code == 403
-    storage = cast(Any, client.app).state.storage
+    storage = _app_state(client).storage
     assert storage.object_exists(storage_key) is False
 
 
@@ -344,7 +348,7 @@ def test_upload_url_rejects_duplicate_dataset_name_for_same_owner(
         )
 
     monkeypatch.setattr(
-        client.app.state.storage,
+        _app_state(client).storage,
         "create_upload_target",
         create_upload_target,
     )
@@ -392,7 +396,7 @@ def test_upload_url_rejects_duplicate_dataset_name_and_checksum_for_same_owner(
         )
 
     monkeypatch.setattr(
-        client.app.state.storage,
+        _app_state(client).storage,
         "create_upload_target",
         create_upload_target,
     )
@@ -433,7 +437,7 @@ def test_upload_url_allows_same_dataset_name_with_different_checksum(
         db.commit()
 
     monkeypatch.setattr(
-        client.app.state.storage,
+        _app_state(client).storage,
         "create_upload_target",
         lambda filename, **kwargs: UploadTarget(
             storage_key=f"datasets/fixed_{filename}",
@@ -480,7 +484,7 @@ def test_upload_url_allows_duplicate_dataset_name_for_different_owner(
         db.commit()
 
     monkeypatch.setattr(
-        client.app.state.storage,
+        _app_state(client).storage,
         "create_upload_target",
         lambda filename, **kwargs: UploadTarget(
             storage_key=f"datasets/fixed_{filename}",
@@ -523,7 +527,7 @@ def test_confirm_upload_triggers_scan_and_returns_202(
             )
         )
         db.commit()
-    client.app.state.storage.write_bytes(
+    _app_state(client).storage.write_bytes(
         "datasets/generated_data.csv", b"feature,target\n1,0\n"
     )
 
@@ -598,7 +602,7 @@ def test_confirm_upload_marks_dataset_objects_uploaded(
         )
         db.commit()
 
-    client.app.state.storage.write_bytes(storage_key, b"a,b\n1,2\n")
+    _app_state(client).storage.write_bytes(storage_key, b"a,b\n1,2\n")
     scan_calls = []
 
     def fake_scan(**kwargs):
@@ -788,10 +792,10 @@ def test_download_multiple_dataset_objects_preserves_directory_structure(
         )
         db.commit()
 
-    client.app.state.storage.write_bytes(
+    _app_state(client).storage.write_bytes(
         final_storage_keys[0], b"split,value\ntrain,1\n"
     )
-    client.app.state.storage.write_bytes(
+    _app_state(client).storage.write_bytes(
         final_storage_keys[1], b"split,value\ntest,2\n"
     )
 
@@ -814,13 +818,13 @@ def test_upload_url_returns_direct_s3_upload_contract(
     uploader_id = uuid.uuid4()
     access_token = _create_access_token_for_user(db_session_factory, uploader_id)
     storage = _FakeS3Storage()
-    monkeypatch.setattr(client.app.state, "storage", storage)
+    monkeypatch.setattr(_app_state(client), "storage", storage)
     monkeypatch.setattr(
-        client.app.state,
+        _app_state(client),
         "settings",
         replace(
-            client.app.state.settings,
-            upload=replace(client.app.state.settings.upload, expires_seconds=120),
+            _app_state(client).settings,
+            upload=replace(_app_state(client).settings.upload, expires_seconds=120),
         ),
     )
 
@@ -872,7 +876,7 @@ def test_upload_url_marks_large_s3_upload_contract_as_multipart(
     uploader_id = uuid.uuid4()
     access_token = _create_access_token_for_user(db_session_factory, uploader_id)
     storage = _FakeS3Storage()
-    monkeypatch.setattr(client.app.state, "storage", storage)
+    monkeypatch.setattr(_app_state(client), "storage", storage)
 
     response = client.post(
         "/api/datasets/upload-url",
@@ -897,7 +901,7 @@ def test_upload_url_persists_directory_structure_metadata_from_description(
     access_token = _create_access_token_for_user(db_session_factory, uploader_id)
 
     monkeypatch.setattr(
-        client.app.state.storage,
+        _app_state(client).storage,
         "create_upload_target",
         lambda filename, **kwargs: UploadTarget(
             storage_key=f"datasets/batch/{Path(filename).name}",
@@ -981,7 +985,7 @@ def test_confirm_upload_verifies_s3_object_and_blocks_scan_on_failure(
     uploader_id = uuid.uuid4()
     access_token = _create_access_token_for_user(db_session_factory, uploader_id)
     storage = _FakeS3Storage()
-    monkeypatch.setattr(client.app.state, "storage", storage)
+    monkeypatch.setattr(_app_state(client), "storage", storage)
 
     create_response = client.post(
         "/api/datasets/upload-url",
@@ -1054,7 +1058,7 @@ def test_upload_url_accepts_unsupported_format_and_persists_content_type(
     expected_storage_key = f"datasets/fixed_{filename}"
 
     monkeypatch.setattr(
-        client.app.state.storage,
+        _app_state(client).storage,
         "create_upload_target",
         lambda _filename, **kwargs: UploadTarget(
             storage_key=expected_storage_key,
@@ -1231,7 +1235,7 @@ def test_upload_url_handles_folder_structure(
         )
 
     monkeypatch.setattr(
-        client.app.state.storage, "create_upload_target", fake_create_upload_target
+        _app_state(client).storage, "create_upload_target", fake_create_upload_target
     )
 
     response = client.post(

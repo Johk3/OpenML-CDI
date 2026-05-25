@@ -6,6 +6,7 @@ import { mockNavigate, renderWithRouter } from '../utils';
 import { mockDatasetService } from '../mocks/datasetService';
 import { makeUserContext } from '../mocks/builders';
 import type { UserRole } from '@/types/auth';
+import { MISSING_DISTRIBUTION_HASH_MESSAGE } from '@/utils/croissantFormValidation';
 
 const userContextForRole = (role: UserRole) => makeUserContext({ user: { role } });
 
@@ -322,13 +323,14 @@ describe('CroissantMetadataPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
 
     await waitFor(() => {
-      expect(
-        screen.getByText(/at least one of md5 hash or sha-256 hash is required/i),
-      ).toBeInTheDocument();
+      expect(screen.getByRole('alert')).toHaveTextContent(MISSING_DISTRIBUTION_HASH_MESSAGE);
     });
+    const guidance = screen.getByText(/provide at least one checksum/i).closest('div');
+    expect(guidance).toHaveClass('border-amber-300');
+    expect(guidance).not.toHaveClass('border-destructive/50');
   });
 
-  it('shows an AlertCircle on the selector button when hash is missing after submit', async () => {
+  it('does not add a selector error icon when the hash banner is shown', async () => {
     renderPageAs('expert');
     await fillRequiredDatasetFields();
     await openTab(/distribution/i);
@@ -339,8 +341,11 @@ describe('CroissantMetadataPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
 
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(/at least one of md5 hash/i);
+    });
     const fileButton = screen.getByRole('button', { name: /test-air-on-test\.csv/i });
-    expect(fileButton.querySelector('svg')).toBeInTheDocument();
+    expect(fileButton.querySelector('svg')).not.toBeInTheDocument();
   });
 
   it('does not show a missing-hash selector icon for uploaders', async () => {
@@ -602,20 +607,9 @@ describe('CroissantMetadataPage', () => {
 
       fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
 
-      expect(
-        (
-          await screen.findAllByText(
-            /dataset name: must only contain letters, numbers, hyphens, and underscores/i,
-          )
-        ).length,
-      ).toBeGreaterThan(0);
-      expect(
-        (
-          await screen.findAllByText(
-            /must only contain letters, numbers, hyphens, and underscores/i,
-          )
-        ).length,
-      ).toBeGreaterThan(0);
+      const message = 'Dataset Name: Must only contain letters, numbers, hyphens, and underscores.';
+      expect(await screen.findByRole('alert')).toHaveTextContent(message);
+      expect(screen.getByText(message, { selector: 'p' })).toBeInTheDocument();
       expect(mockNavigate).not.toHaveBeenCalledWith('/datasets');
     }, 30000);
 
@@ -630,20 +624,10 @@ describe('CroissantMetadataPage', () => {
 
       fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
 
-      expect(
-        (
-          await screen.findAllByText(
-            /creator\(s\): must be a comma-separated list of names without special characters like periods/i,
-          )
-        ).length,
-      ).toBeGreaterThan(0);
-      expect(
-        (
-          await screen.findAllByText(
-            /must be a comma-separated list of names without special characters like periods/i,
-          )
-        ).length,
-      ).toBeGreaterThan(0);
+      const message =
+        'Creator(s): Must be a comma-separated list of names without special characters like periods.';
+      expect(await screen.findByRole('alert')).toHaveTextContent(message);
+      expect(screen.getByText(message, { selector: 'p' })).toBeInTheDocument();
       expect(mockNavigate).not.toHaveBeenCalledWith('/datasets');
     }, 30000);
 
@@ -796,6 +780,27 @@ describe('CroissantMetadataPage', () => {
       fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
 
       expect((await screen.findAllByText(/license is required/i)).length).toBeGreaterThan(0);
+      expect(mockNavigate).not.toHaveBeenCalledWith('/datasets');
+    });
+
+    it('uses the field validation result for the banner and inline error', async () => {
+      fillDatasetFieldsExceptLicense();
+      await selectLicenseOption('Custom license URL');
+      fireEvent.change(screen.getByRole('textbox', { name: /license url/i }), {
+        target: { value: 'not a url' },
+      });
+      await openTab(/distribution/i);
+      fireEvent.click(screen.getByRole('button', { name: /add distribution/i }));
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /file 1/i })).toBeInTheDocument(),
+      );
+      fillDistributionFields();
+
+      fireEvent.click(screen.getByRole('button', { name: /save metadata/i }));
+
+      const message = 'License must be a valid URL.';
+      expect(await screen.findByRole('alert')).toHaveTextContent(message);
+      expect(screen.getByText(message, { selector: 'p' })).toBeInTheDocument();
       expect(mockNavigate).not.toHaveBeenCalledWith('/datasets');
     });
 

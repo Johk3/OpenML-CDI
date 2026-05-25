@@ -4,14 +4,16 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-from app.database import Base
 
-os.environ.setdefault("JWT_SECRET", "test-jwt-secret")
-os.environ.setdefault("GITHUB_CLIENT_ID", "test-github-client-id")
-os.environ.setdefault("GITHUB_SECRET", "test-github-secret")
-os.environ.setdefault("GITHUB_REDIRECT", "http://localhost:5173/login/callback")
-os.environ.setdefault("AUTH_DEV_MODE_APPROVE_ALL_LOGINS", "true")
-os.environ.setdefault("COOKIE_SECURE", "false")
+os.environ["JWT_SECRET"] = "test-jwt-secret"
+os.environ["GITHUB_CLIENT_ID"] = "test-github-client-id"
+os.environ["GITHUB_SECRET"] = "test-github-secret"
+os.environ["GITHUB_REDIRECT"] = "http://localhost:5173/login/callback"
+os.environ["AUTH_DEV_MODE_APPROVE_ALL_LOGINS"] = "true"
+os.environ["COOKIE_SECURE"] = "false"
+os.environ["APP_BASE_URL"] = "http://localhost:8000"
+
+from app.database import Base  # noqa: E402
 
 
 @pytest.fixture(scope="function")

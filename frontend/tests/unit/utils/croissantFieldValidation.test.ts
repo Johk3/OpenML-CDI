@@ -55,4 +55,17 @@ describe('validateCroissantField', () => {
       message: 'Annotation must contain valid JSON.',
     });
   });
+
+  it('rejects impossible calendar dates with the field validation message', () => {
+    const field = textField({
+      id: 'datePublished',
+      label: 'Date Published',
+      inputType: 'date',
+    });
+
+    expect(validateCroissantField(field, { datePublished: '2026-02-31' })).toEqual({
+      ok: false,
+      message: 'Date Published must be a valid date.',
+    });
+  });
 });
