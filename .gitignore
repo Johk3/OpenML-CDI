@@ -12,15 +12,15 @@ test.xml
 frontend/node_modules
 
 #secrets
-app/.env
+backend/app/.env
 .env
 
 
 # Database
 app_dev.db
 .local_uploads/
-app/data/*
-!app/data/.gitkeep
+backend/app/data/*
+!backend/app/data/.gitkeep
 
 # NixOS
 flake.nix

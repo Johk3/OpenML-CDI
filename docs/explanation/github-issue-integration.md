@@ -26,7 +26,7 @@ We use a GitHub App rather than a personal access token. The service authenticat
 ## Related Resources
 
 - Check out [Dataset Detail Page](dataset-detail-page.md) for more info on how the data is displayed.
-- The core implementation can be found in `app/services/github_issues.py`.
+- The core implementation can be found in `backend/app/services/github_issues.py`.
 
 ---
 

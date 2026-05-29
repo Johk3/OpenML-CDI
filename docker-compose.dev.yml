@@ -3,14 +3,14 @@ services:
   backend:
     build:
       context: .
-      dockerfile: Dockerfile.dev
+      dockerfile: backend/Dockerfile.dev
     ports:
       - "8000:8000"
     volumes:
-      - ./app:/backend/app # bind mount — edits reflect immediately
-      - ./app/data:/backend/app/data
-      - ./alembic.ini:/backend/alembic.ini
-      - ./alembic:/backend/alembic
+      - ./backend/app:/backend/app # bind mount — edits reflect immediately
+      - ./backend/app/data:/backend/app/data
+      - ./backend/alembic.ini:/backend/alembic.ini
+      - ./backend/alembic:/backend/alembic
     environment:
       - ENVIRONMENT=development
       - JWT_SECRET=dev-only-change-me
@@ -64,7 +64,7 @@ services:
     image: clamav/clamav-debian:stable
     restart: unless-stopped
     volumes:
-      - ./app/data:/backend/app/data:ro
+      - ./backend/app/data:/backend/app/data:ro
     networks:
       - app-network
 

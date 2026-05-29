@@ -153,11 +153,12 @@ assert:
 
 ## 🗺️ Where integration tests live
 
-Common layout (example):
+Current repo layout:
 
-- `tests/integration/` – integration tests
-- `tests/support/` – helpers (start/stop DB, factories, fixtures)
-- `docker/` or `compose/` – local dependency setup (if used)
+- `backend/app/tests/integration/` – backend integration tests
+- `frontend/tests/integration/` – frontend integration tests
+- `backend/app/tests/conftest.py` and `frontend/tests/utils.tsx` – shared test helpers
+- `docker-compose.dev.yml` – local dependency setup for the development stack
 
 Keep helpers small and straightforward (so contributors can understand them quickly).
 

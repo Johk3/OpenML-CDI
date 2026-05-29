@@ -11,10 +11,9 @@
 /.github/ @c0ffeeadd1c7
 
 # Backend
-/app/ @koevoet1221 @gabrielmeleiro1
+/backend/app/ @koevoet1221 @gabrielmeleiro1
 
 # Database
-/alembic/ @koevoet1221
-/app/database/ @koevoet1221
-/app/schemas/ @koevoet1221
-
+/backend/alembic/ @koevoet1221
+/backend/app/database/ @koevoet1221
+/backend/app/schemas/ @koevoet1221

@@ -22,13 +22,13 @@ Before running Playwright:
      AUTH_DEV_LOGIN_USERNAME=e2e-github-user \
      AUTH_DEV_LOGIN_FIRST_NAME=E2E \
      AUTH_DEV_LOGIN_LAST_NAME=GitHub \
-     sops exec-env encrypted.env 'uvicorn app.main:app --reload'
+     sops exec-env encrypted.env 'sh -c "cd backend && uvicorn app.main:app --reload"'
    ```
 
 4. Start the frontend on the default Playwright base URL:
 
    ```sh
-   sops exec-env encrypted.env 'npm run dev -- --host 127.0.0.1 --port 5173'
+   VITE_API_BASE_URL=http://localhost:8000/api npm run dev -- --host 127.0.0.1 --port 5173
    ```
 
 5. Install the root Playwright dependencies if needed:

@@ -220,11 +220,12 @@ Reviewers may request additional tests or a different test type if the chosen le
 
 ## Where tests live in this repo
 
-We follow the following structure inside of `app/`(for the backend) and `frontend/` (for the fronted) folders.
+We follow this structure:
 
-- `(app + frontend)/tests/unit/` – Unit tests
-- `(app + frontend)/tests/integration/` – Integration tests
-- `e2e-tests/` – End-to-end tests
+- `backend/app/tests/unit/` and `frontend/tests/unit/` – unit tests
+- `backend/app/tests/integration/` and `frontend/tests/integration/` –
+  integration tests
+- `e2e/` – end-to-end tests
 
 Each guide explains the expected structure and naming conventions for that test type in more detail.
 

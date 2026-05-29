@@ -4,7 +4,7 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: backend/Dockerfile
     image: ${OPENML_UPLOAD_IMAGE:-openml-upload:local}
     restart: unless-stopped
     depends_on:

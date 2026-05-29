@@ -23,31 +23,34 @@ The following packages are needed to run this test environment:
 - pytest-order
 - pytest-xdist
 
-All these packages are included in the requirements.txt file
+All these packages are included in the `backend/requirements.txt` file.
 
 ## Running tests
 
 To run the test environment on all tests, run:
 
-'''bash
+```bash
+cd backend
 pytest
-'''
+```
 
 To run only unit tests or integration tests, run:
 
-'''bash
+```bash
+cd backend
 pytest app/tests/unit/
-'''
+```
 
 or
 
-'''bash
+```bash
+cd backend
 pytest app/tests/integration/
-'''
+```
 
 ## Project Structure
 
-In the app/tests/ directory there are 2 separate directories, one for the unit tests, called unit/ and one for the integration tests, called integration/
+In the `backend/app/tests/` directory there are 2 separate directories, one for the unit tests, called `unit/` and one for the integration tests, called `integration/`.
 
 The unit and integration tests written should go into their appropriate directory
 
@@ -59,17 +62,17 @@ To write tests that use the in memory databases, 2 pytest fixtures will be used.
 
 There first fixture:
 
-'''python
+```python
 db_test_session
-'''
+```
 
 is for the unit tests to use. This fixture yields an in memory test database for the unit test to use, instead of the development database.
 
 The second fixture:
 
-'''python
+```python
 client
-'''
+```
 
 is for the integration tests to use, this fixture yields a TestClient(app) using an override of the get_db function to get a in memory database.
 
@@ -79,10 +82,8 @@ The fixtures are used by injecting them into a test function, the db_test_sessio
 
 #### Examples
 
-'''python
-
+```python
 def test_test_session(db_test_session):
-
     test_user = models.User(
         email="test@test.com",
         password_hash="testhash",
@@ -101,19 +102,15 @@ def test_test_session(db_test_session):
     )
 
     assert query_user == test_user
+```
 
-'''
-
-'''python
-
+```python
 def test_integration_fixture(client):
-
     response = client.get("/")
 
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
-
-'''
+```
 
 ### Cleanup
 
@@ -121,7 +118,7 @@ The fixtures clean up the database automatically
 
 ## Coverage
 
-The pytest.ini has --cov-fail-under=80, meaning tests fail if less than 80% of the code is executed during testing. The --cov-report=term-missing flag prints a table in the terminal showing each file, its coverage percentage, and the specific line numbers that aren't covered by any test.
+The `backend/pytest.ini` has `--cov-fail-under=80`, meaning tests fail if less than 80% of the code is executed during testing. The `--cov-report=term-missing` flag prints a table in the terminal showing each file, its coverage percentage, and the specific line numbers that aren't covered by any test.
 
 ## CI/CD
 

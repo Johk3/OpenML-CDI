@@ -5,150 +5,200 @@
 </p>
 
 [![CI](https://github.com/ludev-nl/2026-40-OpenML_Uploading_Interface/actions/workflows/docker-publish.yaml/badge.svg?branch=main)](https://github.com/ludev-nl/2026-40-OpenML_Uploading_Interface/actions/workflows/docker-publish.yaml)
-[![Frontend tests](https://github.com/ludev-nl/2026-40-OpenML_Uploading_Interface/actions/workflows/frontend-test.yaml/badge.svg?branch=main)](https://github.com/ludev-nl/2026-40-OpenML_Uploading_Interface/actions/workflows/frontend-test.yaml)
+[![Tests](https://github.com/ludev-nl/2026-40-OpenML_Uploading_Interface/actions/workflows/tests.yaml/badge.svg?branch=main)](https://github.com/ludev-nl/2026-40-OpenML_Uploading_Interface/actions/workflows/tests.yaml)
 
-A web application for uploading and managing OpenML datasets, backed by FastAPI, PostgreSQL, ClamAV, Caddy, and S3-compatible object storage.
-
-***
+OpenML Upload is a web application for uploading, scanning, reviewing, and
+managing OpenML datasets. The application uses a FastAPI backend, a React
+frontend, PostgreSQL for the production Compose stack, ClamAV, Caddy, and local
+or S3-compatible object storage.
 
 ## Table of Contents
 
+- [Project Structure](#project-structure)
+- [Local Development](#local-development)
+- [Docker Development Stack](#docker-development-stack)
+- [Configuration](#configuration)
+- [Storage and Scanning](#storage-and-scanning)
+- [Testing and Automation](#testing-and-automation)
+- [Production Deployment](#production-deployment)
 - [Contributing](#contributing)
-- [Docker](#docker)
-- [Storage Setup](#storage-setup)
-- [Run Tests and Automation](#run-tests-and-automation)
-- [Credits](#credits-and-third-party-libraries)
+- [Security](#security)
+- [Credits and Third-Party Libraries](#credits-and-third-party-libraries)
 
-***
+## Project Structure
 
-## Contributing
+```text
+backend/   FastAPI app, Alembic migrations, backend tests, Python tooling
+frontend/  React app, frontend tests, Vite and TypeScript tooling
+e2e/       Playwright end-to-end tests
+docs/      Developer, testing, deployment, and architecture documentation
+infra/     Local infrastructure config such as Caddy and MinIO policy files
+```
 
-Please follow the projects guidelines on contributing.
-For more information, see [CONTRIBUTING.md](CONTRIBUTING.md).
+The backend Python package is named `app`, but backend commands should run from
+the `backend/` directory unless a command below says otherwise.
 
-For guides on testing, CI, code reviews, and more, see the [documentation index](docs/index.md).
+## Local Development
 
-## How to run
+Minimum prerequisites for the direct local path:
 
-install requirements
-run `uvicorn app.main:app --reload` to start server
+- Python 3.12 or newer
+- Node.js 22.12 or newer
+- pnpm
 
-## Docker
-
-For a complete local or client test run, use Docker Compose. It starts the application, Postgres, ClamAV, Caddy, migrations, and persistent Docker volumes.
-
-First copy the example environment file:
+Start the backend:
 
 ```bash
-cp .env.example .env
+python -m venv .venv
+source .venv/bin/activate
+pip install -r backend/requirements.txt
+cp backend/app/.env.example backend/.env
+cd backend
+alembic upgrade head
+uvicorn app.main:app --reload
 ```
 
-Then edit `.env` and set at least:
-
-```env
-POSTGRES_PASSWORD=replace-with-a-real-password
-JWT_SECRET=replace-with-a-random-secret
-```
-
-For real GitHub login, also set:
-
-```env
-GITHUB_CLIENT_ID=your-client-id
-GITHUB_SECRET=your-client-secret
-```
-
-These GitHub values are not user account details. They identify this deployed application to GitHub before any user can log in. The GitHub OAuth App callback URL must exactly match `GITHUB_REDIRECT`.
-
-For a local smoke test without GitHub OAuth, set this in `.env`:
+The backend runs at `http://localhost:8000`. The copied `backend/.env` uses
+SQLite and local filesystem storage by default. To use the UI without setting up
+real GitHub OAuth, set these values in `backend/.env` before starting the
+backend:
 
 ```env
 AUTH_DEV_MODE_APPROVE_ALL_LOGINS=true
+COOKIE_SECURE=false
 ```
 
-If you are using the repository's encrypted team secrets, start the stack through SOPS so Compose receives the decrypted environment variables:
+Start the frontend in a second terminal:
 
 ```bash
-sops exec-env encrypted.env 'docker compose -f compose.yml up -d --build'
+cd frontend
+pnpm install
+pnpm run dev
 ```
 
-Use that exact command whenever you rebuild or restart the local Compose stack with encrypted secrets. Running plain `docker compose up -d --build` does not load `encrypted.env`, so values such as `GITHUB_CLIENT_ID` and `GITHUB_SECRET` fall back to empty defaults and GitHub login will fail.
+The frontend runs at `http://localhost:5173` and calls the backend at
+same-origin `/api` by default. For split local development, set
+`VITE_API_BASE_URL=http://localhost:8000/api` in `frontend/.env`.
 
-If you are using a plaintext local `.env` instead, start the stack with:
+## Docker Development Stack
+
+Use Docker when you need the full local upload stack: backend, frontend, MinIO,
+ClamAV, migrations, and service networking. This development stack still uses
+SQLite unless you provide `DATABASE_URI`.
 
 ```bash
-docker compose up -d --build
+docker compose -f docker-compose.dev.yml up --build
 ```
 
-The app will be available at `http://localhost:8000`.
+Local services:
 
-Dataset GitHub issue creation is separate from login. The Compose defaults target the test repository:
+- Frontend: `http://localhost:5173`
+- Backend API: `http://localhost:8000`
+- MinIO API: `http://localhost:9000`
+- MinIO Console: `http://localhost:9001`
+
+For production-style Docker Compose with PostgreSQL and Caddy, see
+[Docker hosting](docs/how-to/docker-hosting.md).
+
+## Configuration
+
+Use these example files as starting points:
+
+- `.env.example` for the root production-style Compose stack
+- `backend/app/.env.example` for running the backend directly from `backend/`
+- `frontend/.env.example` for frontend-only environment variables
+
+Common backend settings:
+
+- `DATABASE_URI` controls the direct backend database connection.
+- `JWT_SECRET` signs authentication tokens.
+- `COOKIE_SECURE=false` is for local HTTP; use `true` behind HTTPS.
+- `AUTH_DEV_MODE_APPROVE_ALL_LOGINS=true` bypasses real GitHub OAuth for local
+  development only.
+- `STORAGE_BACKEND=local` uses filesystem storage.
+- `STORAGE_BACKEND=s3` enables S3-compatible storage such as MinIO or AWS S3.
+
+GitHub OAuth and GitHub App issue integration are optional for basic local
+development. Configure them when you need real login or dataset review issues.
+
+## Storage and Scanning
+
+The direct local backend defaults to local filesystem storage. The Docker
+development stack uses MinIO with these values:
 
 ```env
-GITHUB_ISSUES_OWNER=koevoet1221
-GITHUB_ISSUES_REPO=openmlupload-testing
-```
-
-To actually create issues, configure the GitHub App values in `.env`:
-
-```env
-GH_APP_ID=
-GH_INSTALL_ID=
-GH_PRIV_KEY=
-```
-
-You can also build and run only the application container:
-
-```bash
-docker build -t openml-upload .
-docker run -d -p 8000:8000 -v openml-data:/data openml-upload
-```
-
-The app will be available at `http://localhost:8000`. A pre-built image is also published to `ghcr.io/ludev-nl/2026-40-openml_uploading_interface:latest` on every push to the default branch.
-
-Dataset upload confirmation requires a reachable ClamAV `clamd` daemon. If `clamd` is unavailable, uploads are quarantined and not promoted for download. For local upload-flow development, use the Compose stack documented in [Local S3-Compatible Storage](docs/how-to/local-s3-storage.md).
-
-For full instructions — including environment variables, volume configuration, and production deployment notes — see the [Docker hosting guide](docs/how-to/docker-hosting.md).
-
-## Storage setup
-
-The app supports local filesystem storage for development/tests and explicit S3-compatible object storage for production-like upload flows.
-
-For S3-compatible storage, set:
-
-```bash
 STORAGE_BACKEND=s3
-S3_BUCKET=openml-datasets
+S3_BUCKET=openml-upload-local
 S3_REGION=eu-west-1
-S3_ENDPOINT=http://localhost:9000
-S3_PUBLIC_ENDPOINT=
+S3_ENDPOINT=http://minio:9000
+S3_PUBLIC_ENDPOINT=http://localhost:9000
 S3_ACCESS_KEY=minioadmin
-S3_SECRET_KEY=minioadmin
+S3_SECRET_KEY=minioadmin123
 S3_FORCE_PATH_STYLE=true
-UPLOAD_URL_EXPIRES_SECONDS=3600
 ```
 
-`S3_ENDPOINT` and `S3_FORCE_PATH_STYLE=true` are mainly for local S3-compatible services such as MinIO. Leave `S3_ENDPOINT` empty for AWS S3. Use `S3_PUBLIC_ENDPOINT` only when browser-facing presigned URLs need a different hostname from the backend's S3 endpoint. For the full architecture, upload lifecycle, MinIO setup, bucket CORS, cleanup rules, and minimum permissions, see [docs/reference/s3-storage.md](docs/reference/s3-storage.md).
+For AWS S3, leave `S3_ENDPOINT` empty and set `S3_FORCE_PATH_STYLE=false`.
 
-## Run tests and automation
+Dataset upload confirmation requires a reachable ClamAV `clamd` daemon. If
+ClamAV is unavailable, uploaded files remain quarantined and are not promoted
+for download. For details, see
+[Local S3-Compatible Storage](docs/how-to/local-s3-storage.md) and the
+[S3 storage reference](docs/reference/s3-storage.md).
 
-For a fresh clone, install Lefthook once from the repository root:
+## Testing and Automation
+
+Quick checks:
 
 ```bash
+(cd backend && python -m pytest)
+(cd frontend && pnpm run test:coverage)
+```
+
+Full local automation needs the frontend dependencies, root Playwright
+dependencies, Pyright, and Lefthook:
+
+```bash
+pnpm --dir frontend install
+npm ci
+pnpm add -g pyright
 pipx install lefthook
 lefthook install
-```
-
-Then you can run the local checks with:
-
-```bash
-pytest -q
 lefthook run pre-commit --all-files
 ```
 
-Lefthook runs the same formatting, linting, secret-scanning, and test checks that are also wired into GitHub Actions under `.github/workflows/`.
+End-to-end tests require the local stack to be running. See
+[e2e/README.md](e2e/README.md).
 
-For the full step-by-step setup guide, see [docs/how-to/CI-pipeline.md](docs/how-to/CI-pipeline.md).
+## Production Deployment
 
-## Credits and Third-party libraries
+The documented production-like path today is Docker Compose; see
+[Docker hosting](docs/how-to/docker-hosting.md). A production deployment should
+provide HTTPS, PostgreSQL backups, S3-compatible object storage, ClamAV scanning,
+secure secret storage, and `COOKIE_SECURE=true`.
 
-This project builds oSn a number of open-source libraries and tools across the backend, frontend, and tooling. See [docs/references/credits.md](docs/references/credits.md) for the full list with descriptions and links.
+AWS deployment is planned as separate work. Once it is implemented and verified,
+add a dedicated AWS deployment guide under `docs/how-to/` and link it here.
+
+## Contributing
+
+Please follow [CONTRIBUTING.md](CONTRIBUTING.md). The contribution guide covers
+branch naming, issue workflow, commit message format, testing expectations, and
+pull request process.
+
+For more project documentation, see the [documentation index](docs/index.md).
+
+## Security
+
+Do not commit plaintext secrets. Use local `.env` files for personal
+development, SOPS for encrypted team secrets, and a managed secret store for
+production deployments.
+
+If you find a security issue, do not open a public issue with exploit details.
+Contact the maintainers privately first.
+
+## Credits and Third-Party Libraries
+
+This project builds on open-source libraries and tools across the backend,
+frontend, and infrastructure stack. See
+[docs/references/credits.md](docs/references/credits.md) for the full list with
+descriptions and links.

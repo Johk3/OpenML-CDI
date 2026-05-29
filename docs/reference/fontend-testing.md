@@ -36,6 +36,7 @@ expect(something).toBeDisabled(); // To be disabled is one of these found in the
 Recommended interpretation of the current structure:
 
 ```text
+frontend/
 tests/
 ├── integration/
 │   └── routing.test.tsx      # integration tests for routing / multiple parts working together
@@ -43,7 +44,7 @@ tests/
 ├── setup.ts                  # shared test setup
 ├── unit/
 │   └── components/
-│       └── footer.test.tsx   # focused component unit tests
+│       └── Header.test.tsx   # focused component unit tests
 └── utils.tsx                 # shared test utilities / wrappers / helpers
 ```
 
@@ -152,10 +153,10 @@ Use one naming style consistently:
 - `*.test.ts`
 - `*.test.tsx`
 
-Examples from the current structure:
+Examples from the current structure, relative to `frontend/`:
 
 - `tests/main.test.ts`
-- `tests/unit/components/footer.test.tsx`
+- `tests/unit/components/Header.test.tsx`
 - `tests/integration/routing.test.tsx`
 
 Suggested convention:
@@ -182,13 +183,13 @@ npx vitest run
 Run with coverage:
 
 ```bash
-npx vitest run coverage
+pnpm run test:coverage
 ```
 
 Run a specific test file:
 
 ```bash
-npx vitest run tests/unit/components/footer.test.tsx
+npx vitest run tests/unit/components/Header.test.tsx
 ```
 
 Run tests related to changed source files:
@@ -239,6 +240,7 @@ part of the GitHub-only frontend auth surface.
 ## Example Current Structure
 
 ```text
+frontend/
 tests/
 ├── integration/
 │   └── routing.test.tsx
@@ -251,9 +253,11 @@ tests/
 │   ├── ProtectedRoute.test.tsx
 │   ├── UserProvider.test.tsx
 │   ├── components/
+│   │   ├── ConfirmationDialog.test.tsx
+│   │   ├── Header.test.tsx
+│   │   └── Input.test.tsx
+│   ├── components/ui/
 │   │   ├── button.test.tsx
-│   │   ├── footer.test.tsx
-│   │   ├── header.test.tsx
 │   │   └── input.test.tsx
 │   └── userService.test.ts
 └── utils.tsx

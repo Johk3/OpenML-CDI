@@ -8,7 +8,7 @@ from botocore.config import Config
 from botocore.exceptions import ClientError, EndpointConnectionError
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BUCKET = "openml-upload-local"
 DEFAULT_ENDPOINT = "http://127.0.0.1:9000"
 DEFAULT_REGION = "eu-west-1"

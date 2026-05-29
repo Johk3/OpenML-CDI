@@ -28,7 +28,7 @@ The associated mock interfaces for this functionality are located in `src/types/
 
 ## Testing
 
-Unit tests for this page can be found in `tests/unit/DatasetDetailPage.test.tsx`.
+Unit tests for this page can be found in `frontend/tests/unit/DatasetDetailPage.test.tsx`.
 
 ---
 

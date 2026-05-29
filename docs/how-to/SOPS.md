@@ -94,24 +94,20 @@ This should match one of the recipient keys in `.sops.yaml`.
 
 ## Initial Setup (One-Time, Maintainer Only)
 
-Run the setup script to fetch all team members' SSH keys from GitHub and generate `.sops.yaml`:
+The current `.sops.yaml` is committed at the repository root. The old one-time
+helper script lives at `SOP/DONTTOUCH.sh`, but it is not part of the normal
+setup flow and should not be run without first checking that its output matches
+the current `.sops.yaml` format.
 
-```bash
-chmod +x scripts/setup-sops.sh
-./scripts/setup-sops.sh
-```
-
-setup-sops.sh is now named DONTTOCH.sh because it does not need to be done again
-
-This will:
+If recipients need to be regenerated manually, the process is:
 
 1. Fetch each team member's SSH public keys from `github.com/<username>.keys`
 2. Convert them to age recipient keys
-3. Write the `.sops.yaml` configuration
+3. Update the `.sops.yaml` configuration
 
 **Important:** If a team member has multiple ed25519 keys on GitHub, verify that the correct age public key was picked. Each member can check with `cat ~/.ssh/id_ed25519.pub | ssh-to-age` and compare against the keys in `.sops.yaml`.
 
-Then create and encrypt the `.env` file:
+Then create and encrypt a temporary plaintext env file:
 
 ```bash
 nano .env
@@ -137,13 +133,7 @@ Commit both `.sops.yaml` and `encrypted.env`. **Never commit the plaintext `.env
 Instead of decrypting to a file, use `sops exec-env` to load secrets directly into memory:
 
 ```bash
-sops exec-env encrypted.env 'npm run start'
-```
-
-Or for Python:
-
-```bash
-sops exec-env encrypted.env 'python main.py'
+sops exec-env encrypted.env 'sh -c "cd backend && uvicorn app.main:app --reload"'
 ```
 
 For the Docker Compose stack, pass the decrypted environment to Compose at runtime:
@@ -179,8 +169,8 @@ This opens the decrypted content in `$EDITOR` (defaults to `vim`). When you save
 ## Adding a New Team Member
 
 1. The new member must have an ed25519 SSH key on their GitHub account.
-2. Add their username to the `TEAM_MEMBERS` array in `scripts/setup-sops.sh`.
-3. Re-run the setup script to regenerate `.sops.yaml`.
+2. Convert their ed25519 SSH public key to an age recipient with `ssh-to-age`.
+3. Add the new age recipient to `.sops.yaml`.
 4. Re-encrypt the file so the new member can decrypt it:
 
    ```bash
@@ -191,8 +181,8 @@ This opens the decrypted content in `$EDITOR` (defaults to `vim`). When you save
 
 ## Removing a Team Member
 
-1. Remove their username from `TEAM_MEMBERS` in `scripts/setup-sops.sh`.
-2. Re-run `./scripts/setup-sops.sh`.
+1. Remove their age recipient from `.sops.yaml`.
+2. Verify the remaining recipients are still correct.
 3. Re-encrypt:
 
    ```bash

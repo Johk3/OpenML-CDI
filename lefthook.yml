@@ -9,18 +9,18 @@ pre-commit:
 
     # Python (FastAPI/Backend)
     black:
-      root: app
+      root: backend/app
       glob: "**/*.py"
       run: black {staged_files}
 
     flake8:
-      root: app
+      root: backend/app
       glob: "**/*.py"
       run: flake8 {staged_files}
 
     pyright:
-      glob: "app/**/*.py"
-      run: pyright {staged_files}
+      glob: "backend/app/**/*.py"
+      run: PYTHONPATH=backend pyright {staged_files}
 
     # JavaScript/TypeScript (React/Frontend)
     eslint:

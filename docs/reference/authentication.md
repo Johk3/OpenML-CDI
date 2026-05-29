@@ -218,28 +218,27 @@ Frontend env vars:
 
 - `VITE_API_BASE_URL` full backend API URL for local split frontend/backend
   development; unset defaults to same-origin `/api`
-- `VITE_GITHUB_CLIENT_ID`
-- `VITE_GITHUB_OAUTH_SCOPE` default `user:email`
-- `VITE_GITHUB_REDIRECT_URI` default `http://localhost:5173/login/callback`
 
 Backend env vars for auth:
 
 - `GITHUB_CLIENT_ID`
 - `GITHUB_SECRET`
-- `GITHUB_REDIRECT`
 - `GITHUB_OAUTH_SCOPES` default `read:user,user:email,read:org`
 - `AUTH_DEV_MODE_APPROVE_ALL_LOGINS` for local smoke tests only
 - `AUTH_DEV_LOGIN_EMAIL`, `AUTH_DEV_LOGIN_USERNAME`,
   `AUTH_DEV_LOGIN_FIRST_NAME`, and `AUTH_DEV_LOGIN_LAST_NAME` for local smoke
   test identity overrides
 
+Configure the GitHub OAuth App callback URL in GitHub itself. For local split
+frontend/backend development, use `http://localhost:5173/login/callback`.
+
 ## Manual QA
 
 Use this checklist when verifying the local GitHub-only auth flow without real
 GitHub OAuth credentials:
 
-1. Start the dev stack with `AUTH_DEV_MODE_APPROVE_ALL_LOGINS=true` and
-   `VITE_API_BASE_URL=http://localhost:8000/api`.
+1. Start the dev stack with `AUTH_DEV_MODE_APPROVE_ALL_LOGINS=true`,
+   `COOKIE_SECURE=false`, and `VITE_API_BASE_URL=http://localhost:8000/api`.
 2. Open `http://localhost:5173/login` and click `Continue with GitHub`.
 3. Confirm the browser reaches the authenticated app state, normally
    `/datasets`, and that the current user profile is visible in the header.

@@ -69,7 +69,7 @@ MinIO community releases do not support the `AbortIncompleteMultipartUpload` lif
 If MinIO is already running, configure the bucket with:
 
 ```bash
-python scripts/setup_local_s3.py
+python backend/scripts/setup_local_s3.py
 ```
 
 The script reads the same `S3_*` environment variables as the backend and is used by CI. CORS is configured when the MinIO service starts, not by this script.

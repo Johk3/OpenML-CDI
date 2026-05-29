@@ -3,9 +3,9 @@ node_modules
 .git
 .gitignore
 .env
-app/.env
+backend/app/.env
 encrypted.env*
-app/data/
+backend/app/data/
 *.md
 dist
 **/dist

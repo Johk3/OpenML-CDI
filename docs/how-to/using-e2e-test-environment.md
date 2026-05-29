@@ -16,7 +16,7 @@ AUTH_DEV_MODE_APPROVE_ALL_LOGINS=true \
   AUTH_DEV_LOGIN_USERNAME=e2e-github-user \
   AUTH_DEV_LOGIN_FIRST_NAME=E2E \
   AUTH_DEV_LOGIN_LAST_NAME=GitHub \
-  sops exec-env encrypted.env 'uvicorn app.main:app --reload'
+  sops exec-env encrypted.env 'sh -c "cd backend && uvicorn app.main:app --reload"'
 ```
 
 ```bash
@@ -32,7 +32,7 @@ is issuing this documented E2E identity.
 ## Step 3: Start the frontend
 
 ```bash
-sops exec-env encrypted.env 'npm run dev -- --host 127.0.0.1 --port 5173'
+VITE_API_BASE_URL=http://localhost:8000/api npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
 ## Step 4: Install the Playwright dependencies

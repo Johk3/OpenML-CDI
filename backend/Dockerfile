@@ -29,9 +29,9 @@ RUN pnpm run build;
 # ─────────────────────────────────────────────
 FROM python:3.14-slim AS python-builder
 
-WORKDIR /app
+WORKDIR /backend
 
-COPY requirements.txt ./
+COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 
@@ -40,15 +40,15 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 # ─────────────────────────────────────────────
 FROM python:3.14-slim AS production
 
-WORKDIR /
+WORKDIR /backend
 
 # Copy installed Python packages from builder stage
 COPY --from=python-builder /install /usr/local
 
 # Copy FastAPI application code
-COPY app/ ./app
-COPY alembic.ini ./alembic.ini
-COPY alembic/ ./alembic
+COPY backend/app/ ./app
+COPY backend/alembic.ini ./alembic.ini
+COPY backend/alembic/ ./alembic
 
 # Copy React build output into a 'static' folder served by FastAPI
 COPY --from=frontend-builder /app/frontend/dist ./app/static

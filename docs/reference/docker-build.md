@@ -38,7 +38,7 @@ Tags are generated via Docker’s metadata action/tagging patterns.
 You can build locally with Docker:
 
 ```bash
-docker build -t ghcr.io/ludev-nl/2026-40-openml_uploading_interface:dev .
+docker build -f backend/Dockerfile -t ghcr.io/ludev-nl/2026-40-openml_uploading_interface:dev .
 ```
 
 Pushing to GHCR from a local runner may require extra auth setup and may not behave the same as GitHub Actions, because GitHub’s workflow token permissions are specific to real workflow runs.

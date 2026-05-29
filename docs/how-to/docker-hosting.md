@@ -11,10 +11,10 @@ This guide explains how to build, run, and deploy the OpenML Upload application 
 From the repository root:
 
 ```bash
-docker build -t openml-upload .
+docker build -f backend/Dockerfile -t openml-upload .
 ```
 
-The Dockerfile uses a multi-stage build that compiles the React frontend, installs Python dependencies, and produces a slim production image. No extra build arguments are required.
+The backend Dockerfile at `backend/Dockerfile` uses a multi-stage build that compiles the React frontend, installs Python dependencies, and produces a slim production image. No extra build arguments are required.
 
 ## Running the Compose stack
 
@@ -40,11 +40,10 @@ For GitHub login, create a GitHub OAuth App and set these deployment-time creden
 ```env
 GITHUB_CLIENT_ID=your-client-id
 GITHUB_SECRET=your-client-secret
-GITHUB_REDIRECT=http://localhost:8000/login/callback
 GITHUB_OAUTH_SCOPES=read:user,user:email,read:org
 ```
 
-The callback URL configured in the GitHub OAuth App must exactly match `GITHUB_REDIRECT`. End users do not provide these values when they log in; they identify this deployed application to GitHub.
+The callback URL configured in the GitHub OAuth App must point to the frontend callback route, for example `http://localhost:8000/login/callback` for the local Compose stack. End users do not provide these values when they log in; they identify this deployed application to GitHub.
 The GitHub App settings below should be configured and installed on the repository so the app can use an installation token to verify repository collaborator permissions for expert-role assignment without requesting broad user repository access.
 
 Dataset review issue creation defaults to `koevoet1221/openmlupload-testing` for this test deployment. The GitHub App credentials must also be present for issue creation to run:
@@ -63,7 +62,6 @@ For a production domain, use the HTTPS callback, for example:
 
 ```env
 APP_BASE_URL=https://upload.example.com
-GITHUB_REDIRECT=https://upload.example.com/login/callback
 COOKIE_SECURE=true
 CADDY_SITE_ADDRESS=upload.example.com
 HTTP_PORT=80

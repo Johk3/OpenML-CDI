@@ -27,7 +27,7 @@ jobs:
           python-version: "3.14"
 
       - name: Install Python deps
-        run: pip install -r requirements.txt
+        run: pip install -r backend/requirements.txt
 
       - name: Install Pyright
         run: pnpm add -g pyright

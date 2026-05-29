@@ -262,6 +262,7 @@ export UPLOAD_URL_EXPIRES_SECONDS=3600
 export CLAMD_HOST=127.0.0.1
 export CLAMD_PORT=3310
 
+cd backend
 uvicorn app.main:app --reload
 ```
 

@@ -43,12 +43,13 @@ jobs:
           python-version: "3.12"
 
       - name: Install backend dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r backend/requirements.txt
 
       - name: Configure local S3 bucket
-        run: python scripts/setup_local_s3.py
+        run: python backend/scripts/setup_local_s3.py
 
       - name: Run backend S3 checks
+        working-directory: backend
         run: |
           pytest \
             app/tests/unit/storage/test_config_and_factory.py \
@@ -72,6 +73,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: backend/Dockerfile
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max

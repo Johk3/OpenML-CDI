@@ -1,11 +1,24 @@
 import re
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[4]
+BACKEND_ROOT = ROOT / "backend"
 
 
 def _read(path: str) -> str:
     return (ROOT / path).read_text()
+
+
+def _read_backend(path: str) -> str:
+    return (BACKEND_ROOT / path).read_text()
+
+
+def test_backend_files_live_under_backend_directory():
+    assert (BACKEND_ROOT / "app").is_dir()
+    assert (BACKEND_ROOT / "alembic").is_dir()
+    assert (BACKEND_ROOT / "requirements.txt").is_file()
+    assert not (ROOT / "app").exists()
+    assert not (ROOT / "alembic").exists()
 
 
 def test_dev_compose_has_self_contained_backend_and_frontend_env():
@@ -63,9 +76,9 @@ def test_dev_compose_shares_scan_quarantine_volume_with_clamd():
     assert "- QUARANTINE_DIR=/backend/app/data/quarantine" in backend_block
     assert "- CLAMD_TIMEOUT_SECONDS=60" in backend_block
     assert "condition: service_healthy" in backend_block
-    assert "- ./app/data:/backend/app/data" in backend_block
+    assert "- ./backend/app/data:/backend/app/data" in backend_block
     assert "volumes:" in clamd_block
-    assert "- ./app/data:/backend/app/data:ro" in clamd_block
+    assert "- ./backend/app/data:/backend/app/data:ro" in clamd_block
 
 
 def test_production_compose_fails_fast_when_migrations_fail():
@@ -77,7 +90,8 @@ def test_production_compose_fails_fast_when_migrations_fail():
 
 def test_token_family_name_migration_does_not_reference_non_unique_token_family():
     migration = _read(
-        "alembic/versions/2026_03_09_2022_add_name_for_token_families_0e04539fed93.py"
+        "backend/alembic/versions/"
+        "2026_03_09_2022_add_name_for_token_families_0e04539fed93.py"
     )
 
     assert (
@@ -92,7 +106,8 @@ def test_token_family_name_migration_does_not_reference_non_unique_token_family(
 
 def test_timezone_migration_updates_existing_core_timestamp_columns():
     migrations = "\n".join(
-        path.read_text() for path in sorted((ROOT / "alembic/versions").glob("*.py"))
+        path.read_text()
+        for path in sorted((BACKEND_ROOT / "alembic/versions").glob("*.py"))
     )
 
     assert re.search(r'op\.alter_column\(\s*"users",\s*"created_at"', migrations)
@@ -108,10 +123,10 @@ def test_timezone_migration_updates_existing_core_timestamp_columns():
 
 def test_ci_starts_minio_and_runs_backend_s3_checks():
     workflow = _read(".github/workflows/docker-check.yaml")
-    setup_script = _read("scripts/setup_local_s3.py")
+    setup_script = _read_backend("scripts/setup_local_s3.py")
 
     assert "minio/minio:" in workflow
-    assert "scripts/setup_local_s3.py" in workflow
+    assert "backend/scripts/setup_local_s3.py" in workflow
     assert (
         "MINIO_API_CORS_ALLOW_ORIGIN=http://localhost:5173,http://127.0.0.1:5173"
         in workflow

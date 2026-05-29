@@ -46,6 +46,9 @@ jobs:
 
   test-backend:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
     env:
       JWT_SECRET: test-jwt-secret
       COOKIE_SECURE: "false"
@@ -75,7 +78,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: backend-test-report
-          path: test.xml
+          path: backend/test.xml
           if-no-files-found: warn
 
   test-e2e:
