@@ -64,4 +64,4 @@ EXPOSE 8000
 # Declare /dwhat is the openml-data volume used for?ata as a mountable volume
 VOLUME ["/data"]
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
