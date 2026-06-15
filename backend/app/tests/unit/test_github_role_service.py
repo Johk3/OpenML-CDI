@@ -2,13 +2,16 @@ import logging
 
 import pytest
 
+from app.config import GitHubIssuesSettings
 from app.database.models import Roles
+from app.services.github_issues import GitHubAPIError
 from app.services.github_roles import (
     GitHubPermissionLookupError,
     GitHubRepositoryPermissionClient,
     GitHubRepositoryRoleResolver,
     GITHUB_API_VERSION,
     map_github_repository_role,
+    resolve_github_repository_role,
 )
 
 
@@ -32,12 +35,21 @@ class FakeGitHubClient:
 
 
 class FakeResponse:
-    def __init__(self, status_code: int, payload: list | dict):
+    def __init__(self, status_code: int, payload: list | dict, text: str = ""):
         self.status_code = status_code
         self.payload = payload
+        self.text = text
 
     def json(self):
         return self.payload
+
+
+class InvalidJsonResponse(FakeResponse):
+    def __init__(self):
+        super().__init__(200, {}, text="not-json")
+
+    def json(self):
+        raise ValueError("invalid json")
 
 
 class RecordingSession:
@@ -87,6 +99,21 @@ def test_repository_permission_client_defaults_to_openml_upload_testing(monkeypa
     )
 
 
+def test_repository_permission_client_uses_configured_repository():
+    session = RecordingSession(FakeResponse(200, {"role_name": "maintain"}))
+    client = GitHubRepositoryPermissionClient(
+        session,
+        owner="openml",
+        repo="expert-checks",
+    )
+
+    assert client.get_repository_permission("octocat") == {"role_name": "maintain"}
+    assert session.requests[0]["url"] == (
+        "https://api.github.com/repos/openml/expert-checks"
+        "/collaborators/octocat/permission"
+    )
+
+
 def test_repository_permission_client_applies_auth_header_when_token_provided():
     session = RecordingSession(FakeResponse(200, {"role_name": "maintain"}))
     # We pass session explicitly to the client even with a token for testing
@@ -105,6 +132,34 @@ def test_repository_permission_client_wraps_http_errors_as_lookup_failures():
         assert "GitHub request failed" in str(error)
     else:
         raise AssertionError("Expected GitHubPermissionLookupError")
+
+
+def test_repository_permission_client_maps_404_to_no_permission():
+    session = RecordingSession(FakeResponse(404, {"message": "Not Found"}))
+    client = GitHubRepositoryPermissionClient(session)
+
+    assert client.get_repository_permission("octocat") == {
+        "permission": "none",
+        "role_name": "none",
+    }
+
+
+def test_repository_permission_client_wraps_non_200_responses():
+    session = RecordingSession(
+        FakeResponse(500, {"message": "Server Error"}, text="server error")
+    )
+    client = GitHubRepositoryPermissionClient(session)
+
+    with pytest.raises(GitHubPermissionLookupError, match="GitHub returned 500"):
+        client.get_repository_permission("octocat")
+
+
+def test_repository_permission_client_wraps_invalid_json_responses():
+    session = RecordingSession(InvalidJsonResponse())
+    client = GitHubRepositoryPermissionClient(session)
+
+    with pytest.raises(GitHubPermissionLookupError, match="invalid JSON"):
+        client.get_repository_permission("octocat")
 
 
 @pytest.mark.parametrize(
@@ -169,3 +224,81 @@ def test_permission_lookup_failure_falls_back_to_user_and_logs(caplog):
 
     assert role == Roles.USER
     assert "GitHub repository permission lookup failed" in caplog.text
+
+
+def test_resolve_role_uses_configured_permission_repository(monkeypatch):
+    class RecordingPermissionClient:
+        def __init__(
+            self,
+            session=None,
+            *,
+            token=None,
+            owner=None,
+            repo=None,
+        ):
+            self.session = session
+            self.token = token
+            self.owner = owner
+            self.repo = repo
+            created_clients.append(self)
+
+        def get_repository_permission(self, username: str) -> dict[str, object]:
+            return {"role_name": "maintain"}
+
+    created_clients: list[RecordingPermissionClient] = []
+
+    monkeypatch.setattr(
+        "app.services.github_roles.GitHubRepositoryPermissionClient",
+        RecordingPermissionClient,
+    )
+    monkeypatch.setattr(
+        "app.services.github_issues.get_installation_token",
+        lambda _settings: "gh-app-token",
+    )
+    settings = GitHubIssuesSettings(
+        app_id=123,
+        install_id=456,
+        private_key="test-key",
+        owner="issue-owner",
+        repo="issue-repo",
+        permission_owner="permission-owner",
+        permission_repo="permission-repo",
+    )
+
+    role = resolve_github_repository_role(
+        "octocat", session=object(), settings=settings
+    )
+
+    assert role == Roles.EXPERT
+    assert len(created_clients) == 1
+    created_client = created_clients[0]
+    assert created_client.session is None
+    assert created_client.token == "gh-app-token"
+    assert created_client.owner == "permission-owner"
+    assert created_client.repo == "permission-repo"
+
+
+def test_resolve_role_falls_back_to_user_when_app_token_lookup_fails(monkeypatch):
+    session = RecordingSession(FakeResponse(200, {"role_name": "maintain"}))
+
+    def fail_token_lookup(_settings):
+        raise GitHubAPIError("token unavailable")
+
+    monkeypatch.setattr(
+        "app.services.github_issues.get_installation_token",
+        fail_token_lookup,
+    )
+    settings = GitHubIssuesSettings(
+        app_id=123,
+        install_id=456,
+        private_key="test-key",
+        owner="issue-owner",
+        repo="issue-repo",
+        permission_owner="permission-owner",
+        permission_repo="permission-repo",
+    )
+
+    role = resolve_github_repository_role("octocat", session=session, settings=settings)
+
+    assert role == Roles.USER
+    assert session.requests == []

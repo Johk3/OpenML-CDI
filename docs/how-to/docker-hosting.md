@@ -44,9 +44,16 @@ GITHUB_OAUTH_SCOPES=read:user,user:email,read:org
 ```
 
 The callback URL configured in the GitHub OAuth App must point to the frontend callback route, for example `http://localhost:8000/login/callback` for the local Compose stack. End users do not provide these values when they log in; they identify this deployed application to GitHub.
-The GitHub App settings below should be configured and installed on the repository so the app can use an installation token to verify repository collaborator permissions for expert-role assignment without requesting broad user repository access.
+The GitHub App settings below let the app create review issues and verify repository collaborator permissions for expert-role assignment without requesting broad user repository access. Install the GitHub App on the issue repository, and also on the permission-check repository if that is different.
 
-Dataset review issue creation defaults to `koevoet1221/openmlupload-testing` for this test deployment. The GitHub App credentials must also be present for issue creation to run:
+There are two GitHub repository targets:
+
+- `GITHUB_ISSUES_OWNER` and `GITHUB_ISSUES_REPO` decide where dataset review issues are created.
+- `GITHUB_PERMISSION_OWNER` and `GITHUB_PERMISSION_REPO` decide which repository is checked when assigning the app's `expert` role. GitHub users with `maintain` or `admin` permission on that repository become experts in the app.
+
+When `GITHUB_PERMISSION_OWNER` or `GITHUB_PERMISSION_REPO` is unset, it defaults to the matching issue repository value. That means a simple deployment only needs the issue variables. Set the permission variables only when expert-role checks should use a different repository from issue creation.
+
+Dataset review issue creation defaults to `koevoet1221/openmlupload-testing` for this test deployment. The GitHub App credentials must also be present for issue creation and permission checks to run:
 
 ```env
 GH_APP_ID=your-github-app-id
@@ -54,9 +61,12 @@ GH_INSTALL_ID=your-github-app-installation-id
 GH_PRIV_KEY=your-github-app-private-key
 GITHUB_ISSUES_OWNER=koevoet1221
 GITHUB_ISSUES_REPO=openmlupload-testing
+# Optional only when role checks should use a different repository:
+# GITHUB_PERMISSION_OWNER=your-permission-owner
+# GITHUB_PERMISSION_REPO=your-permission-repo
 ```
 
-For the official deployment, update `GITHUB_ISSUES_OWNER` and `GITHUB_ISSUES_REPO` in `.env`.
+For the official deployment, update `GITHUB_ISSUES_OWNER` and `GITHUB_ISSUES_REPO` in `.env`. If expert-role checks should use a different repository than issue creation, also set `GITHUB_PERMISSION_OWNER` and `GITHUB_PERMISSION_REPO`.
 
 For a production domain, use the HTTPS callback, for example:
 
@@ -71,6 +81,9 @@ GH_INSTALL_ID=official-github-app-installation-id
 GH_PRIV_KEY=official-github-app-private-key
 GITHUB_ISSUES_OWNER=official-owner
 GITHUB_ISSUES_REPO=official-repo
+# Optional only when role checks should use a different repository:
+# GITHUB_PERMISSION_OWNER=official-permission-owner
+# GITHUB_PERMISSION_REPO=official-permission-repo
 ```
 
 For a local smoke test without GitHub OAuth, set:

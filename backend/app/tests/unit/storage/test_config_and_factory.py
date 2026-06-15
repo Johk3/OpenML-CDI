@@ -17,6 +17,10 @@ def test_settings_defaults(monkeypatch):
     monkeypatch.delenv("UPLOAD_URL_EXPIRES_SECONDS", raising=False)
     monkeypatch.delenv("COOKIE_SECURE", raising=False)
     monkeypatch.delenv("APP_BASE_URL", raising=False)
+    monkeypatch.delenv("GITHUB_ISSUES_OWNER", raising=False)
+    monkeypatch.delenv("GITHUB_ISSUES_REPO", raising=False)
+    monkeypatch.delenv("GITHUB_PERMISSION_OWNER", raising=False)
+    monkeypatch.delenv("GITHUB_PERMISSION_REPO", raising=False)
 
     settings = Settings.from_env()
 
@@ -30,6 +34,8 @@ def test_settings_defaults(monkeypatch):
     assert settings.storage.clamd_timeout_seconds == 60.0
     assert settings.github_issues.owner == "koevoet1221"
     assert settings.github_issues.repo == "openmlupload-testing"
+    assert settings.github_issues.permission_owner == "koevoet1221"
+    assert settings.github_issues.permission_repo == "openmlupload-testing"
     assert settings.app_base_url == "http://localhost:8000"
     assert settings.upload.target == "uploads"
     assert settings.upload.location == "default"

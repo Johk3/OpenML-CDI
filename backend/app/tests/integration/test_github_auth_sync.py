@@ -4,14 +4,14 @@ import pytest
 from requests import exceptions as requests_exceptions
 
 from app.database import models
-from app.services.github_issues import GitHubAPIError
 from app.services.github_sync import GitHubProfileSyncConflictError
 
 
 class _FakeGitHubResponse:
-    def __init__(self, status_code: int, payload):
+    def __init__(self, status_code: int, payload, text: str = ""):
         self.status_code = status_code
         self._payload = payload
+        self.text = text
 
     def json(self):
         return self._payload
@@ -26,6 +26,7 @@ def _mock_github_oauth(
     emails_status: int = 200,
     permission_payload: dict | None = None,
     permission_status: int = 404,
+    app_token_error: Exception | None = None,
     token_error: Exception | None = None,
     user_error: Exception | None = None,
     emails_error: Exception | None = None,
@@ -33,13 +34,26 @@ def _mock_github_oauth(
     monkeypatch.setenv("AUTH_DEV_MODE_APPROVE_ALL_LOGINS", "false")
     monkeypatch.setenv("ENVIRONMENT", "production")
 
-    def raise_missing_app_token(_settings):
-        raise GitHubAPIError("GitHub App credentials are not fully configured")
+    def get_app_token(_settings):
+        if app_token_error:
+            raise app_token_error
+        return "github-app-token"
 
     monkeypatch.setattr(
         "app.services.github_issues.get_installation_token",
-        raise_missing_app_token,
+        get_app_token,
     )
+
+    class FakeAppSession:
+        def get(self, url: str, **_kwargs):
+            if "/repos/" in url and url.endswith("/permission"):
+                return _FakeGitHubResponse(
+                    permission_status,
+                    permission_payload or {"permission": "none", "role_name": "none"},
+                )
+            raise AssertionError(f"Unexpected GitHub App URL: {url}")
+
+    monkeypatch.setattr("app.services.github_roles.requests.Session", FakeAppSession)
 
     class FakeOAuth2Session:
         def __init__(self, *_args, **_kwargs):
@@ -59,11 +73,6 @@ def _mock_github_oauth(
                 if emails_error:
                     raise emails_error
                 return _FakeGitHubResponse(emails_status, emails_payload)
-            if "/repos/" in url and url.endswith("/permission"):
-                return _FakeGitHubResponse(
-                    permission_status,
-                    permission_payload or {"permission": "none", "role_name": "none"},
-                )
             raise AssertionError(f"Unexpected GitHub URL: {url}")
 
     monkeypatch.setattr("app.routers.auth.OAuth2Session", FakeOAuth2Session)

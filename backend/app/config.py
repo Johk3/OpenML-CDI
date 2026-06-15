@@ -35,6 +35,8 @@ DEFAULT_QUARANTINE_DIR = ".quarantine"
 DEFAULT_CORS_ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
 DEFAULT_GITHUB_ISSUES_OWNER = "koevoet1221"
 DEFAULT_GITHUB_ISSUES_REPO = "openmlupload-testing"
+GITHUB_PERMISSION_OWNER_ENV = "GITHUB_PERMISSION_OWNER"
+GITHUB_PERMISSION_REPO_ENV = "GITHUB_PERMISSION_REPO"
 
 
 def _get_bool_env(name: str, default: bool) -> bool:
@@ -178,6 +180,15 @@ class GitHubIssuesSettings:
     private_key: str = ""
     owner: str = DEFAULT_GITHUB_ISSUES_OWNER
     repo: str = DEFAULT_GITHUB_ISSUES_REPO
+    # Role checks may use a separate repository, but default to the issue repo.
+    permission_owner: str | None = None
+    permission_repo: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "permission_owner", self.permission_owner or self.owner
+        )
+        object.__setattr__(self, "permission_repo", self.permission_repo or self.repo)
 
     @classmethod
     def from_env(cls) -> "GitHubIssuesSettings":
@@ -191,13 +202,17 @@ class GitHubIssuesSettings:
         app_id_str = get_env_val("GH_APP_ID")
         install_id_str = get_env_val("GH_INSTALL_ID")
         priv_key_str = get_env_val("GH_PRIV_KEY").replace("\\n", "\n")
+        owner = get_env_val("GITHUB_ISSUES_OWNER") or DEFAULT_GITHUB_ISSUES_OWNER
+        repo = get_env_val("GITHUB_ISSUES_REPO") or DEFAULT_GITHUB_ISSUES_REPO
 
         return cls(
             app_id=int(app_id_str) if app_id_str else None,
             install_id=int(install_id_str) if install_id_str else None,
             private_key=priv_key_str,
-            owner=get_env_val("GITHUB_ISSUES_OWNER") or DEFAULT_GITHUB_ISSUES_OWNER,
-            repo=get_env_val("GITHUB_ISSUES_REPO") or DEFAULT_GITHUB_ISSUES_REPO,
+            owner=owner,
+            repo=repo,
+            permission_owner=get_env_val(GITHUB_PERMISSION_OWNER_ENV) or owner,
+            permission_repo=get_env_val(GITHUB_PERMISSION_REPO_ENV) or repo,
         )
 
 
