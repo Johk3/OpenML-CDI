@@ -17,7 +17,7 @@ from app.database.models import Dataset, Roles, Statuses, User
 from app.main import app
 from app.schemas.users import User as UserSchema
 from app.security import create_access_token, get_current_active_user
-from app.storage.errors import StorageObjectNotFoundError
+from app.storage.errors import StorageObjectNotFoundError, StorageVerificationError
 from app.storage.types import ObjectMetadata, UploadTarget
 
 
@@ -28,6 +28,7 @@ class _FakeS3Storage:
         self.upload_url_calls = []
         self.verify_calls = []
         self.objects: dict[str, ObjectMetadata] = {}
+        self.deleted_keys = []
 
     def backend_name(self) -> str:
         return "s3"
@@ -72,7 +73,30 @@ class _FakeS3Storage:
         )
         if storage_key not in self.objects:
             raise StorageObjectNotFoundError(f"Object not found: {storage_key}")
-        return self.objects[storage_key]
+        metadata = self.objects[storage_key]
+        if expected_size is not None and metadata.byte_size != expected_size:
+            raise StorageVerificationError(
+                f"Object size mismatch for {storage_key}: "
+                f"expected {expected_size}, got {metadata.byte_size}"
+            )
+        if (
+            expected_content_type is not None
+            and metadata.content_type != expected_content_type
+        ):
+            raise StorageVerificationError(
+                f"Object content type mismatch for {storage_key}: "
+                f"expected {expected_content_type}, got {metadata.content_type}"
+            )
+        if expected_etag is not None and metadata.etag != expected_etag:
+            raise StorageVerificationError(
+                f"Object etag mismatch for {storage_key}: "
+                f"expected {expected_etag}, got {metadata.etag}"
+            )
+        return metadata
+
+    def delete(self, storage_key: str) -> None:
+        self.deleted_keys.append(storage_key)
+        self.objects.pop(storage_key, None)
 
 
 def _assert_dataset_object(
@@ -320,6 +344,43 @@ def test_local_direct_upload_rejects_non_owner(client: TestClient, db_session_fa
     assert response.status_code == 403
     storage = _app_state(client).storage
     assert storage.object_exists(storage_key) is False
+
+
+def test_local_direct_upload_cleans_up_dataset_on_storage_write_failure(
+    client: TestClient, db_session_factory, monkeypatch
+):
+    uploader_id = uuid.uuid4()
+    access_token = _create_access_token_for_user(db_session_factory, uploader_id)
+
+    upload_response = client.post(
+        "/api/datasets/upload-url",
+        json={
+            "name": "Doomed upload dataset",
+            "filenames": ["doomed.csv"],
+        },
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert upload_response.status_code == 201
+    dataset_id = uuid.UUID(upload_response.json()["id"])
+    storage_key = upload_response.json()["upload_contracts"][0]["object_key"]
+
+    storage = _app_state(client).storage
+
+    def _broken_write_bytes(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(storage, "write_bytes", _broken_write_bytes)
+
+    response = client.put(
+        f"/api/datasets/upload/{storage_key}",
+        content=b"feature,target\n1,0\n",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 500
+
+    with db_session_factory() as db:
+        assert db.get(Dataset, dataset_id) is None
 
 
 def test_upload_url_rejects_duplicate_dataset_name_for_same_owner(
@@ -979,7 +1040,7 @@ def test_upload_url_rejects_unsafe_directory_structure_paths(
     }
 
 
-def test_confirm_upload_verifies_s3_object_and_blocks_scan_on_failure(
+def test_confirm_upload_cleans_up_s3_dataset_on_verification_failure(
     client: TestClient, db_session_factory, monkeypatch
 ):
     uploader_id = uuid.uuid4()
@@ -1014,12 +1075,21 @@ def test_confirm_upload_verifies_s3_object_and_blocks_scan_on_failure(
         lambda **_kwargs: None,
     )
 
-    failed_response = client.post(
+    storage.objects[storage_key] = ObjectMetadata(
+        backend="s3",
+        bucket="datasets",
+        storage_key=storage_key,
+        byte_size=9,
+        content_type="text/csv",
+        etag="etag-1",
+    )
+
+    response = client.post(
         f"/api/datasets/{dataset_id}/confirm-upload",
         headers={"Authorization": f"Bearer {access_token}"},
     )
 
-    assert failed_response.status_code == 400
+    assert response.status_code == 400
     assert scan_calls == []
     assert storage.verify_calls[0] == {
         "storage_key": storage_key,
@@ -1027,26 +1097,10 @@ def test_confirm_upload_verifies_s3_object_and_blocks_scan_on_failure(
         "expected_content_type": "text/csv",
         "expected_etag": None,
     }
+    assert storage.deleted_keys == [storage_key]
+    assert storage.objects == {}
     with db_session_factory() as db:
-        assert db.get(Dataset, dataset_id) is not None
-
-    storage.objects[storage_key] = ObjectMetadata(
-        backend="s3",
-        bucket="datasets",
-        storage_key=storage_key,
-        byte_size=8,
-        content_type="text/csv",
-        etag="etag-1",
-    )
-
-    success_response = client.post(
-        f"/api/datasets/{dataset_id}/confirm-upload",
-        json={"etags": ["etag-1"]},
-        headers={"Authorization": f"Bearer {access_token}"},
-    )
-
-    assert success_response.status_code == 202
-    assert scan_calls[0]["storage_keys"] == [storage_key]
+        assert db.get(Dataset, dataset_id) is None
 
 
 def test_upload_url_accepts_unsupported_format_and_persists_content_type(

@@ -338,10 +338,30 @@ async def upload_file(
 ):
     """Receive file bytes and write to the configured storage backend."""
     dataset = dataset_crud.get_dataset_for_storage_key(db=db, storage_key=storage_key)
-    expert_or_owner(current_user, dataset)
+    dataset = expert_or_owner(current_user, dataset)
 
     data = await request.body()
-    request.app.state.storage.write_bytes(storage_key, data)
+    try:
+        request.app.state.storage.write_bytes(storage_key, data)
+    except Exception as error:
+        logger.exception(
+            "Failed to write uploaded object %s for dataset %s",
+            storage_key,
+            dataset.id,
+        )
+        _delete_failed_upload(
+            request=request,
+            db=db,
+            dataset_id=dataset.id,
+            storage_keys=list(
+                dataset.dataset_metadata.get("storage_keys", [storage_key])
+            ),
+            scan_result=None,
+        )
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to store uploaded file",
+        ) from error
     return {"message": "Upload successful", "storage_key": storage_key}
 
 
@@ -727,6 +747,13 @@ def confirm_upload(
             db=db, dataset_id=dataset_id, status=Statuses.UPLOADED
         )
     except StorageError as error:
+        _delete_failed_upload(
+            request=request,
+            db=db,
+            dataset_id=dataset_id,
+            storage_keys=storage_keys,
+            scan_result=None,
+        )
         raise HTTPException(
             status_code=http_status.HTTP_400_BAD_REQUEST,
             detail=str(error),
